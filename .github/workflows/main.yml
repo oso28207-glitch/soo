@@ -1,0 +1,67 @@
+name: 📺 Series Uploader
+
+on:
+  workflow_dispatch:
+    inputs:
+      series_name:
+        description: 'اسم المسلسل (إنجليزي)'
+        required: true
+        default: 'afili-ask'
+      series_name_arabic:
+        description: 'اسم المسلسل (عربي)'
+        required: true
+        default: 'الحب ورطة'
+      season_num:
+        description: 'رقم الموسم'
+        required: true
+        default: '1'
+        type: number
+      start_episode:
+        description: 'بداية الحلقات'
+        required: true
+        default: '1'
+        type: number
+      end_episode:
+        description: 'نهاية الحلقات'
+        required: true
+        default: '10'
+        type: number
+
+jobs:
+  upload-series:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # حد أقصى 90 دقيقة (مناسب لـ 10 حلقات)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Create config
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "series_name": "${{ github.event.inputs.series_name }}",
+            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
+            "season_num": ${{ github.event.inputs.season_num }},
+            "start_episode": ${{ github.event.inputs.start_episode }},
+            "end_episode": ${{ github.event.inputs.end_episode }}
+          }
+          EOF
+
+      - name: Run processor
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python main.py
