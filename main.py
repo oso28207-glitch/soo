@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium بالكامل
+Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من iframe
 """
 
 import os
@@ -77,7 +77,7 @@ app = None
 
 # ===== إعداد Selenium =====
 def setup_selenium():
-    """إعداد متصفح Chrome في وضع headless"""
+    """إعداد متصفح Chrome في وضع headless مع خيارات لمنع اكتشاف adblock"""
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
@@ -85,13 +85,20 @@ def setup_selenium():
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--window-size=1920,1080')
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-notifications')
+    chrome_options.add_argument('--ignore-certificate-errors')
     
     try:
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options
         )
+        # تنفيذ كود لإخفاء وجود selenium
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
     except Exception as e:
         print(f"❌ فشل إعداد Selenium: {e}")
@@ -144,7 +151,7 @@ def get_episode_page_with_selenium(base_url):
         print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
         driver.get(watch_url)
         
-        # انتظار تحميل iframe (أو أي عنصر يدل على اكتمال التحميل)
+        # انتظار تحميل iframe
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, "iframe"))
         )
@@ -152,14 +159,12 @@ def get_episode_page_with_selenium(base_url):
         
         # الحصول على HTML الكامل بعد تحميل JavaScript
         page_html = driver.page_source
-        driver.quit()
-        
-        return watch_url, page_html
+        return driver, watch_url, page_html  # نعيد driver أيضاً لاستخدامه لاحقاً
         
     except Exception as e:
         print(f"❌ خطأ في Selenium: {e}")
         driver.quit()
-        return None, None
+        return None, None, None
 
 def extract_iframe_url_from_html(html):
     """استخراج رابط iframe من HTML"""
@@ -174,8 +179,46 @@ def extract_iframe_url_from_html(html):
         return iframe_url
     return None
 
-def download_video(video_url, output_path):
-    """تنزيل الفيديو باستخدام yt-dlp مع impersonation"""
+def extract_video_from_iframe_with_selenium(driver, iframe_url):
+    """
+    استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو الحقيقي (.m3u8)
+    """
+    try:
+        print(f"🔄 فتح iframe: {iframe_url}")
+        driver.get(iframe_url)
+        
+        # انتظار تحميل عنصر الفيديو أو مصدره
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.TAG_NAME, "video"))
+        )
+        time.sleep(3)  # انتظار تحميل الفيديو
+        
+        # البحث عن مصدر الفيديو
+        video_element = driver.find_element(By.TAG_NAME, "video")
+        video_src = video_element.get_attribute("src")
+        
+        if video_src and video_src.startswith("http"):
+            print(f"✅ تم العثور على مصدر الفيديو: {video_src[:100]}...")
+            return video_src
+        
+        # إذا لم يجد src مباشرة، ابحث عن عناصر source داخل video
+        source_elements = driver.find_elements(By.TAG_NAME, "source")
+        for source in source_elements:
+            src = source.get_attribute("src")
+            if src and src.startswith("http"):
+                print(f"✅ تم العثور على مصدر بديل: {src[:100]}...")
+                return src
+        
+        # إذا لم نجد، نحاول استخراج من أداء الشبكة (قد لا يعمل في headless)
+        print("⚠️ لم يتم العثور على مصدر الفيديو، قد يكون محمياً.")
+        return None
+        
+    except Exception as e:
+        print(f"❌ خطأ في استخراج الفيديو من iframe: {e}")
+        return None
+
+def download_video(video_url, output_path, referer):
+    """تنزيل الفيديو باستخدام yt-dlp مع impersonation وإضافة referer"""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -187,7 +230,7 @@ def download_video(video_url, output_path):
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://z.3seq.cam/',
+                'Referer': referer,
             }
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -269,7 +312,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     معالجة حلقة واحدة باستخدام Selenium بالكامل:
     1. الحصول على الرابط النهائي ومحتوى HTML لصفحة المشاهدة
     2. استخراج iframe
-    3. استخدام yt-dlp على iframe
+    3. استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو
     4. تنزيل وضغط ورفع
     """
     base_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
@@ -281,9 +324,9 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # 1. استخدام Selenium للحصول على الرابط النهائي وHTML
-    watch_url, page_html = get_episode_page_with_selenium(base_url)
-    if not watch_url or not page_html:
+    # 1. استخدام Selenium للحصول على الرابط النهائي وHTML مع الاحتفاظ بالـ driver
+    driver, watch_url, page_html = get_episode_page_with_selenium(base_url)
+    if not driver or not watch_url or not page_html:
         return False, "فشل تحميل الصفحة عبر Selenium"
     
     print(f"📺 Watch URL: {watch_url}")
@@ -291,45 +334,23 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     # 2. استخراج iframe
     iframe_url = extract_iframe_url_from_html(page_html)
     if not iframe_url:
+        driver.quit()
         return False, "لم يتم العثور على iframe في الصفحة"
     
     print(f"📦 تم العثور على iframe: {iframe_url}")
     
-    # 3. استخدام yt-dlp على iframe لاستخراج رابط الفيديو
-    try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'format': 'best[height<=720]',
-            'socket_timeout': 15,
-            'extractor_args': {'generic': 'impersonate'},
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(iframe_url, download=False)
-            if info and 'url' in info:
-                video_url = info['url']
-            elif 'formats' in info:
-                formats = [f for f in info['formats'] if f.get('vcodec') != 'none']
-                if formats:
-                    formats.sort(key=lambda f: f.get('height', 9999))
-                    video_url = formats[0]['url']
-                else:
-                    video_url = None
-            else:
-                video_url = None
-        
-        if not video_url:
-            return False, "فشل استخراج رابط الفيديو من iframe"
-        
-        print(f"🎥 Video URL: {video_url[:100]}...")
-        
-    except Exception as e:
-        print(f"⚠️ خطأ في yt-dlp: {e}")
-        return False, "فشل استخراج رابط الفيديو"
+    # 3. استخدام نفس driver لفتح iframe واستخراج رابط الفيديو
+    video_url = extract_video_from_iframe_with_selenium(driver, iframe_url)
+    driver.quit()  # نغلق المتصفح بعد الانتهاء
     
-    # 4. تنزيل الفيديو
-    if not download_video(video_url, temp_file):
+    if not video_url:
+        return False, "فشل استخراج رابط الفيديو من iframe"
+    
+    print(f"🎥 Video URL: {video_url}")
+    
+    # 4. تنزيل الفيديو باستخدام yt-dlp مع referer المناسب
+    # نستخدم iframe_url كـ referer
+    if not download_video(video_url, temp_file, referer=iframe_url):
         return False, "فشل التنزيل"
     
     # 5. ضغط الفيديو
@@ -355,7 +376,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
 async def main():
     print("="*50)
-    print("🎬 معالج الفيديو المتكامل باستخدام Selenium")
+    print("🎬 معالج الفيديو المتكامل باستخدام Selenium (استخراج من iframe)")
     print("="*50)
 
     # التحقق من ffmpeg
@@ -409,7 +430,7 @@ async def main():
             print(f"❌ الحلقة {ep}: {msg}")
 
         # انتظار عشوائي
-        wait_time = random.randint(25, 35)
+        wait_time = random.randint(30, 45)
         print(f"⏳ انتظار {wait_time} ثانية...")
         await asyncio.sleep(wait_time)
 
