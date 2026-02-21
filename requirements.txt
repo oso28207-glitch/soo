@@ -4,3 +4,4 @@ yt-dlp>=2024.12.08
 curl_cffi>=0.5.10
 selenium>=4.15.0
 webdriver-manager>=4.0.1
+"beautifulsoup4>=4.12.0"
