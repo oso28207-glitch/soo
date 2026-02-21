@@ -39,7 +39,7 @@ if not validate_env():
 
 TELEGRAM_API_ID = int(TELEGRAM_API_ID)
 
-# تثبيت الحزم الضرورية
+# تثبيت الحزم الضرورية - نبقيها سريعة
 def install_requirements():
     print("📦 Installing requirements...")
     reqs = [
@@ -48,7 +48,6 @@ def install_requirements():
         "yt-dlp>=2024.4.9",
         "curl_cffi>=0.5.10",
         "selenium>=4.15.0",
-        "webdriver-manager>=4.0.1",
         "beautifulsoup4>=4.12.0"
     ]
     for req in reqs:
@@ -67,7 +66,6 @@ import yt_dlp
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -92,11 +90,19 @@ def setup_selenium():
     chrome_options.add_argument('--disable-notifications')
     chrome_options.add_argument('--ignore-certificate-errors')
     
+    # استخدام chromedriver المثبت في النظام (عادة /usr/bin/chromedriver)
+    chromedriver_path = '/usr/bin/chromedriver'
+    if not os.path.exists(chromedriver_path):
+        # إذا لم يكن موجوداً، نجرب البحث عنه
+        import shutil
+        chromedriver_path = shutil.which('chromedriver')
+        if not chromedriver_path:
+            print("❌ لم يتم العثور على chromedriver. تأكد من تثبيته.")
+            return None
+    
     try:
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=chrome_options
-        )
+        service = Service(executable_path=chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         # تنفيذ كود لإخفاء وجود selenium
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
@@ -133,14 +139,20 @@ def get_episode_page_with_selenium(base_url):
     """
     driver = setup_selenium()
     if not driver:
-        return None, None
+        return None, None, None
     
     try:
         # الخطوة 1: الذهاب إلى الرابط الأساسي وانتظار إعادة التوجيه
         print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
         driver.get(base_url)
-        WebDriverWait(driver, 15).until(EC.url_changes(base_url))
-        time.sleep(3)  # انتظار إضافي لتحميل المحتوى
+        
+        # انتظار تغيير الرابط أو مرور 10 ثواني
+        start_time = time.time()
+        current_url = driver.current_url
+        while current_url == base_url and time.time() - start_time < 10:
+            time.sleep(1)
+            current_url = driver.current_url
+        
         final_url = driver.current_url
         print(f"🌐 الرابط النهائي: {final_url}")
         
@@ -151,15 +163,19 @@ def get_episode_page_with_selenium(base_url):
         print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
         driver.get(watch_url)
         
-        # انتظار تحميل iframe
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-        )
-        time.sleep(2)  # انتظار إضافي للتأكد
+        # انتظار تحميل iframe (لمدة أقصاها 15 ثانية)
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "iframe"))
+            )
+            time.sleep(2)  # انتظار إضافي للتأكد
+        except:
+            print("⚠️ لم يتم العثور على iframe خلال 15 ثانية، قد تكون الصفحة مختلفة.")
+            # نكمل على أي حال
         
         # الحصول على HTML الكامل بعد تحميل JavaScript
         page_html = driver.page_source
-        return driver, watch_url, page_html  # نعيد driver أيضاً لاستخدامه لاحقاً
+        return driver, watch_url, page_html
         
     except Exception as e:
         print(f"❌ خطأ في Selenium: {e}")
@@ -187,30 +203,46 @@ def extract_video_from_iframe_with_selenium(driver, iframe_url):
         print(f"🔄 فتح iframe: {iframe_url}")
         driver.get(iframe_url)
         
-        # انتظار تحميل عنصر الفيديو أو مصدره
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.TAG_NAME, "video"))
-        )
-        time.sleep(3)  # انتظار تحميل الفيديو
+        # انتظار تحميل عنصر الفيديو (لمدة أقصاها 20 ثانية)
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.TAG_NAME, "video"))
+            )
+            time.sleep(3)
+        except:
+            print("⚠️ لم يتم العثور على عنصر video خلال 20 ثانية.")
+            # قد يكون هناك مصدر بديل مثل source
         
         # البحث عن مصدر الفيديو
-        video_element = driver.find_element(By.TAG_NAME, "video")
-        video_src = video_element.get_attribute("src")
+        video_src = None
         
-        if video_src and video_src.startswith("http"):
-            print(f"✅ تم العثور على مصدر الفيديو: {video_src[:100]}...")
-            return video_src
+        # الطريقة الأولى: من عنصر video مباشرة
+        video_elements = driver.find_elements(By.TAG_NAME, "video")
+        if video_elements:
+            video_src = video_elements[0].get_attribute("src")
+            if video_src:
+                print(f"✅ تم العثور على مصدر الفيديو: {video_src[:100]}...")
+                return video_src
         
-        # إذا لم يجد src مباشرة، ابحث عن عناصر source داخل video
+        # الطريقة الثانية: من عناصر source داخل video
         source_elements = driver.find_elements(By.TAG_NAME, "source")
         for source in source_elements:
             src = source.get_attribute("src")
-            if src and src.startswith("http"):
-                print(f"✅ تم العثور على مصدر بديل: {src[:100]}...")
-                return src
+            if src:
+                video_src = src
+                print(f"✅ تم العثور على مصدر بديل: {video_src[:100]}...")
+                return video_src
         
-        # إذا لم نجد، نحاول استخراج من أداء الشبكة (قد لا يعمل في headless)
-        print("⚠️ لم يتم العثور على مصدر الفيديو، قد يكون محمياً.")
+        # الطريقة الثالثة: البحث في الصفحة عن أي رابط .m3u8
+        page_source = driver.page_source
+        import re
+        m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
+        if m3u8_matches:
+            video_src = m3u8_matches[0]
+            print(f"✅ تم العثور على رابط m3u8: {video_src[:100]}...")
+            return video_src
+        
+        print("⚠️ لم يتم العثور على مصدر الفيديو.")
         return None
         
     except Exception as e:
@@ -309,11 +341,7 @@ async def upload_video(file_path, caption, thumb_path=None):
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     """
-    معالجة حلقة واحدة باستخدام Selenium بالكامل:
-    1. الحصول على الرابط النهائي ومحتوى HTML لصفحة المشاهدة
-    2. استخراج iframe
-    3. استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو
-    4. تنزيل وضغط ورفع
+    معالجة حلقة واحدة باستخدام Selenium بالكامل
     """
     base_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
     
@@ -326,7 +354,11 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
     # 1. استخدام Selenium للحصول على الرابط النهائي وHTML مع الاحتفاظ بالـ driver
     driver, watch_url, page_html = get_episode_page_with_selenium(base_url)
-    if not driver or not watch_url or not page_html:
+    if not driver:
+        return False, "فشل تشغيل Selenium"
+    
+    if not watch_url or not page_html:
+        driver.quit()
         return False, "فشل تحميل الصفحة عبر Selenium"
     
     print(f"📺 Watch URL: {watch_url}")
@@ -349,7 +381,6 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     print(f"🎥 Video URL: {video_url}")
     
     # 4. تنزيل الفيديو باستخدام yt-dlp مع referer المناسب
-    # نستخدم iframe_url كـ referer
     if not download_video(video_url, temp_file, referer=iframe_url):
         return False, "فشل التنزيل"
     
@@ -385,6 +416,11 @@ async def main():
         print("✅ ffmpeg موجود")
     except:
         print("❌ ffmpeg غير موجود")
+        return
+
+    # التحقق من توفر chromedriver
+    if not shutil.which('chromedriver'):
+        print("❌ chromedriver غير موجود. تأكد من تثبيته.")
         return
 
     # الاتصال بتليغرام
