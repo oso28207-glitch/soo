@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - Safe Version for GitHub Actions
+Telegram Video Downloader & Uploader - Safe Version with Cloudflare Bypass
 """
 import os
 import sys
@@ -39,15 +39,21 @@ if not validate_env():
 
 TELEGRAM_API_ID = int(TELEGRAM_API_ID)
 
-# تثبيت الحزم الضرورية فقط
+# تثبيت الحزم الضرورية مع curl_cffi لتجاوز Cloudflare
 def install_requirements():
     print("📦 Installing requirements...")
-    reqs = ["pyrogram>=2.0.0", "tgcrypto>=1.2.0", "yt-dlp>=2024.4.9"]
+    reqs = [
+        "pyrogram>=2.0.0",
+        "tgcrypto>=1.2.0",
+        "yt-dlp>=2024.4.9",
+        "curl_cffi>=0.5.10"  # مطلوب لتقنية impersonation
+    ]
     for req in reqs:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", req, "--quiet"])
+            print(f"  ✅ {req.split('>=')[0]}")
         except:
-            print(f"⚠️ Failed to install {req}")
+            print(f"  ⚠️ Failed to install {req}")
 
 install_requirements()
 
@@ -77,14 +83,16 @@ async def setup_telegram():
         return False
 
 def get_video_url_via_ytdlp(episode_url):
-    """استخراج رابط الفيديو باستخدام yt-dlp فقط (بدون تخمين)"""
+    """استخراج رابط الفيديو باستخدام yt-dlp مع impersonation لتجاوز Cloudflare"""
     try:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'format': 'best[height<=720]',  # نحاول الحصول على جودة منخفضة لتقليل الحجم
+            'format': 'best[height<=720]',
             'socket_timeout': 15,
+            # إضافة impersonation
+            'extractor_args': {'generic': 'impersonate'}
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(episode_url, download=False)
@@ -92,10 +100,9 @@ def get_video_url_via_ytdlp(episode_url):
                 return info['url']
             # بعض المواقع تعطي قائمة بالصيغ
             if 'formats' in info:
-                # اختر أقل صيغة فيديو (أصغر حجم)
                 formats = [f for f in info['formats'] if f.get('vcodec') != 'none']
                 if formats:
-                    # رتب حسب الدقة تصاعدياً
+                    # رتب حسب الدقة تصاعدياً (أصغر حجم)
                     formats.sort(key=lambda f: f.get('height', 9999))
                     chosen = formats[0]
                     return chosen['url']
@@ -105,7 +112,7 @@ def get_video_url_via_ytdlp(episode_url):
         return None
 
 def download_video(video_url, output_path):
-    """تنزيل الفيديو باستخدام yt-dlp"""
+    """تنزيل الفيديو باستخدام yt-dlp مع impersonation"""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -114,6 +121,7 @@ def download_video(video_url, output_path):
             'retries': 5,
             'fragment_retries': 5,
             'socket_timeout': 30,
+            'extractor_args': {'generic': 'impersonate'}  # تجاوز Cloudflare
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
@@ -191,25 +199,24 @@ async def upload_video(file_path, caption, thumb_path=None):
         return False
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
-    """معالجة حلقة واحدة بطريقة آمنة"""
-    # بناء رابط الحلقة (هذا افتراضي وقد يختلف حسب الموقع)
-    # يجب تعديل هذا الجزء ليتناسب مع الموقع الفعلي
-    episode_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
-    # يمكن إضافة بعض المتغيرات لكن بدون تخمين مكثف
-    # نجرب الرابط الأساسي فقط
+    """معالجة حلقة واحدة مع تجاوز Cloudflare"""
+    # بناء رابط الحلقة - قد تحتاج إلى تعديل هذه الصيغة حسب الموقع الفعلي
+    episode_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}/?do=watch"
+    # إذا لم ينجح، يمكن تجربة رابط آخر (مثلاً بدون المعامل)
+    # episode_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
 
     print(f"\n🎬 Episode {episode_num:02d}")
     temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # 1. استخراج رابط الفيديو عبر yt-dlp
+    # 1. استخراج رابط الفيديو عبر yt-dlp مع impersonation
     video_url = get_video_url_via_ytdlp(episode_url)
     if not video_url:
         print("❌ Could not extract video URL")
         return False, "URL extraction failed"
 
-    # 2. تنزيل الفيديو
+    # 2. تنزيل الفيديو مع impersonation
     if not download_video(video_url, temp_file):
         return False, "Download failed"
 
@@ -236,7 +243,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
 async def main():
     print("="*50)
-    print("🎬 Safe Video Processor for GitHub Actions")
+    print("🎬 Safe Video Processor with Cloudflare Bypass")
     print("="*50)
 
     # التحقق من ffmpeg
@@ -289,7 +296,7 @@ async def main():
             print(f"❌ Episode {ep}: {msg}")
 
         # انتظار عشوائي بين الحلقات لتجنب الظهور كبوت
-        wait_time = random.randint(10, 20)
+        wait_time = random.randint(15, 25)
         print(f"⏳ Waiting {wait_time}s before next...")
         await asyncio.sleep(wait_time)
 
