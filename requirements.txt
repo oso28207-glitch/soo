@@ -1,0 +1,4 @@
+pyrogram>=2.0.0
+tgcrypto>=1.2.0
+yt-dlp>=2024.12.08
+curl_cffi>=0.5.10
