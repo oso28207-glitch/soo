@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - Safe Version with Cloudflare Bypass
+Telegram Video Downloader & Uploader - معالجة الروابط الديناميكية باستخدام Selenium
 """
 import os
 import sys
-import re
 import time
 import json
 import subprocess
@@ -13,7 +12,7 @@ import asyncio
 import random
 from datetime import datetime
 
-# ===== CONFIGURATION =====
+# ===== التهيئة والتحقق =====
 TELEGRAM_API_ID = os.environ.get("API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
 TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
@@ -39,14 +38,16 @@ if not validate_env():
 
 TELEGRAM_API_ID = int(TELEGRAM_API_ID)
 
-# تثبيت الحزم الضرورية مع curl_cffi لتجاوز Cloudflare
+# تثبيت الحزم الضرورية
 def install_requirements():
     print("📦 Installing requirements...")
     reqs = [
         "pyrogram>=2.0.0",
         "tgcrypto>=1.2.0",
         "yt-dlp>=2024.4.9",
-        "curl_cffi>=0.5.10"  # مطلوب لتقنية impersonation
+        "curl_cffi>=0.5.10",
+        "selenium>=4.15.0",
+        "webdriver-manager>=4.0.1"
     ]
     for req in reqs:
         try:
@@ -57,11 +58,21 @@ def install_requirements():
 
 install_requirements()
 
+# استيراد المكتبات بعد التثبيت
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 import yt_dlp
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 app = None
+
+# ===== دوال مساعدة =====
 
 async def setup_telegram():
     global app
@@ -82,8 +93,52 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-def get_video_url_via_ytdlp(episode_url):
-    """استخراج رابط الفيديو باستخدام yt-dlp مع impersonation لتجاوز Cloudflare"""
+def get_final_episode_url(base_url):
+    """
+    استخدام Selenium للحصول على الرابط النهائي بعد إعادة التوجيه
+    base_url مثال: https://z.3seq.cam/video/modablaj-yasak-elma-episode-s06e01
+    سيعيد: https://z.3seq.cam/video/modablaj-yasak-elma-episode-s06e01-55qr/
+    """
+    print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')  # وضع بدون واجهة
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    
+    try:
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=chrome_options
+        )
+        driver.get(base_url)
+        
+        # انتظار إعادة التوجيه أو ظهور عنصر معين
+        WebDriverWait(driver, 15).until(
+            EC.url_changes(base_url)  # انتظر حتى يتغير الرابط
+        )
+        time.sleep(2)  # انتظار إضافي للتأكد
+        final_url = driver.current_url
+        driver.quit()
+        
+        print(f"🌐 الرابط النهائي: {final_url}")
+        return final_url
+    except Exception as e:
+        print(f"❌ خطأ في Selenium: {e}")
+        try:
+            driver.quit()
+        except:
+            pass
+        return None
+
+def get_video_url_from_page(page_url):
+    """
+    استخدام yt-dlp لاستخراج رابط الفيديو من صفحة المشاهدة
+    page_url مثال: https://z.3seq.cam/video/modablaj-yasak-elma-episode-s06e01-55qr/?do=watch
+    """
     try:
         ydl_opts = {
             'quiet': True,
@@ -91,21 +146,17 @@ def get_video_url_via_ytdlp(episode_url):
             'extract_flat': False,
             'format': 'best[height<=720]',
             'socket_timeout': 15,
-            # إضافة impersonation
-            'extractor_args': {'generic': 'impersonate'}
+            'extractor_args': {'generic': 'impersonate'}  # لتجاوز Cloudflare
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(episode_url, download=False)
+            info = ydl.extract_info(page_url, download=False)
             if info and 'url' in info:
                 return info['url']
-            # بعض المواقع تعطي قائمة بالصيغ
             if 'formats' in info:
                 formats = [f for f in info['formats'] if f.get('vcodec') != 'none']
                 if formats:
-                    # رتب حسب الدقة تصاعدياً (أصغر حجم)
                     formats.sort(key=lambda f: f.get('height', 9999))
-                    chosen = formats[0]
-                    return chosen['url']
+                    return formats[0]['url']
             return None
     except Exception as e:
         print(f"⚠️ yt-dlp error: {e}")
@@ -121,7 +172,7 @@ def download_video(video_url, output_path):
             'retries': 5,
             'fragment_retries': 5,
             'socket_timeout': 30,
-            'extractor_args': {'generic': 'impersonate'}  # تجاوز Cloudflare
+            'extractor_args': {'generic': 'impersonate'}
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
@@ -142,7 +193,7 @@ def compress_to_240p(input_path, output_path):
         '-y', output_path
     ]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=1800)  # 30 دقيقة كحد أقصى
+        subprocess.run(cmd, capture_output=True, timeout=1800)
         return os.path.exists(output_path)
     except:
         return False
@@ -163,9 +214,8 @@ async def upload_video(file_path, caption, thumb_path=None):
     if not app or not os.path.exists(file_path):
         return False
     try:
-        width, height = 426, 240  # افتراضي
+        width, height = 426, 240
         duration = 0
-        # محاولة الحصول على معلومات الفيديو
         try:
             probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
                                     '-show_entries', 'stream=width,height,duration',
@@ -199,58 +249,80 @@ async def upload_video(file_path, caption, thumb_path=None):
         return False
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
-    """معالجة حلقة واحدة مع تجاوز Cloudflare"""
-    # بناء رابط الحلقة - قد تحتاج إلى تعديل هذه الصيغة حسب الموقع الفعلي
-    episode_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}/?do=watch"
-    # إذا لم ينجح، يمكن تجربة رابط آخر (مثلاً بدون المعامل)
-    # episode_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
-
+    """
+    معالجة حلقة واحدة:
+    1. بناء الرابط الأساسي
+    2. استخدام Selenium للحصول على الرابط مع الرمز الديناميكي
+    3. إضافة ?do=watch
+    4. استخراج رابط الفيديو باستخدام yt-dlp
+    5. تنزيل الفيديو
+    6. ضغطه ورفعه
+    """
+    # الرابط الأساسي بدون رمز (المثال: https://z.3seq.cam/video/modablaj-yasak-elma-episode-s06e01)
+    # لاحظ أن series_name يجب أن يكون بالصيغة المناسبة للموقع (مثل yasak-elma بدلاً من yasak elma)
+    base_url = f"https://z.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
+    
     print(f"\n🎬 Episode {episode_num:02d}")
+    print(f"🔗 Base URL: {base_url}")
+    
     temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # 1. استخراج رابط الفيديو عبر yt-dlp مع impersonation
-    video_url = get_video_url_via_ytdlp(episode_url)
+    # 1. الحصول على الرابط النهائي (مع الرمز)
+    final_page_url = get_final_episode_url(base_url)
+    if not final_page_url:
+        return False, "فشل الحصول على الرابط النهائي عبر Selenium"
+    
+    # 2. إضافة معامل المشاهدة
+    if not final_page_url.endswith('/'):
+        final_page_url += '/'
+    watch_url = final_page_url + '?do=watch'
+    print(f"📺 Watch URL: {watch_url}")
+    
+    # 3. استخراج رابط الفيديو باستخدام yt-dlp
+    video_url = get_video_url_from_page(watch_url)
     if not video_url:
-        print("❌ Could not extract video URL")
-        return False, "URL extraction failed"
-
-    # 2. تنزيل الفيديو مع impersonation
+        return False, "فشل استخراج رابط الفيديو"
+    
+    print(f"🎥 Video URL: {video_url[:100]}...")
+    
+    # 4. تنزيل الفيديو
     if not download_video(video_url, temp_file):
-        return False, "Download failed"
-
-    # 3. ضغط الفيديو
+        return False, "فشل التنزيل"
+    
+    # 5. ضغط الفيديو
     if not compress_to_240p(temp_file, final_file):
-        shutil.copy2(temp_file, final_file)  # استخدم الأصلي إذا فشل الضغط
-
-    # 4. إنشاء صورة مصغرة
+        shutil.copy2(temp_file, final_file)
+    
+    # 6. إنشاء صورة مصغرة
     create_thumbnail(final_file, thumb_file)
-
-    # 5. رفع إلى تليغرام
+    
+    # 7. رفع إلى تليغرام
     caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
     success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
-
-    # 6. تنظيف
+    
+    # 8. تنظيف
     for f in [temp_file, final_file, thumb_file]:
         try:
             if os.path.exists(f):
                 os.remove(f)
         except:
             pass
-
-    return success, "OK" if success else "Upload failed"
+    
+    return success, "تم بنجاح" if success else "فشل الرفع"
 
 async def main():
     print("="*50)
-    print("🎬 Safe Video Processor with Cloudflare Bypass")
+    print("🎬 معالج الفيديو مع Selenium (للروابط الديناميكية)")
     print("="*50)
 
     # التحقق من ffmpeg
     try:
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        print("✅ ffmpeg موجود")
     except:
-        print("❌ ffmpeg not found")
+        print("❌ ffmpeg غير موجود")
         return
 
     # الاتصال بتليغرام
@@ -260,25 +332,25 @@ async def main():
     # قراءة ملف الإعدادات
     config_file = "series_config.json"
     if not os.path.exists(config_file):
-        print("❌ series_config.json not found")
+        print("❌ series_config.json غير موجود")
         return
 
     with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
-    series_name = config.get("series_name", "").strip()
+    series_name = config.get("series_name", "").strip().replace(' ', '-')  # تحويل المسافات إلى شرط إن لزم
     series_name_arabic = config.get("series_name_arabic", "").strip()
     season_num = int(config.get("season_num", 1))
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
 
-    # تقليل العدد تلقائياً إذا كان كبيراً (حماية)
+    # تقليل العدد للحماية
     if end_ep - start_ep + 1 > 10:
-        print("⚠️ Too many episodes! Limiting to 10 to avoid timeout.")
+        print("⚠️ عدد الحلقات كبير جداً، سيتم معالجة 10 حلقات فقط.")
         end_ep = start_ep + 9
 
-    print(f"📺 Series: {series_name_arabic}")
-    print(f"🎬 Episodes: {start_ep} to {end_ep}")
+    print(f"📺 المسلسل: {series_name_arabic}")
+    print(f"🎬 الحلقات: {start_ep} إلى {end_ep}")
 
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
@@ -290,28 +362,28 @@ async def main():
         success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, download_dir)
         if success:
             successful += 1
-            print(f"✅ Episode {ep} done")
+            print(f"✅ الحلقة {ep} اكتملت")
         else:
             failed.append(ep)
-            print(f"❌ Episode {ep}: {msg}")
+            print(f"❌ الحلقة {ep}: {msg}")
 
-        # انتظار عشوائي بين الحلقات لتجنب الظهور كبوت
-        wait_time = random.randint(15, 25)
-        print(f"⏳ Waiting {wait_time}s before next...")
+        # انتظار عشوائي
+        wait_time = random.randint(20, 30)
+        print(f"⏳ انتظار {wait_time} ثانية...")
         await asyncio.sleep(wait_time)
 
-    print(f"\n✅ Successful: {successful}/{len(range(start_ep, end_ep+1))}")
+    print(f"\n✅ الناجحة: {successful}/{len(range(start_ep, end_ep+1))}")
     if failed:
-        print(f"❌ Failed: {failed}")
+        print(f"❌ الفاشلة: {failed}")
 
-    # تنظيف المجلد إن كان فارغاً
+    # تنظيف
     try:
         os.rmdir(download_dir)
     except:
         pass
 
     await app.stop()
-    print("🔌 Disconnected")
+    print("🔌 تم قطع الاتصال بتليغرام")
 
 if __name__ == "__main__":
     asyncio.run(main())
