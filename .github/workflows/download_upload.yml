@@ -1,71 +1,77 @@
-name: Download & Upload Episodes from Eishq
+name: 📺 Uploader2
 
 on:
-  workflow_dispatch:        # يتيح التشغيل اليدوي من الواجهة
+  workflow_dispatch:
     inputs:
-      start_episode:
-        description: 'بداية الحلقة'
+      series_name:
+        description: 'اسم المسلسل (إنجليزي)'
         required: true
-        default: '1'
-      end_episode:
-        description: 'نهاية الحلقة'
+        default: 'yasak-elma'
+      series_name_arabic:
+        description: 'اسم المسلسل (عربي)'
         required: true
-        default: '5'
+        default: 'التفاح الحرام'
       season_num:
         description: 'رقم الموسم'
         required: true
-        default: '1'
-  # schedule:
-  #   - cron: '0 2 * * *'   # اختياري: تشغيل يومي في الساعة 2 صباحاً
+        default: '6'
+        type: number
+      start_episode:
+        description: 'بداية الحلقات'
+        required: true
+        default: '26'
+        type: number
+      end_episode:
+        description: 'نهاية الحلقات'
+        required: true
+        default: '35'
+        type: number
 
 jobs:
-  process-episodes:
+  upload-series:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python 3.10
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 📦 Install system dependencies (chromium, chromedriver, ffmpeg)
+      - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y chromium-browser chromium-chromedriver ffmpeg
-          # تأكيد وجود chromedriver في PATH
-          echo "/usr/lib/chromium-browser/" >> $GITHUB_PATH
-          echo "CHROME_BIN=/usr/bin/chromium-browser" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-      - name: 📦 Install Python dependencies
+      - name: Install Chrome
         run: |
-          python -m pip install --upgrade pip
-          pip install pyrogram tgcrypto yt-dlp curl_cffi selenium beautifulsoup4
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
 
-      - name: 🔐 Create config file from secrets (optional)
-        # إذا كنت لا تريد حفظ series_config.json في المستودع، يمكنك إنشاؤه هنا
+      - name: Install Chromedriver
         run: |
-          echo '${{ secrets.SERIES_CONFIG }}' > series_config.json
-        # إذا كان الملف موجوداً في المستودع، يمكنك تجاهل هذه الخطوة
-        continue-on-error: true
+          sudo apt-get install -y chromium-chromedriver
+          chromedriver --version
 
-      - name: 🚀 Run the downloader script
+      - name: Create config
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "series_name": "${{ github.event.inputs.series_name }}",
+            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
+            "season_num": ${{ github.event.inputs.season_num }},
+            "start_episode": ${{ github.event.inputs.start_episode }},
+            "end_episode": ${{ github.event.inputs.end_episode }}
+          }
+          EOF
+
+      - name: Run processor
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: |
-          # تعديل ملف الإعدادات بناءً على المدخلات إذا أردت
-          if [ -f series_config.json ]; then
-            # يمكنك استخدام jq لتعديل الحقول ديناميكياً (اختياري)
-            sudo apt install -y jq
-            jq --arg start "${{ github.event.inputs.start_episode }}" \
-               --arg end "${{ github.event.inputs.end_episode }}" \
-               --arg season "${{ github.event.inputs.season_num }}" \
-               '.start_episode = ($start | tonumber) | .end_episode = ($end | tonumber) | .season_num = ($season | tonumber)' \
-               series_config.json > tmp.json && mv tmp.json series_config.json
-          fi
-          python main1.py
+        run: python main1.py
