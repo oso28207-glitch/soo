@@ -126,12 +126,8 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-# ===== دالة استخراج الفيديو من new.eishq.net =====
+# ===== دالة استخراج الفيديو من new.eishq.net (معدلة) =====
 def get_video_from_eishq(base_url):
-    """
-    تستخدم Selenium لفتح رابط الحلقة على new.eishq.net،
-    النقر على زر المشاهدة، ثم استخراج رابط الفيديو الحقيقي.
-    """
     driver = setup_selenium()
     if not driver:
         return None, None
@@ -139,67 +135,48 @@ def get_video_from_eishq(base_url):
     try:
         print(f"🖥️ فتح صفحة الحلقة: {base_url}")
         driver.get(base_url)
-        time.sleep(3)  # انتظار أولي لتحميل الصفحة
-        
-        # محاولة العثور على زر المشاهدة
-        watch_button = None
-        
-        # استراتيجية 1: البحث عن أي عنصر يحتوي على نص "مشاهدة"
-        buttons = driver.find_elements(By.XPATH, 
-            "//button[contains(text(), 'مشاهدة')] | //a[contains(text(), 'مشاهدة')] | //span[contains(text(), 'مشاهدة')]")
-        if buttons:
-            watch_button = buttons[0]
-        
-        if not watch_button:
-            # استراتيجية 2: البحث عن رابط يؤدي إلى b.hagobi.com
-            links = driver.find_elements(By.XPATH, "//a[contains(@href, 'b.hagobi.com')]")
-            if links:
-                watch_button = links[0]
-        
-        if watch_button:
-            print("✅ تم العثور على زر المشاهدة، جاري النقر...")
-            # تسجيل عدد النوافذ قبل النقر
-            current_windows = driver.window_handles
-            watch_button.click()
-            time.sleep(3)
-            
-            # التحقق مما إذا تم فتح نافذة جديدة
-            new_windows = driver.window_handles
-            if len(new_windows) > len(current_windows):
-                # التبديل إلى النافذة الجديدة
-                driver.switch_to.window(new_windows[-1])
-                print("🪟 تم التبديل إلى النافذة الجديدة")
-            
-            # انتظار تحميل الصفحة الجديدة (حتى يتغير الرابط أو يظهر b.hagobi.com)
-            WebDriverWait(driver, 15).until(
-                lambda d: d.current_url != base_url or "b.hagobi.com" in d.current_url
-            )
-            final_url = driver.current_url
-            print(f"🌐 الرابط بعد النقر: {final_url}")
+        time.sleep(5)  # انتظار أطول لتحميل الصفحة
+
+        # البحث عن رابط المشاهدة (b.hagobi.com)
+        watch_link = None
+        # استراتيجية 1: رابط مباشر يحتوي على b.hagobi.com
+        links = driver.find_elements(By.XPATH, "//a[contains(@href, 'b.hagobi.com')]")
+        if links:
+            watch_link = links[0].get_attribute('href')
+            print(f"🔗 تم العثور على رابط المشاهدة: {watch_link}")
         else:
-            print("⚠️ لم يتم العثور على زر مشاهدة، قد يكون iframe مباشر")
-            final_url = driver.current_url
-        
-        # الآن في صفحة b.hagobi.com أو أي صفحة تحتوي على iframe
-        # البحث عن iframe
-        iframe_url = None
-        try:
-            iframe = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-            )
-            iframe_url = iframe.get_attribute("src")
-            if iframe_url and iframe_url.startswith('//'):
-                iframe_url = 'https:' + iframe_url
-            print(f"📦 تم العثور على iframe: {iframe_url}")
-        except:
-            print("⚠️ لا يوجد iframe، قد يكون الفيديو مباشراً")
-        
-        # إذا وجد iframe، نفتحه ونبحث عن الفيديو
-        if iframe_url:
-            driver.get(iframe_url)
-            time.sleep(3)
-        
-        # البحث عن مصدر الفيديو
+            # استراتيجية 2: رابط نسبي يبدأ بـ /sk/p-
+            links = driver.find_elements(By.XPATH, "//a[contains(@href, '/sk/p-')]")
+            if links:
+                watch_link = links[0].get_attribute('href')
+                if watch_link.startswith('/'):
+                    watch_link = 'https://b.hagobi.com' + watch_link
+                print(f"🔗 تم العثور على رابط نسبي: {watch_link}")
+
+        if watch_link:
+            print("🔄 الانتقال إلى رابط المشاهدة...")
+            driver.get(watch_link)
+            time.sleep(5)
+        else:
+            # إذا لم نجد رابط مشاهدة، قد تكون الصفحة تحتوي على iframe مباشر
+            print("⚠️ لم يتم العثور على رابط مشاهدة، نبحث عن iframe مباشر...")
+            try:
+                iframe = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "iframe"))
+                )
+                iframe_url = iframe.get_attribute("src")
+                if iframe_url and iframe_url.startswith('//'):
+                    iframe_url = 'https:' + iframe_url
+                elif iframe_url.startswith('/'):
+                    iframe_url = 'https://b.hagobi.com' + iframe_url
+                print(f"📦 تم العثور على iframe: {iframe_url}")
+                driver.get(iframe_url)
+                time.sleep(3)
+            except:
+                print("⚠️ لا يوجد iframe، قد يكون الفيديو مباشراً")
+                # نكمل بالصفحة الحالية
+
+        # الآن بعد الوصول إلى الصفحة التي تحتوي على الفيديو، نبحث عنه
         video_url = None
         
         # الطريقة 1: عنصر video
@@ -228,8 +205,8 @@ def get_video_from_eishq(base_url):
         
         if video_url:
             print(f"🎥 رابط الفيديو: {video_url[:100]}...")
-            # نعيد رابط الفيديو و referer (يفضل استخدام iframe_url أو final_url)
-            referer = iframe_url if iframe_url else final_url
+            # نحدد referer (يفضل watch_link أو الرابط الحالي)
+            referer = watch_link if watch_link else driver.current_url
             return video_url, referer
         else:
             print("❌ لم يتم العثور على رابط الفيديو")
@@ -335,8 +312,8 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     """
     معالجة حلقة واحدة من new.eishq.net
     """
-    # بناء رابط الحلقة حسب نمط الموقع
-    base_url = f"https://new.eishq.net/video/{series_name}-sb{season_num}ep-{episode_num:02d}/"
+    # بناء رابط الحلقة حسب النمط الصحيح
+    base_url = f"https://new.eishq.net/video/{series_name}-sb{season_num}-ep-{episode_num:02d}/"
     
     print(f"\n🎬 Episode {episode_num:02d}")
     print(f"🔗 Base URL: {base_url}")
