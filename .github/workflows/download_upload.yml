@@ -29,7 +29,7 @@ on:
 
 jobs:
   upload-series:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
 
     steps:
@@ -41,13 +41,18 @@ jobs:
         with:
           python-version: '3.10'
 
-      # تسريع تثبيت ffmpeg باستخدام cache
-      - name: Cache APT packages
-        uses: awalsh128/cache-apt-packages@v1.1.3
-        with:
-          packages: ffmpeg
+      # التحقق من وجود ffmpeg وتثبيته إذا لزم الأمر (بخيارات خفيفة)
+      - name: Install ffmpeg (if not present)
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "ffmpeg not found, installing..."
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "ffmpeg already installed"
+          fi
 
-      # تثبيت Chrome و Chromedriver (بدون cache)
+      # تثبيت Chrome و Chromedriver
       - name: Install Chrome
         run: |
           sudo apt-get install -y google-chrome-stable
