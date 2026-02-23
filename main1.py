@@ -126,7 +126,7 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-# ===== دالة استخراج الفيديو من new.eishq.net (معدلة) =====
+# ===== دالة استخراج الفيديو من new.eishq.net (معدلة للتعامل مع النموذج) =====
 def get_video_from_eishq(base_url):
     driver = setup_selenium()
     if not driver:
@@ -135,46 +135,66 @@ def get_video_from_eishq(base_url):
     try:
         print(f"🖥️ فتح صفحة الحلقة: {base_url}")
         driver.get(base_url)
-        time.sleep(5)  # انتظار أطول لتحميل الصفحة
+        time.sleep(5)
 
-        # البحث عن رابط المشاهدة (b.hagobi.com)
+        # استراتيجية 1: البحث عن رابط مباشر إلى b.hagobi.com
         watch_link = None
-        # استراتيجية 1: رابط مباشر يحتوي على b.hagobi.com
         links = driver.find_elements(By.XPATH, "//a[contains(@href, 'b.hagobi.com')]")
         if links:
             watch_link = links[0].get_attribute('href')
-            print(f"🔗 تم العثور على رابط المشاهدة: {watch_link}")
+            print(f"🔗 تم العثور على رابط المشاهدة (a tag): {watch_link}")
+            driver.get(watch_link)
+            time.sleep(5)
         else:
-            # استراتيجية 2: رابط نسبي يبدأ بـ /sk/p-
+            # استراتيجية 2: البحث عن رابط نسبي /sk/p- في a tag
             links = driver.find_elements(By.XPATH, "//a[contains(@href, '/sk/p-')]")
             if links:
                 watch_link = links[0].get_attribute('href')
                 if watch_link.startswith('/'):
                     watch_link = 'https://b.hagobi.com' + watch_link
                 print(f"🔗 تم العثور على رابط نسبي: {watch_link}")
-
-        if watch_link:
-            print("🔄 الانتقال إلى رابط المشاهدة...")
-            driver.get(watch_link)
-            time.sleep(5)
-        else:
-            # إذا لم نجد رابط مشاهدة، قد تكون الصفحة تحتوي على iframe مباشر
-            print("⚠️ لم يتم العثور على رابط مشاهدة، نبحث عن iframe مباشر...")
-            try:
-                iframe = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-                )
-                iframe_url = iframe.get_attribute("src")
-                if iframe_url and iframe_url.startswith('//'):
-                    iframe_url = 'https:' + iframe_url
-                elif iframe_url.startswith('/'):
-                    iframe_url = 'https://b.hagobi.com' + iframe_url
-                print(f"📦 تم العثور على iframe: {iframe_url}")
-                driver.get(iframe_url)
-                time.sleep(3)
-            except:
-                print("⚠️ لا يوجد iframe، قد يكون الفيديو مباشراً")
-                # نكمل بالصفحة الحالية
+                driver.get(watch_link)
+                time.sleep(5)
+            else:
+                # استراتيجية 3: البحث عن نموذج (form) يحتوي على action إلى b.hagobi.com أو /sk/p-
+                forms = driver.find_elements(By.XPATH, "//form[contains(@action, 'b.hagobi.com') or contains(@action, '/sk/p-')]")
+                if forms:
+                    print("📝 تم العثور على نموذج مشاهدة، سيتم النقر على زر الإرسال...")
+                    # البحث عن زر الإرسال داخل النموذج
+                    submit_button = forms[0].find_element(By.XPATH, ".//button[@type='submit']")
+                    if submit_button:
+                        # تسجيل عدد النوافذ قبل النقر
+                        current_windows = driver.window_handles
+                        submit_button.click()
+                        time.sleep(8)  # انتظار أطول لتحميل الصفحة الجديدة
+                        
+                        # التحقق من فتح نافذة جديدة
+                        new_windows = driver.window_handles
+                        if len(new_windows) > len(current_windows):
+                            driver.switch_to.window(new_windows[-1])
+                            print("🪟 تم التبديل إلى النافذة الجديدة")
+                        else:
+                            print("🔄 تم البقاء في نفس النافذة")
+                    else:
+                        print("⚠️ لم يتم العثور على زر الإرسال في النموذج")
+                else:
+                    print("⚠️ لم يتم العثور على رابط أو نموذج مشاهدة، قد يكون iframe مباشر")
+                    # البحث عن iframe مباشر
+                    try:
+                        iframe = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.TAG_NAME, "iframe"))
+                        )
+                        iframe_url = iframe.get_attribute("src")
+                        if iframe_url and iframe_url.startswith('//'):
+                            iframe_url = 'https:' + iframe_url
+                        elif iframe_url.startswith('/'):
+                            iframe_url = 'https://b.hagobi.com' + iframe_url
+                        print(f"📦 تم العثور على iframe: {iframe_url}")
+                        driver.get(iframe_url)
+                        time.sleep(3)
+                    except:
+                        print("⚠️ لا يوجد iframe، قد يكون الفيديو مباشراً")
+                        # نكمل بالصفحة الحالية
 
         # الآن بعد الوصول إلى الصفحة التي تحتوي على الفيديو، نبحث عنه
         video_url = None
@@ -205,8 +225,7 @@ def get_video_from_eishq(base_url):
         
         if video_url:
             print(f"🎥 رابط الفيديو: {video_url[:100]}...")
-            # نحدد referer (يفضل watch_link أو الرابط الحالي)
-            referer = watch_link if watch_link else driver.current_url
+            referer = driver.current_url  # استخدام الرابط الحالي كـ referer
             return video_url, referer
         else:
             print("❌ لم يتم العثور على رابط الفيديو")
