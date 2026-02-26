@@ -126,7 +126,30 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-# ===== دالة استخراج الفيديو من new.eishq.net (معدلة بشكل نهائي) =====
+def extract_src_from_iframe(iframe_html):
+    """استخراج رابط src من كود iframe"""
+    match = re.search(r'src=["\'](https?://[^"\']+)["\']', iframe_html)
+    if match:
+        return match.group(1)
+    return None
+
+def test_video_url(url):
+    """اختبار ما إذا كان الرابط قابلاً للتنزيل باستخدام yt-dlp (بدون تحميل)"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info and 'url' in info or 'entries' in info:
+                return True
+    except Exception:
+        pass
+    return False
+
+# ===== دالة استخراج الفيديو من new.eishq.net (معدلة للتعامل مع عدة سيرفرات) =====
 def get_video_from_eishq(base_url):
     driver = setup_selenium()
     if not driver:
@@ -139,30 +162,22 @@ def get_video_from_eishq(base_url):
 
         # البحث عن النموذج
         try:
-            # ننتظر حتى يظهر النموذج
             form = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, "//form[contains(@action, 'b.hagobi.com') or contains(@action, '/sk/p-')]"))
             )
             print("📝 تم العثور على نموذج المشاهدة.")
 
-            # الحصول على رابط الإرسال (action) من النموذج
             action_url = form.get_attribute('action')
             if action_url and action_url.startswith('/'):
                 action_url = 'https://b.hagobi.com' + action_url
             print(f"🔗 رابط الإرسال (action): {action_url}")
 
-            # البحث عن زر الإرسال والنقر عليه
             submit_button = form.find_element(By.XPATH, ".//button[@type='submit']")
-            
             print("🖱️ جاري النقر على زر الإرسال وانتظار تحميل الصفحة الجديدة...")
             
-            # تسجيل عنوان URL الحالي قبل النقر
             old_url = driver.current_url
-            
-            # النقر على الزر
             submit_button.click()
             
-            # انتظار تغيير عنوان URL (أي حدوث إعادة توجيه) أو ظهور iframe أو video
             try:
                 WebDriverWait(driver, 15).until(
                     lambda d: d.current_url != old_url or 
@@ -170,14 +185,13 @@ def get_video_from_eishq(base_url):
                     EC.presence_of_element_located((By.TAG_NAME, "video"))(d)
                 )
                 print("✅ تم تحميل الصفحة الجديدة بنجاح.")
-                time.sleep(3) # انتظار إضافي لتحميل المحتوى الديناميكي
+                time.sleep(3)
             except:
                 print("⚠️ لم يتغير الرابط بعد النقر، قد يكون المحتوى في نفس الصفحة.")
-                # لا مشكلة، نكمل مع الصفحة الحالية
 
         except Exception as e:
             print(f"⚠️ لم يتم العثور على النموذج أو حدث خطأ: {e}")
-            # إذا لم نجد النموذج، نبحث عن iframe مباشر كما كان سابقًا (كخطة بديلة)
+            # محاولة البحث عن iframe مباشر
             try:
                 iframe = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "iframe"))
@@ -193,58 +207,63 @@ def get_video_from_eishq(base_url):
             except:
                 print("⚠️ لا يوجد iframe مباشر. جاري محاولة البحث عن روابط أخرى...")
 
-        # --- البحث عن الفيديو في الصفحة النهائية (الحالية) ---
-        print("🔍 جاري البحث عن رابط الفيديو في الصفحة النهائية...")
-        video_url = None
-        page_source = driver.page_source
+        # --- البحث عن قائمة السيرفرات في الصفحة النهائية ---
+        print("🔍 جاري البحث عن قائمة السيرفرات...")
+        server_iframes = []
 
-        # 1. البحث عن عنصر video
-        video_elements = driver.find_elements(By.TAG_NAME, "video")
-        for v in video_elements:
-            src = v.get_attribute("src")
-            if src:
-                video_url = src
-                print(f"✅ تم العثور على مصدر video: {video_url[:100]}...")
-                break
+        # 1. البحث عن ul.serversList
+        try:
+            server_list = driver.find_element(By.CSS_SELECTOR, "ul.serversList")
+            server_items = server_list.find_elements(By.TAG_NAME, "li")
+            for item in server_items:
+                data_server = item.get_attribute("data-server")
+                if data_server:
+                    src = extract_src_from_iframe(data_server)
+                    if src:
+                        server_iframes.append(src)
+                        print(f"  - تم العثور على سيرفر: {src}")
+        except:
+            print("⚠️ لم يتم العثور على قائمة serversList.")
 
-        # 2. البحث عن عناصر source
-        if not video_url:
-            sources = driver.find_elements(By.TAG_NAME, "source")
-            for s in sources:
-                src = s.get_attribute("src")
+        # 2. إذا لم نجد قائمة، نبحث عن iframe داخل .watch
+        if not server_iframes:
+            try:
+                watch_div = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+                src = watch_div.get_attribute("src")
                 if src:
-                    video_url = src
-                    print(f"✅ تم العثور على مصدر source: {video_url[:100]}...")
-                    break
+                    server_iframes.append(src)
+                    print(f"  - تم العثور على iframe في .watch: {src}")
+            except:
+                print("⚠️ لم يتم العثور على iframe في .watch.")
 
-        # 3. البحث عن روابط .m3u8 في النص
-        if not video_url:
-            m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
-            if m3u8_matches:
-                video_url = m3u8_matches[0]
-                print(f"✅ تم العثور على رابط m3u8: {video_url[:100]}...")
-
-        # 4. البحث عن iframe قد يحتوي على الفيديو (إذا لم نجد رابطًا مباشرًا)
-        if not video_url:
+        # 3. إذا لم نجد أي شيء، نبحث عن أي iframe في الصفحة (احتياطي)
+        if not server_iframes:
             iframes = driver.find_elements(By.TAG_NAME, "iframe")
             for iframe in iframes:
                 src = iframe.get_attribute("src")
-                if src and ('vidsp' in src or 'ok' in src or 'uqload' in src): # مصادر الفيديو الشائعة
-                    print(f"📦 تم العثور على iframe لمصدر فيديو: {src}")
-                    # هنا يمكننا إما الدخول إلى iframe أو تمرير الرابط لـ yt-dlp
-                    # الطريقة الأسهل: تمرير رابط iframe لـ yt-dlp
-                    video_url = src
-                    break
+                if src and ('vidsp' in src or 'ok' in src or 'uqload' in src):
+                    server_iframes.append(src)
+                    print(f"  - تم العثور على iframe إضافي: {src}")
+
+        # تجربة كل رابط حتى يعمل أحدهم
+        video_url = None
+        for iframe_src in server_iframes:
+            print(f"🔄 تجربة السيرفر: {iframe_src}")
+            if test_video_url(iframe_src):
+                video_url = iframe_src
+                print(f"✅ هذا السيرفر يعمل وسيتم استخدامه.")
+                break
+            else:
+                print(f"❌ هذا السيرفر لا يعمل، نجرب التالي...")
 
         if video_url:
-            # تحديد الـ referer (يُفضل استخدام الرابط الحالي للمشاهدة)
             referer = driver.current_url
             return video_url, referer
         else:
-            print("❌ فشل البحث: لم يتم العثور على أي رابط فيديو.")
-            # حفظ مصدر الصفحة للتشخيص (اختياري)
+            print("❌ فشل البحث: لم يتم العثور على أي رابط فيديو يعمل.")
+            # حفظ مصدر الصفحة للتشخيص
             with open("debug_page.html", "w", encoding="utf-8") as f:
-                f.write(page_source)
+                f.write(driver.page_source)
             print("💾 تم حفظ مصدر الصفحة في debug_page.html للمساعدة في التشخيص.")
             return None, None
 
