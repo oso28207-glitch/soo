@@ -136,7 +136,6 @@ def extract_src_from_iframe(iframe_html):
 def test_video_url(url):
     """اختبار ما إذا كان الرابط قابلاً للتنزيل باستخدام yt-dlp (بدون تحميل)"""
     try:
-        # محاولة استخراج المعلومات
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -144,36 +143,42 @@ def test_video_url(url):
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            if info:
-                # إذا كان هناك أكثر من إدخال (playlist) نعتبره ناجحاً
-                if 'entries' in info and info['entries']:
-                    return True
-                # إذا كان هناك عنوان url مباشر أو formats
-                if 'url' in info or 'formats' in info:
-                    return True
-    except Exception as e:
-        # قد يفشل بسبب عدم وجود extractor مناسب، نجرب طريقة بديلة: محاولة الحصول على العنوان فقط
-        try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'simulate': True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if info:
-                    return True
-        except:
-            pass
+            if info and ('url' in info or 'entries' in info):
+                return True
+    except Exception:
+        pass
     return False
 
-def fix_uqload_url(url):
-    """تعديل رابط uqload من .to إلى .is"""
-    if 'uqload.to' in url:
-        return url.replace('uqload.to', 'uqload.is')
-    return url
+def extract_video_from_uqload_page(driver, url):
+    """فتح صفحة Uqload واستخراج رابط الفيديو المباشر"""
+    try:
+        print(f"🔄 فتح صفحة Uqload: {url}")
+        driver.get(url)
+        time.sleep(5)  # انتظار تحميل الصفحة
+        page_source = driver.page_source
+        
+        # البحث عن رابط .mp4 داخل متغير sources
+        # نمط: sources: ["https://.../v.mp4"]
+        match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
+        if match:
+            video_url = match.group(1)
+            print(f"✅ تم استخراج رابط فيديو Uqload: {video_url[:100]}...")
+            return video_url
+        
+        # إذا لم نجد، نبحث عن أي رابط .mp4
+        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+        if match:
+            video_url = match.group(1)
+            print(f"✅ تم العثور على رابط mp4: {video_url[:100]}...")
+            return video_url
+        
+        print("❌ لم يتم العثور على رابط فيديو في صفحة Uqload.")
+        return None
+    except Exception as e:
+        print(f"❌ خطأ في استخراج الفيديو من Uqload: {e}")
+        return None
 
-# ===== دالة استخراج الفيديو من new.eishq.net (معدلة للتعامل مع عدة سيرفرات) =====
+# ===== دالة استخراج الفيديو من new.eishq.net (معدلة للتعامل مع Uqload) =====
 def get_video_from_eishq(base_url):
     driver = setup_selenium()
     if not driver:
@@ -244,8 +249,6 @@ def get_video_from_eishq(base_url):
                 if data_server:
                     src = extract_src_from_iframe(data_server)
                     if src:
-                        # تعديل رابط uqload إن وجد
-                        src = fix_uqload_url(src)
                         server_iframes.append(src)
                         print(f"  - تم العثور على سيرفر: {src}")
         except:
@@ -257,7 +260,6 @@ def get_video_from_eishq(base_url):
                 watch_div = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
                 src = watch_div.get_attribute("src")
                 if src:
-                    src = fix_uqload_url(src)
                     server_iframes.append(src)
                     print(f"  - تم العثور على iframe في .watch: {src}")
             except:
@@ -269,7 +271,6 @@ def get_video_from_eishq(base_url):
             for iframe in iframes:
                 src = iframe.get_attribute("src")
                 if src and ('vidsp' in src or 'ok' in src or 'uqload' in src):
-                    src = fix_uqload_url(src)
                     server_iframes.append(src)
                     print(f"  - تم العثور على iframe إضافي: {src}")
 
@@ -277,12 +278,23 @@ def get_video_from_eishq(base_url):
         video_url = None
         for iframe_src in server_iframes:
             print(f"🔄 تجربة السيرفر: {iframe_src}")
-            if test_video_url(iframe_src):
-                video_url = iframe_src
-                print(f"✅ هذا السيرفر يعمل وسيتم استخدامه.")
-                break
+            if 'uqload' in iframe_src:
+                # استخراج الفيديو مباشرة من صفحة uqload
+                uqload_video = extract_video_from_uqload_page(driver, iframe_src)
+                if uqload_video:
+                    video_url = uqload_video
+                    print(f"✅ تم الحصول على رابط فيديو مباشر من Uqload.")
+                    break
+                else:
+                    print("❌ فشل استخراج الفيديو من Uqload، نجرب السيرفر التالي...")
             else:
-                print(f"❌ هذا السيرفر لا يعمل، نجرب التالي...")
+                # للسيرفرات الأخرى، نستخدم yt-dlp لاختبار الرابط
+                if test_video_url(iframe_src):
+                    video_url = iframe_src
+                    print(f"✅ هذا السيرفر يعمل وسيتم استخدامه.")
+                    break
+                else:
+                    print(f"❌ هذا السيرفر لا يعمل، نجرب التالي...")
 
         if video_url:
             referer = driver.current_url
