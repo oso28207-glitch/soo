@@ -420,8 +420,8 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     معالجة حلقة واحدة من new.eishq.net
     """
     # بناء رابط الحلقة حسب النمط الصحيح
-    base_url = f"https://new.eishq.net/video/{series_name}-sb{season_num}-ep-{episode_num:02d}/"
-    
+    base_url = f"https://new.eishq.net/video/{series_name}-sb{season_num}-ep-01-2/"
+    # base_url = f"https://new.eishq.net/video/{series_name}-sb{season_num}-ep-{episode_num:02d}/"
     print(f"\n🎬 Episode {episode_num:02d}")
     print(f"🔗 Base URL: {base_url}")
     
