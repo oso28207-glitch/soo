@@ -152,6 +152,11 @@ def test_video_url(url):
 def extract_video_from_uqload_page(driver, url):
     """فتح صفحة Uqload واستخراج رابط الفيديو المباشر"""
     try:
+        # تحويل النطاق من .to إلى .is إذا لزم الأمر
+        if 'uqload.to' in url:
+            url = url.replace('uqload.to', 'uqload.is')
+            print(f"🔄 تم تحويل الرابط إلى: {url}")
+        
         print(f"🔄 فتح صفحة Uqload: {url}")
         driver.get(url)
         time.sleep(5)  # انتظار تحميل الصفحة
@@ -249,6 +254,9 @@ def get_video_from_eishq(base_url):
                 if data_server:
                     src = extract_src_from_iframe(data_server)
                     if src:
+                        # إذا كان الرابط من uqload.to، نحوله إلى uqload.is
+                        if 'uqload.to' in src:
+                            src = src.replace('uqload.to', 'uqload.is')
                         server_iframes.append(src)
                         print(f"  - تم العثور على سيرفر: {src}")
         except:
@@ -260,6 +268,8 @@ def get_video_from_eishq(base_url):
                 watch_div = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
                 src = watch_div.get_attribute("src")
                 if src:
+                    if 'uqload.to' in src:
+                        src = src.replace('uqload.to', 'uqload.is')
                     server_iframes.append(src)
                     print(f"  - تم العثور على iframe في .watch: {src}")
             except:
@@ -271,6 +281,8 @@ def get_video_from_eishq(base_url):
             for iframe in iframes:
                 src = iframe.get_attribute("src")
                 if src and ('vidsp' in src or 'ok' in src or 'uqload' in src):
+                    if 'uqload.to' in src:
+                        src = src.replace('uqload.to', 'uqload.is')
                     server_iframes.append(src)
                     print(f"  - تم العثور على iframe إضافي: {src}")
 
