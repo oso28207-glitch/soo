@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من w.eseeq.online
+Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من v.rmd.quest (AlbaPlayer)
 """
 
 import os
@@ -12,9 +12,7 @@ import shutil
 import asyncio
 import random
 import re
-import base64
 from datetime import datetime
-from urllib.parse import urlparse
 
 # ===== التهيئة والتحقق =====
 TELEGRAM_API_ID = os.environ.get("API_ID", "")
@@ -154,21 +152,25 @@ def test_video_url(url):
 def extract_video_from_uqload_page(driver, url):
     """فتح صفحة Uqload واستخراج رابط الفيديو المباشر"""
     try:
+        # تحويل النطاق من .to إلى .is إذا لزم الأمر
         if 'uqload.to' in url:
             url = url.replace('uqload.to', 'uqload.is')
             print(f"🔄 تم تحويل الرابط إلى: {url}")
         
         print(f"🔄 فتح صفحة Uqload: {url}")
         driver.get(url)
-        time.sleep(5)
+        time.sleep(5)  # انتظار تحميل الصفحة
         page_source = driver.page_source
         
+        # البحث عن رابط .mp4 داخل متغير sources
+        # نمط: sources: ["https://.../v.mp4"]
         match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
         if match:
             video_url = match.group(1)
             print(f"✅ تم استخراج رابط فيديو Uqload: {video_url[:100]}...")
             return video_url
         
+        # إذا لم نجد، نبحث عن أي رابط .mp4
         match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
         if match:
             video_url = match.group(1)
@@ -181,135 +183,72 @@ def extract_video_from_uqload_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو من Uqload: {e}")
         return None
 
-def decode_base64_url(encoded):
-    """محاولة فك تشفير base64 في الرابط"""
-    try:
-        match = re.search(r'([A-Za-z0-9+/=]{20,})', encoded)
-        if match:
-            decoded = base64.b64decode(match.group(1)).decode('utf-8')
-            print(f"🔓 تم فك تشفير base64: {decoded[:100]}...")
-            return decoded
-    except:
-        pass
-    return None
-
-# ===== دالة استخراج الفيديو من w.eseeq.online (معدلة) =====
-def get_video_from_eseeq(base_url):
-    driver = setup_selenium()
-    if not driver:
-        return None, None
-
+# ===== دالة استخراج الفيديو من موقع v.rmd.quest (AlbaPlayer) =====
+def get_video_from_rmd(driver, base_url):
+    """
+    استخراج رابط الفيديو من صفحة AlbaPlayer.
+    base_url: رابط الحلقة مع تحديد السيرفر (مثال: https://v.rmd.quest/albaplayer/ein-sehreya-s01e04/?serv=1)
+    """
     try:
         print(f"🖥️ فتح صفحة الحلقة: {base_url}")
         driver.get(base_url)
         time.sleep(5)
 
-        # انتظار ظهور زر التشغيل (play-video)
+        # البحث عن iframe داخل .aplr-player-content
         try:
-            play_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.ID, "play-video"))
+            iframe = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".aplr-player-content iframe"))
             )
-            print("✅ تم العثور على زر التشغيل.")
+            iframe_src = iframe.get_attribute("src")
+            print(f"📦 تم العثور على iframe: {iframe_src}")
         except Exception as e:
-            print(f"❌ لم يتم العثور على زر التشغيل: {e}")
+            print(f"❌ لم يتم العثور على iframe: {e}")
             return None, None
 
-        # حفظ النافذة الحالية
-        main_window = driver.current_window_handle
-
-        # النقر على الرابط (يفتح في نافذة جديدة)
-        play_button.click()
-
-        # انتظار حتى يتم فتح نافذة جديدة
-        WebDriverWait(driver, 15).until(EC.number_of_windows_to_be(2))
-
-        # التبديل إلى النافذة الجديدة
-        new_window = [window for window in driver.window_handles if window != main_window][0]
-        driver.switch_to.window(new_window)
-        print(f"🔄 تم التبديل إلى النافذة الجديدة: {driver.current_url}")
-
-        # انتظار تحميل الصفحة
-        time.sleep(10)
-
-        # الآن نبحث عن iframe المشغل
+        # التعامل مع iframe حسب المصدر
         video_url = None
+        referer = iframe_src  # سنستخدم رابط iframe كـ referer
 
-        # البحث عن iframe الذي يحتوي على v.rmd.quest أو albaplayer
+        # إذا كان iframe من Uqload
+        if 'uqload' in iframe_src:
+            video_url = extract_video_from_uqload_page(driver, iframe_src)
+            if video_url:
+                return video_url, referer
+
+        # للسيرفرات الأخرى: فتح iframe مباشرة والبحث عن عنصر الفيديو
+        print(f"🔄 فتح iframe المصدر: {iframe_src}")
+        driver.get(iframe_src)
+        time.sleep(5)
+
+        # محاولة العثور على عنصر <video> والحصول على src
         try:
-            iframe = WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'v.rmd.quest') or contains(@src, 'albaplayer')]"))
-            )
-            src = iframe.get_attribute("src")
-            if src:
-                print(f"📦 تم العثور على iframe المناسب: {src}")
-                video_url = src
+            video_element = driver.find_element(By.TAG_NAME, "video")
+            video_url = video_element.get_attribute("src")
+            if video_url:
+                print(f"✅ تم العثور على رابط فيديو مباشر: {video_url[:100]}...")
+                return video_url, referer
         except:
-            print("⚠️ لم يتم العثور على iframe يحتوي على 'v.rmd.quest' أو 'albaplayer'.")
+            pass
 
-        # إذا لم نجد، نبحث عن iframe بالمعرف srcFrame (كما في المثال)
-        if not video_url:
-            try:
-                iframe = driver.find_element(By.ID, "srcFrame")
-                src = iframe.get_attribute("src")
-                if src:
-                    print(f"📦 تم العثور على iframe بالمعرف 'srcFrame': {src}")
-                    video_url = src
-            except:
-                pass
+        # إذا لم نجد، نبحث في الصفحة عن أي رابط .mp4
+        page_source = driver.page_source
+        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+        if match:
+            video_url = match.group(1)
+            print(f"✅ تم العثور على رابط mp4 في الصفحة: {video_url[:100]}...")
+            return video_url, referer
 
-        # إذا لم نجد، نبحث في مصدر الصفحة
-        if not video_url:
-            page_source = driver.page_source
-            match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+v\.rmd\.quest[^"\']+)["\']', page_source)
-            if match:
-                video_url = match.group(1)
-                print(f"🔍 تم استخراج رابط iframe من HTML: {video_url}")
-            else:
-                match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+albaplayer[^"\']+)["\']', page_source)
-                if match:
-                    video_url = match.group(1)
-                    print(f"🔍 تم استخراج رابط iframe من HTML: {video_url}")
+        # إذا فشل كل شيء، نحاول استخدام yt-dlp كحل أخير
+        if test_video_url(iframe_src):
+            print("✅ iframe_src قابل للتنزيل عبر yt-dlp، سيتم استخدامه.")
+            return iframe_src, referer
 
-        if video_url:
-            # اختبر إذا كان الرابط يعمل مع yt-dlp
-            if test_video_url(video_url):
-                print(f"✅ الرابط يعمل وسيتم استخدامه.")
-                referer = driver.current_url
-                return video_url, referer
-            else:
-                print(f"⚠️ الرابط لا يعمل مباشرة، قد نحتاج إلى استخراج الفيديو من صفحة المشغل.")
-                # قد نحتاج إلى فتح صفحة المشغل نفسها (مثل v.rmd.quest) واستخراج iframe داخلي
-                if 'v.rmd.quest' in video_url or 'albaplayer' in video_url:
-                    print(f"🔄 محاولة استخراج الفيديو من صفحة المشغل: {video_url}")
-                    driver.get(video_url)
-                    time.sleep(10)
-                    # البحث عن iframe داخل هذه الصفحة (قد يكون uqload)
-                    iframes_inner = driver.find_elements(By.TAG_NAME, "iframe")
-                    for iframe_inner in iframes_inner:
-                        src_inner = iframe_inner.get_attribute("src")
-                        if src_inner and 'uqload' in src_inner:
-                            uqload_video = extract_video_from_uqload_page(driver, src_inner)
-                            if uqload_video:
-                                referer = driver.current_url
-                                return uqload_video, referer
-                    # إذا لم نجد uqload، نحاول اختبار الرابط الأصلي مرة أخرى
-                    if test_video_url(video_url):
-                        return video_url, driver.current_url
-                referer = driver.current_url
-                return video_url, referer
-        else:
-            print("❌ فشل البحث: لم يتم العثور على أي رابط iframe.")
-            # حفظ مصدر الصفحة للتشخيص
-            with open("debug_page.html", "w", encoding="utf-8") as f:
-                f.write(driver.page_source)
-            print("💾 تم حفظ مصدر الصفحة في debug_page.html للمساعدة في التشخيص.")
-            return None, None
+        print("❌ فشل استخراج رابط الفيديو من iframe.")
+        return None, None
 
     except Exception as e:
         print(f"❌ خطأ رئيسي في استخراج الفيديو: {e}")
         return None, None
-    finally:
-        driver.quit()
 
 def download_video(video_url, output_path, referer):
     """تنزيل الفيديو باستخدام yt-dlp مع impersonation وإضافة referer"""
@@ -401,22 +340,28 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
+async def process_episode(episode_num, series_name, series_name_arabic, season_num, server_num, download_dir):
     """
-    معالجة حلقة واحدة من w.eseeq.online
+    معالجة حلقة واحدة من v.rmd.quest (AlbaPlayer)
     """
-    # بناء رابط الحلقة حسب النمط الصحيح للموقع الجديد
-    # مثال: https://w.eseeq.online/video/ein-sehreya-1/
-    base_url = f"https://w.eseeq.online/video/{series_name}-{episode_num}/"
-    print(f"\n🎬 Episode {episode_num}")
+    # بناء رابط الحلقة حسب النمط: https://v.rmd.quest/albaplayer/{series_name}-s{season:02d}e{episode:02d}/?serv={server_num}
+    # ملاحظة: season و episode بصيغة 01, 02 إلخ
+    base_url = f"https://v.rmd.quest/albaplayer/{series_name}-s{season_num:02d}e{episode_num:02d}/?serv={server_num}"
+    print(f"\n🎬 Episode {episode_num:02d}")
     print(f"🔗 Base URL: {base_url}")
     
-    temp_file = os.path.join(download_dir, f"temp_{episode_num}.mp4")
-    final_file = os.path.join(download_dir, f"final_{episode_num}.mp4")
-    thumb_file = os.path.join(download_dir, f"thumb_{episode_num}.jpg")
+    temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
+    final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
+    thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # استخراج رابط الفيديو باستخدام Selenium
-    video_url, referer = get_video_from_eseeq(base_url)
+    # إعداد Selenium واستخراج الفيديو
+    driver = setup_selenium()
+    if not driver:
+        return False, "فشل إعداد Selenium"
+    
+    video_url, referer = get_video_from_rmd(driver, base_url)
+    driver.quit()
+
     if not video_url:
         return False, "فشل استخراج رابط الفيديو"
     
@@ -447,7 +392,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
 async def main():
     print("="*50)
-    print("🎬 معالج الفيديو المتكامل باستخدام Selenium (w.eseeq.online)")
+    print("🎬 معالج الفيديو المتكامل (AlbaPlayer - v.rmd.quest)")
     print("="*50)
 
     # التحقق من ffmpeg
@@ -476,11 +421,12 @@ async def main():
     with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
-    series_name = config.get("series_name", "").strip()  # مثل "ein-sehreya"
+    series_name = config.get("series_name", "").strip()  # مثل "ein-sehreya" (بدون s01e04)
     series_name_arabic = config.get("series_name_arabic", "").strip()
     season_num = int(config.get("season_num", 1))
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
+    server_num = int(config.get("server_num", 1))  # رقم السيرفر (serv=1,2,3,...)
 
     if not series_name:
         print("❌ series_name مفقود في config")
@@ -493,6 +439,7 @@ async def main():
 
     print(f"📺 المسلسل: {series_name_arabic}")
     print(f"🎬 الحلقات: {start_ep} إلى {end_ep}")
+    print(f"🔢 السيرفر المحدد: {server_num}")
 
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
@@ -501,7 +448,7 @@ async def main():
     failed = []
 
     for ep in range(start_ep, end_ep + 1):
-        success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, download_dir)
+        success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, server_num, download_dir)
         if success:
             successful += 1
             print(f"✅ الحلقة {ep} اكتملت")
