@@ -154,25 +154,21 @@ def test_video_url(url):
 def extract_video_from_uqload_page(driver, url):
     """فتح صفحة Uqload واستخراج رابط الفيديو المباشر"""
     try:
-        # تحويل النطاق من .to إلى .is إذا لزم الأمر
         if 'uqload.to' in url:
             url = url.replace('uqload.to', 'uqload.is')
             print(f"🔄 تم تحويل الرابط إلى: {url}")
         
         print(f"🔄 فتح صفحة Uqload: {url}")
         driver.get(url)
-        time.sleep(5)  # انتظار تحميل الصفحة
+        time.sleep(5)
         page_source = driver.page_source
         
-        # البحث عن رابط .mp4 داخل متغير sources
-        # نمط: sources: ["https://.../v.mp4"]
         match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
         if match:
             video_url = match.group(1)
             print(f"✅ تم استخراج رابط فيديو Uqload: {video_url[:100]}...")
             return video_url
         
-        # إذا لم نجد، نبحث عن أي رابط .mp4
         match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
         if match:
             video_url = match.group(1)
@@ -185,44 +181,9 @@ def extract_video_from_uqload_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو من Uqload: {e}")
         return None
 
-def extract_video_from_generic_page(driver, url):
-    """محاولة استخراج رابط الفيديو من أي صفحة (iframes أو mp4 مباشر)"""
-    try:
-        driver.get(url)
-        time.sleep(5)
-        page_source = driver.page_source
-        
-        # البحث عن أي رابط mp4 مباشر
-        mp4_matches = re.findall(r'(https?://[^"\'\s]+\.mp4[^"\'\s]*)', page_source)
-        if mp4_matches:
-            print(f"✅ تم العثور على رابط mp4 مباشر: {mp4_matches[0][:100]}...")
-            return mp4_matches[0]
-        
-        # البحث عن iframes
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        for iframe in iframes:
-            src = iframe.get_attribute("src")
-            if src:
-                print(f"🔄 فحص iframe: {src}")
-                # إذا كان iframe من uqload، نستخدم الدالة المخصصة
-                if 'uqload' in src:
-                    uqload_video = extract_video_from_uqload_page(driver, src)
-                    if uqload_video:
-                        return uqload_video
-                else:
-                    # اختبار الرابط مباشرة
-                    if test_video_url(src):
-                        print(f"✅ هذا iframe يعمل: {src}")
-                        return src
-        return None
-    except Exception as e:
-        print(f"❌ خطأ في استخراج الفيديو من الصفحة العامة: {e}")
-        return None
-
 def decode_base64_url(encoded):
-    """محاولة فك تشفير base64 في الرابط (قد يكون موجوداً في صفحة السيرفرات)"""
+    """محاولة فك تشفير base64 في الرابط"""
     try:
-        # البحث عن نص base64 (قد يكون جزءاً من الرابط)
         match = re.search(r'([A-Za-z0-9+/=]{20,})', encoded)
         if match:
             decoded = base64.b64decode(match.group(1)).decode('utf-8')
@@ -260,53 +221,51 @@ def get_video_from_eseeq(base_url):
         # الانتقال إلى صفحة السيرفرات
         print("🔄 الانتقال إلى صفحة السيرفرات...")
         driver.get(server_page_url)
-        time.sleep(5)
+        time.sleep(10)  # انتظار تحميل الصفحة وتشغيل السكريبتات
 
-        # محاولة استخراج رابط الفيديو من صفحة السيرفرات
+        # البحث عن iframe الذي يحتوي على الفيديو (عادةً id="srcFrame")
         video_url = None
-
-        # 1. البحث عن أي iframe في الصفحة
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        for iframe in iframes:
+        try:
+            iframe = WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "srcFrame"))
+            )
             src = iframe.get_attribute("src")
             if src:
-                print(f"🔄 فحص iframe: {src}")
-                if 'uqload' in src:
-                    video_url = extract_video_from_uqload_page(driver, src)
-                    if video_url:
-                        break
-                else:
-                    if test_video_url(src):
-                        video_url = src
-                        print(f"✅ iframe يعمل: {src}")
-                        break
+                print(f"📦 تم العثور على iframe بالمصدر: {src}")
+                video_url = src
+        except:
+            print("⚠️ لم يتم العثور على iframe بالمعرف 'srcFrame'، البحث عن أي iframe...")
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            for iframe in iframes:
+                src = iframe.get_attribute("src")
+                if src and ('v.rmd.quest' in src or 'albaplayer' in src):
+                    video_url = src
+                    print(f"📦 تم العثور على iframe مناسب: {src}")
+                    break
 
-        # 2. إذا لم نجد iframe، نبحث عن رابط mp4 مباشر في الصفحة
         if not video_url:
+            # إذا لم نجد iframe، نبحث في مصدر الصفحة
             page_source = driver.page_source
-            mp4_matches = re.findall(r'(https?://[^"\'\s]+\.mp4[^"\'\s]*)', page_source)
-            if mp4_matches:
-                video_url = mp4_matches[0]
-                print(f"✅ تم العثور على رابط mp4 مباشر: {video_url[:100]}...")
-
-        # 3. إذا لم نجد، نحاول فك تشفير base64 في الرابط الحالي
-        if not video_url:
-            decoded = decode_base64_url(driver.current_url)
-            if decoded and test_video_url(decoded):
-                video_url = decoded
-                print(f"✅ تم فك تشفير رابط الفيديو: {video_url[:100]}...")
-
-        # 4. كحل أخير، نجرب استخدام yt-dlp على رابط صفحة السيرفرات نفسها
-        if not video_url:
-            if test_video_url(driver.current_url):
-                video_url = driver.current_url
-                print(f"✅ صفحة السيرفرات نفسها تعمل مع yt-dlp.")
+            # البحث عن رابط iframe في كود HTML
+            match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+)["\']', page_source)
+            if match:
+                video_url = match.group(1)
+                print(f"🔍 تم استخراج رابط iframe من HTML: {video_url}")
 
         if video_url:
-            referer = driver.current_url
-            return video_url, referer
+            # اختبر إذا كان الرابط يعمل مع yt-dlp
+            if test_video_url(video_url):
+                print(f"✅ الرابط يعمل وسيتم استخدامه.")
+                referer = driver.current_url
+                return video_url, referer
+            else:
+                print(f"⚠️ الرابط لا يعمل مباشرة، قد نحتاج إلى استخراج الفيديو من صفحة المشغل.")
+                # قد نحتاج لزيارة صفحة المشغل واستخراج الفيديو (تطوير مستقبلي)
+                # نعيد الرابط على أمل أن يعمل مع yt-dlp بعد التحديث
+                referer = driver.current_url
+                return video_url, referer
         else:
-            print("❌ فشل البحث: لم يتم العثور على أي رابط فيديو يعمل.")
+            print("❌ فشل البحث: لم يتم العثور على أي رابط iframe.")
             # حفظ مصدر الصفحة للتشخيص
             with open("debug_page.html", "w", encoding="utf-8") as f:
                 f.write(driver.page_source)
