@@ -193,12 +193,12 @@ def decode_base64_url(encoded):
         pass
     return None
 
-# ===== دالة استخراج الفيديو من w.eseeq.online =====
+# ===== دالة استخراج الفيديو من w.eseeq.online (معدلة) =====
 def get_video_from_eseeq(base_url):
     driver = setup_selenium()
     if not driver:
         return None, None
-    
+
     try:
         print(f"🖥️ فتح صفحة الحلقة: {base_url}")
         driver.get(base_url)
@@ -207,50 +207,68 @@ def get_video_from_eseeq(base_url):
         # انتظار ظهور زر التشغيل (play-video)
         try:
             play_button = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "play-video"))
+                EC.element_to_be_clickable((By.ID, "play-video"))
             )
             print("✅ تم العثور على زر التشغيل.")
-            server_page_url = play_button.get_attribute("href")
-            if server_page_url.startswith('//'):
-                server_page_url = 'https:' + server_page_url
-            print(f"🔗 رابط صفحة السيرفرات: {server_page_url}")
         except Exception as e:
             print(f"❌ لم يتم العثور على زر التشغيل: {e}")
             return None, None
 
-        # الانتقال إلى صفحة السيرفرات
-        print("🔄 الانتقال إلى صفحة السيرفرات...")
-        driver.get(server_page_url)
-        time.sleep(10)  # انتظار تحميل الصفحة وتشغيل السكريبتات
+        # حفظ النافذة الحالية
+        main_window = driver.current_window_handle
 
-        # البحث عن iframe الذي يحتوي على الفيديو (عادةً id="srcFrame")
+        # النقر على الرابط (يفتح في نافذة جديدة)
+        play_button.click()
+
+        # انتظار حتى يتم فتح نافذة جديدة
+        WebDriverWait(driver, 15).until(EC.number_of_windows_to_be(2))
+
+        # التبديل إلى النافذة الجديدة
+        new_window = [window for window in driver.window_handles if window != main_window][0]
+        driver.switch_to.window(new_window)
+        print(f"🔄 تم التبديل إلى النافذة الجديدة: {driver.current_url}")
+
+        # انتظار تحميل الصفحة
+        time.sleep(10)
+
+        # الآن نبحث عن iframe المشغل
         video_url = None
+
+        # البحث عن iframe الذي يحتوي على v.rmd.quest أو albaplayer
         try:
             iframe = WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.ID, "srcFrame"))
+                EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'v.rmd.quest') or contains(@src, 'albaplayer')]"))
             )
             src = iframe.get_attribute("src")
             if src:
-                print(f"📦 تم العثور على iframe بالمصدر: {src}")
+                print(f"📦 تم العثور على iframe المناسب: {src}")
                 video_url = src
         except:
-            print("⚠️ لم يتم العثور على iframe بالمعرف 'srcFrame'، البحث عن أي iframe...")
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            for iframe in iframes:
-                src = iframe.get_attribute("src")
-                if src and ('v.rmd.quest' in src or 'albaplayer' in src):
-                    video_url = src
-                    print(f"📦 تم العثور على iframe مناسب: {src}")
-                    break
+            print("⚠️ لم يتم العثور على iframe يحتوي على 'v.rmd.quest' أو 'albaplayer'.")
 
+        # إذا لم نجد، نبحث عن iframe بالمعرف srcFrame (كما في المثال)
         if not video_url:
-            # إذا لم نجد iframe، نبحث في مصدر الصفحة
+            try:
+                iframe = driver.find_element(By.ID, "srcFrame")
+                src = iframe.get_attribute("src")
+                if src:
+                    print(f"📦 تم العثور على iframe بالمعرف 'srcFrame': {src}")
+                    video_url = src
+            except:
+                pass
+
+        # إذا لم نجد، نبحث في مصدر الصفحة
+        if not video_url:
             page_source = driver.page_source
-            # البحث عن رابط iframe في كود HTML
-            match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+)["\']', page_source)
+            match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+v\.rmd\.quest[^"\']+)["\']', page_source)
             if match:
                 video_url = match.group(1)
                 print(f"🔍 تم استخراج رابط iframe من HTML: {video_url}")
+            else:
+                match = re.search(r'<iframe[^>]+src=["\'](https?://[^"\']+albaplayer[^"\']+)["\']', page_source)
+                if match:
+                    video_url = match.group(1)
+                    print(f"🔍 تم استخراج رابط iframe من HTML: {video_url}")
 
         if video_url:
             # اختبر إذا كان الرابط يعمل مع yt-dlp
@@ -260,8 +278,23 @@ def get_video_from_eseeq(base_url):
                 return video_url, referer
             else:
                 print(f"⚠️ الرابط لا يعمل مباشرة، قد نحتاج إلى استخراج الفيديو من صفحة المشغل.")
-                # قد نحتاج لزيارة صفحة المشغل واستخراج الفيديو (تطوير مستقبلي)
-                # نعيد الرابط على أمل أن يعمل مع yt-dlp بعد التحديث
+                # قد نحتاج إلى فتح صفحة المشغل نفسها (مثل v.rmd.quest) واستخراج iframe داخلي
+                if 'v.rmd.quest' in video_url or 'albaplayer' in video_url:
+                    print(f"🔄 محاولة استخراج الفيديو من صفحة المشغل: {video_url}")
+                    driver.get(video_url)
+                    time.sleep(10)
+                    # البحث عن iframe داخل هذه الصفحة (قد يكون uqload)
+                    iframes_inner = driver.find_elements(By.TAG_NAME, "iframe")
+                    for iframe_inner in iframes_inner:
+                        src_inner = iframe_inner.get_attribute("src")
+                        if src_inner and 'uqload' in src_inner:
+                            uqload_video = extract_video_from_uqload_page(driver, src_inner)
+                            if uqload_video:
+                                referer = driver.current_url
+                                return uqload_video, referer
+                    # إذا لم نجد uqload، نحاول اختبار الرابط الأصلي مرة أخرى
+                    if test_video_url(video_url):
+                        return video_url, driver.current_url
                 referer = driver.current_url
                 return video_url, referer
         else:
