@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium
-يدعم مواقع متعددة عبر قالب رابط مخصص، مع استخراج ذكي للفيديو.
+Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من new.eishq.net
 """
 
 import os
@@ -127,6 +126,13 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
+def extract_src_from_iframe(iframe_html):
+    """استخراج رابط src من كود iframe"""
+    match = re.search(r'src=["\'](https?://[^"\']+)["\']', iframe_html)
+    if match:
+        return match.group(1)
+    return None
+
 def test_video_url(url):
     """اختبار ما إذا كان الرابط قابلاً للتنزيل باستخدام yt-dlp (بدون تحميل)"""
     try:
@@ -153,17 +159,18 @@ def extract_video_from_uqload_page(driver, url):
         
         print(f"🔄 فتح صفحة Uqload: {url}")
         driver.get(url)
-        time.sleep(5)
+        time.sleep(5)  # انتظار تحميل الصفحة
         page_source = driver.page_source
         
         # البحث عن رابط .mp4 داخل متغير sources
+        # نمط: sources: ["https://.../v.mp4"]
         match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
         if match:
             video_url = match.group(1)
             print(f"✅ تم استخراج رابط فيديو Uqload: {video_url[:100]}...")
             return video_url
         
-        # البحث عن أي رابط mp4
+        # إذا لم نجد، نبحث عن أي رابط .mp4
         match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
         if match:
             video_url = match.group(1)
@@ -176,97 +183,141 @@ def extract_video_from_uqload_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو من Uqload: {e}")
         return None
 
-# ===== دالة استخراج الفيديو من أي صفحة (معاد كتابتها لتكون عامة) =====
-def extract_video_from_page(base_url):
-    """
-    دالة عامة لاستخراج رابط الفيديو من صفحة ويب.
-    تبحث عن:
-    - فيديو مباشر (<video src=...>)
-    - iframe (وتتعامل مع uqload بشكل خاص)
-    - روابط mp4 مباشرة في الصفحة
-    - وأخيراً تحاول باستخدام yt-dlp
-    """
+# ===== دالة استخراج الفيديو من new.eishq.net (معدلة للتعامل مع Uqload) =====
+def get_video_from_eishq(base_url):
     driver = setup_selenium()
     if not driver:
         return None, None
     
     try:
-        print(f"🖥️ فتح الصفحة: {base_url}")
+        print(f"🖥️ فتح صفحة الحلقة: {base_url}")
         driver.get(base_url)
-        time.sleep(5)  # انتظار أولي لتحميل المحتوى
+        time.sleep(5)
 
-        # ---------- 1. البحث عن فيديو مباشر في الصفحة ----------
+        # البحث عن النموذج
         try:
-            video_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.TAG_NAME, "video"))
+            form = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "//form[contains(@action, 'b.hagobi.com') or contains(@action, '/sk/p-')]"))
             )
-            video_src = video_element.get_attribute("src")
-            if video_src and video_src.startswith("http"):
-                print(f"✅ تم العثور على فيديو مباشر: {video_src[:100]}...")
-                referer = driver.current_url
-                return video_src, referer
-        except:
-            print("ℹ️ لم يتم العثور على فيديو مباشر في الصفحة.")
+            print("📝 تم العثور على نموذج المشاهدة.")
 
-        # ---------- 2. البحث عن iframes ----------
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        if iframes:
-            print(f"🔍 تم العثور على {len(iframes)} iframe، جاري فحصهم...")
+            action_url = form.get_attribute('action')
+            if action_url and action_url.startswith('/'):
+                action_url = 'https://b.hagobi.com' + action_url
+            print(f"🔗 رابط الإرسال (action): {action_url}")
+
+            submit_button = form.find_element(By.XPATH, ".//button[@type='submit']")
+            print("🖱️ جاري النقر على زر الإرسال وانتظار تحميل الصفحة الجديدة...")
+            
+            old_url = driver.current_url
+            submit_button.click()
+            
+            try:
+                WebDriverWait(driver, 15).until(
+                    lambda d: d.current_url != old_url or 
+                    EC.presence_of_element_located((By.TAG_NAME, "iframe"))(d) or
+                    EC.presence_of_element_located((By.TAG_NAME, "video"))(d)
+                )
+                print("✅ تم تحميل الصفحة الجديدة بنجاح.")
+                time.sleep(3)
+            except:
+                print("⚠️ لم يتغير الرابط بعد النقر، قد يكون المحتوى في نفس الصفحة.")
+
+        except Exception as e:
+            print(f"⚠️ لم يتم العثور على النموذج أو حدث خطأ: {e}")
+            # محاولة البحث عن iframe مباشر
+            try:
+                iframe = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "iframe"))
+                )
+                iframe_url = iframe.get_attribute("src")
+                if iframe_url and iframe_url.startswith('//'):
+                    iframe_url = 'https:' + iframe_url
+                elif iframe_url.startswith('/'):
+                    iframe_url = 'https://b.hagobi.com' + iframe_url
+                print(f"📦 تم العثور على iframe مباشر: {iframe_url}")
+                driver.get(iframe_url)
+                time.sleep(3)
+            except:
+                print("⚠️ لا يوجد iframe مباشر. جاري محاولة البحث عن روابط أخرى...")
+
+        # --- البحث عن قائمة السيرفرات في الصفحة النهائية ---
+        print("🔍 جاري البحث عن قائمة السيرفرات...")
+        server_iframes = []
+
+        # 1. البحث عن ul.serversList
+        try:
+            server_list = driver.find_element(By.CSS_SELECTOR, "ul.serversList")
+            server_items = server_list.find_elements(By.TAG_NAME, "li")
+            for item in server_items:
+                data_server = item.get_attribute("data-server")
+                if data_server:
+                    src = extract_src_from_iframe(data_server)
+                    if src:
+                        # إذا كان الرابط من uqload.to، نحوله إلى uqload.is
+                        if 'uqload.to' in src:
+                            src = src.replace('uqload.to', 'uqload.is')
+                        server_iframes.append(src)
+                        print(f"  - تم العثور على سيرفر: {src}")
+        except:
+            print("⚠️ لم يتم العثور على قائمة serversList.")
+
+        # 2. إذا لم نجد قائمة، نبحث عن iframe داخل .watch
+        if not server_iframes:
+            try:
+                watch_div = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+                src = watch_div.get_attribute("src")
+                if src:
+                    if 'uqload.to' in src:
+                        src = src.replace('uqload.to', 'uqload.is')
+                    server_iframes.append(src)
+                    print(f"  - تم العثور على iframe في .watch: {src}")
+            except:
+                print("⚠️ لم يتم العثور على iframe في .watch.")
+
+        # 3. إذا لم نجد أي شيء، نبحث عن أي iframe في الصفحة (احتياطي)
+        if not server_iframes:
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
             for iframe in iframes:
                 src = iframe.get_attribute("src")
-                if not src:
-                    continue
-                # تنظيف الرابط
-                if src.startswith('//'):
-                    src = 'https:' + src
-                elif src.startswith('/'):
-                    src = 'https://' + driver.current_url.split('/')[2] + src
-                
-                print(f"  - معاينة iframe: {src[:100]}...")
-                
-                # إذا كان iframe من uqload، نستخدم المعالج الخاص
-                if 'uqload' in src:
-                    video_url = extract_video_from_uqload_page(driver, src)
-                    if video_url:
-                        return video_url, driver.current_url
+                if src and ('vidsp' in src or 'ok' in src or 'uqload' in src):
+                    if 'uqload.to' in src:
+                        src = src.replace('uqload.to', 'uqload.is')
+                    server_iframes.append(src)
+                    print(f"  - تم العثور على iframe إضافي: {src}")
+
+        # تجربة كل رابط حتى يعمل أحدهم
+        video_url = None
+        for iframe_src in server_iframes:
+            print(f"🔄 تجربة السيرفر: {iframe_src}")
+            if 'uqload' in iframe_src:
+                # استخراج الفيديو مباشرة من صفحة uqload
+                uqload_video = extract_video_from_uqload_page(driver, iframe_src)
+                if uqload_video:
+                    video_url = uqload_video
+                    print(f"✅ تم الحصول على رابط فيديو مباشر من Uqload.")
+                    break
                 else:
-                    # محاولة فتح iframe والبحث داخله عن فيديو
-                    try:
-                        driver.get(src)
-                        time.sleep(3)
-                        # بحث متكرر عن فيديو داخل iframe
-                        video_inside = driver.find_elements(By.TAG_NAME, "video")
-                        if video_inside:
-                            video_src = video_inside[0].get_attribute("src")
-                            if video_src:
-                                print(f"✅ تم العثور على فيديو داخل iframe: {video_src[:100]}...")
-                                return video_src, src
-                    except Exception as e:
-                        print(f"⚠️ فشل فتح iframe: {e}")
-                        # نعود للصفحة الأصلية
-                        driver.get(base_url)
-                        time.sleep(2)
+                    print("❌ فشل استخراج الفيديو من Uqload، نجرب السيرفر التالي...")
+            else:
+                # للسيرفرات الأخرى، نستخدم yt-dlp لاختبار الرابط
+                if test_video_url(iframe_src):
+                    video_url = iframe_src
+                    print(f"✅ هذا السيرفر يعمل وسيتم استخدامه.")
+                    break
+                else:
+                    print(f"❌ هذا السيرفر لا يعمل، نجرب التالي...")
+
+        if video_url:
+            referer = driver.current_url
+            return video_url, referer
         else:
-            print("ℹ️ لا يوجد iframes في الصفحة.")
-
-        # ---------- 3. البحث عن روابط mp4 مباشرة في الصفحة ----------
-        page_source = driver.page_source
-        mp4_links = re.findall(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
-        if mp4_links:
-            print(f"✅ تم العثور على رابط mp4 مباشر في النص: {mp4_links[0][:100]}...")
-            return mp4_links[0], driver.current_url
-
-        # ---------- 4. محاولة أخيرة: استخدام yt-dlp لاكتشاف الرابط ----------
-        print("🔄 محاولة استخراج الرابط باستخدام yt-dlp...")
-        if test_video_url(base_url):
-            return base_url, driver.current_url
-
-        # ---------- الفشل ----------
-        print("❌ فشل البحث: لم يتم العثور على أي رابط فيديو.")
-        with open("debug_page.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-        print("💾 تم حفظ مصدر الصفحة في debug_page.html للمساعدة في التشخيص.")
-        return None, None
+            print("❌ فشل البحث: لم يتم العثور على أي رابط فيديو يعمل.")
+            # حفظ مصدر الصفحة للتشخيص
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            print("💾 تم حفظ مصدر الصفحة في debug_page.html للمساعدة في التشخيص.")
+            return None, None
 
     except Exception as e:
         print(f"❌ خطأ رئيسي في استخراج الفيديو: {e}")
@@ -364,23 +415,22 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir, url_template):
+async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     """
-    معالجة حلقة واحدة باستخدام قالب الرابط المخصص.
+    معالجة حلقة واحدة من new.eishq.net
     """
-    # استبدال المتغيرات في القالب
-    url = url_template.replace("{series_name}", series_name)\
-                      .replace("{episode}", str(episode_num))\
-                      .replace("{season}", str(season_num))
+    # بناء رابط الحلقة حسب النمط الصحيح
+    base_url = f"https://w.eseeq.online/video/{series_name}-{episode_num:02d}/"
+    # base_url = f"https://w.eseeq.online/video/{series_name}-{episode_num:02d}/"
     print(f"\n🎬 Episode {episode_num:02d}")
-    print(f"🔗 URL: {url}")
+    print(f"🔗 Base URL: {base_url}")
     
     temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
     # استخراج رابط الفيديو باستخدام Selenium
-    video_url, referer = extract_video_from_page(url)
+    video_url, referer = get_video_from_eishq(base_url)
     if not video_url:
         return False, "فشل استخراج رابط الفيديو"
     
@@ -411,7 +461,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
 async def main():
     print("="*50)
-    print("🎬 معالج الفيديو المتكامل (Selenium) - يدعم المواقع المخصصة")
+    print("🎬 معالج الفيديو المتكامل باستخدام Selenium (new.eishq.net)")
     print("="*50)
 
     # التحقق من ffmpeg
@@ -440,18 +490,14 @@ async def main():
     with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
-    series_name = config.get("series_name", "").strip()
+    series_name = config.get("series_name", "").strip()  # مثل "luebat-hubin"
     series_name_arabic = config.get("series_name_arabic", "").strip()
     season_num = int(config.get("season_num", 1))
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
-    url_template = config.get("url_template", "").strip()
 
     if not series_name:
         print("❌ series_name مفقود في config")
-        return
-    if not url_template:
-        print("❌ url_template مفقود في config. مثال: 'https://w.eseeq.online/video/{series_name}-{episode}/'")
         return
 
     # تقليل العدد للحماية
@@ -461,7 +507,6 @@ async def main():
 
     print(f"📺 المسلسل: {series_name_arabic}")
     print(f"🎬 الحلقات: {start_ep} إلى {end_ep}")
-    print(f"🔧 قالب الرابط: {url_template}")
 
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
@@ -470,7 +515,7 @@ async def main():
     failed = []
 
     for ep in range(start_ep, end_ep + 1):
-        success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, download_dir, url_template)
+        success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, download_dir)
         if success:
             successful += 1
             print(f"✅ الحلقة {ep} اكتملت")
