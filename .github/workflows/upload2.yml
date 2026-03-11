@@ -1,0 +1,84 @@
+name: 📺 Uploader2
+
+on:
+  workflow_dispatch:
+    inputs:
+      series_name:
+        description: 'اسم المسلسل (إنجليزي)'
+        required: true
+        default: 'yasak-elma'
+      series_name_arabic:
+        description: 'اسم المسلسل (عربي)'
+        required: true
+        default: 'التفاح الحرام'
+      season_num:
+        description: 'رقم الموسم'
+        required: true
+        default: '6'
+        type: number
+      start_episode:
+        description: 'بداية الحلقات'
+        required: true
+        default: '26'
+        type: number
+      end_episode:
+        description: 'نهاية الحلقات'
+        required: true
+        default: '35'
+        type: number
+
+jobs:
+  upload-series:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # التحقق من وجود ffmpeg وتثبيته إذا لزم الأمر (بخيارات خفيفة)
+      - name: Install ffmpeg (if not present)
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "ffmpeg not found, installing..."
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "ffmpeg already installed"
+          fi
+
+      # تثبيت Chrome و Chromedriver
+      - name: Install Chrome
+        run: |
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Install Chromedriver
+        run: |
+          sudo apt-get install -y chromium-chromedriver
+          chromedriver --version
+
+      - name: Create config
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "series_name": "${{ github.event.inputs.series_name }}",
+            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
+            "season_num": ${{ github.event.inputs.season_num }},
+            "start_episode": ${{ github.event.inputs.start_episode }},
+            "end_episode": ${{ github.event.inputs.end_episode }}
+          }
+          EOF
+
+      - name: Run processor
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python main2.py
