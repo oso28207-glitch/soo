@@ -187,7 +187,7 @@ def extract_video_from_uqload_page(driver, url):
 def get_video_from_rmd(driver, base_url):
     """
     استخراج رابط الفيديو من صفحة AlbaPlayer.
-    base_url: رابط الحلقة مع تحديد السيرفر (مثال: https://v.rmd.quest/albaplayer/ein-sehreya-s01e04/)
+    base_url: رابط الحلقة مع تحديد السيرفر (مثال: https://v.rmd.quest/albaplayer/ein-sehreya-s01e04/?serv=1)
     """
     try:
         print(f"🖥️ فتح صفحة الحلقة: {base_url}")
@@ -344,9 +344,9 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     """
     معالجة حلقة واحدة من v.rmd.quest (AlbaPlayer)
     """
-    # بناء رابط الحلقة حسب النمط: https://v.rmd.quest/albaplayer/{series_name}-s{season:02d}e{episode:02d}/
+    # بناء رابط الحلقة حسب النمط: https://v.rmd.quest/albaplayer/{series_name}-s{season:02d}e{episode:02d}/?serv=1
     # ملاحظة: season و episode بصيغة 01, 02 إلخ
-    base_url = f"https://v.rmd.quest/albaplayer/{series_name}-s{season_num:02d}e{episode_num:02d}/"
+    base_url = f"https://v.rmd.quest/albaplayer/{series_name}-s{season_num:02d}e{episode_num:02d}/?serv=1"
     print(f"\n🎬 Episode {episode_num:02d}")
     print(f"🔗 Base URL: {base_url}")
     
