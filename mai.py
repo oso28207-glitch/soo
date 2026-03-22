@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - يدعم إدخال رابط مباشر للحلقة
+Telegram Video Downloader & Uploader - يدعم أي رابط مباشر للفيديو
 """
 
 import os
@@ -176,64 +176,72 @@ def extract_video_from_uqload_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو من Uqload: {e}")
         return None
 
+def extract_video_from_current_page(driver):
+    """استخراج src من عنصر video في الصفحة الحالية"""
+    try:
+        video_element = driver.find_element(By.TAG_NAME, "video")
+        video_url = video_element.get_attribute("src")
+        if video_url:
+            print(f"✅ تم العثور على رابط فيديو مباشر: {video_url[:100]}...")
+            return video_url
+    except:
+        pass
+    return None
+
+def extract_video_from_page(driver, page_url):
+    """
+    محاولة استخراج رابط فيديو من أي صفحة (مباشرة).
+    تعيد (video_url, referer)
+    """
+    driver.get(page_url)
+    time.sleep(5)
+
+    # 1. البحث عن iframe (مثل AlbaPlayer)
+    try:
+        iframe = driver.find_element(By.CSS_SELECTOR, ".aplr-player-content iframe")
+        iframe_src = iframe.get_attribute("src")
+        if iframe_src:
+            print(f"📦 تم العثور على iframe: {iframe_src}")
+            # معالجة iframe
+            if 'uqload' in iframe_src:
+                video_url = extract_video_from_uqload_page(driver, iframe_src)
+                if video_url:
+                    return video_url, iframe_src
+            else:
+                # فتح iframe
+                driver.get(iframe_src)
+                time.sleep(5)
+                video_url = extract_video_from_current_page(driver)
+                if video_url:
+                    return video_url, iframe_src
+    except:
+        pass
+
+    # 2. البحث عن عنصر video مباشرة
+    video_url = extract_video_from_current_page(driver)
+    if video_url:
+        return video_url, page_url
+
+    # 3. البحث عن روابط mp4 في الصفحة
+    page_source = driver.page_source
+    match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+    if match:
+        video_url = match.group(1)
+        print(f"✅ تم العثور على رابط mp4 في الصفحة: {video_url[:100]}...")
+        return video_url, page_url
+
+    # 4. استخدام yt-dlp
+    if test_video_url(page_url):
+        print("✅ الرابط قابل للتنزيل عبر yt-dlp.")
+        return page_url, page_url
+
+    return None, None
+
 def get_video_from_rmd(driver, base_url):
     """
-    استخراج رابط الفيديو من صفحة AlbaPlayer.
-    base_url: رابط الحلقة (مثلاً https://v.rmd.quest/albaplayer/...)
+    استخراج رابط الفيديو من صفحة الحلقة (أي رابط).
     """
-    try:
-        print(f"🖥️ فتح صفحة الحلقة: {base_url}")
-        driver.get(base_url)
-        time.sleep(5)
-
-        try:
-            iframe = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".aplr-player-content iframe"))
-            )
-            iframe_src = iframe.get_attribute("src")
-            print(f"📦 تم العثور على iframe: {iframe_src}")
-        except Exception as e:
-            print(f"❌ لم يتم العثور على iframe: {e}")
-            return None, None
-
-        video_url = None
-        referer = iframe_src
-
-        if 'uqload' in iframe_src:
-            video_url = extract_video_from_uqload_page(driver, iframe_src)
-            if video_url:
-                return video_url, referer
-
-        print(f"🔄 فتح iframe المصدر: {iframe_src}")
-        driver.get(iframe_src)
-        time.sleep(5)
-
-        try:
-            video_element = driver.find_element(By.TAG_NAME, "video")
-            video_url = video_element.get_attribute("src")
-            if video_url:
-                print(f"✅ تم العثور على رابط فيديو مباشر: {video_url[:100]}...")
-                return video_url, referer
-        except:
-            pass
-
-        page_source = driver.page_source
-        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
-        if match:
-            video_url = match.group(1)
-            print(f"✅ تم العثور على رابط mp4 في الصفحة: {video_url[:100]}...")
-            return video_url, referer
-
-        if test_video_url(iframe_src):
-            print("✅ iframe_src قابل للتنزيل عبر yt-dlp، سيتم استخدامه.")
-            return iframe_src, referer
-
-        print("❌ فشل استخراج رابط الفيديو من iframe.")
-        return None, None
-
-    except Exception as e:
-        print(f"❌ خطأ رئيسي في استخراج الفيديو: {e}")
-        return None, None
+    return extract_video_from_page(driver, base_url)
 
 def download_video(video_url, output_path, referer):
     try:
@@ -323,24 +331,17 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-# ===== معالجة حلقة واحدة (باستخدام رابط مباشر أو بناء تلقائي) =====
+# ===== معالجة حلقة واحدة =====
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, server_num, download_dir, direct_url=None):
-    """
-    معالجة حلقة واحدة.
-    إذا تم توفير direct_url، يتم استخدامه مباشرة، وإلا يتم بناء الرابط من series_name و season_num و episode_num.
-    episode_num قد يكون None إذا لم يتم توفيره (سيتم استخراجه من الرابط إن أمكن).
-    """
     if direct_url:
         base_url = direct_url
-        # إذا لم يتم توفير رقم الحلقة، نحاول استخراجه من الرابط (نمط eXX أو epXX)
         if episode_num is None:
             match = re.search(r'[eE](\d{2})', base_url)
             if match:
                 episode_num = int(match.group(1))
             else:
-                episode_num = 0  # غير معروف
+                episode_num = 0
     else:
-        # بناء الرابط تلقائياً (الطريقة القديمة)
         base_url = f"https://v.rmd.quest/albaplayer/{series_name}-s{season_num:02d}e{episode_num:02d}/?serv={server_num}"
 
     print(f"\n🎬 معالجة الحلقة (رقم {episode_num if episode_num else 'غير محدد'})")
@@ -378,7 +379,6 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
     success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
 
-    # تنظيف
     for f in [temp_file, final_file, thumb_file]:
         try:
             if os.path.exists(f):
@@ -421,13 +421,11 @@ async def main():
     episode_number = config.get("episode_number", None)
     episode_url = config.get("episode_url", "").strip()
 
-    # إذا كان season_num سلسلة فارغة، نحوله إلى None
     if season_num == '':
         season_num = None
     if episode_number == '':
         episode_number = None
 
-    # التحقق من وجود الرابط (مطلوب)
     if not episode_url:
         print("❌ لم يتم توفير episode_url. الرابط مطلوب.")
         return
@@ -441,7 +439,6 @@ async def main():
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
 
-    # معالجة الحلقة المفردة (نستخدم server_num افتراضي 1 لأنه غير مهم في الرابط المباشر)
     success, msg = await process_episode(
         episode_num=episode_number,
         series_name=series_name,
@@ -457,7 +454,6 @@ async def main():
     else:
         print(f"\n❌ فشلت المعالجة: {msg}")
 
-    # تنظيف
     try:
         os.rmdir(download_dir)
     except:
