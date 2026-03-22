@@ -126,31 +126,15 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-def test_video_url(url):
-    """اختبار ما إذا كان الرابط قابلاً للتنزيل باستخدام yt-dlp (بدون تحميل)"""
-    try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if info and ('url' in info or 'entries' in info):
-                return True
-    except Exception:
-        pass
-    return False
-
-def extract_video_from_embed(driver, embed_url):
-    """فتح صفحة embed واستخراج رابط الفيديو المباشر"""
+def try_extract_video_from_embed(driver, embed_url):
+    """محاولة استخراج رابط فيديو مباشر من صفحة embed"""
     try:
         print(f"🔄 فتح embed: {embed_url}")
         driver.get(embed_url)
-        time.sleep(5)  # انتظار تحميل الصفحة
-        page_source = driver.page_source
+        # انتظار تحميل الصفحة مع إمكانية ظهور عناصر ديناميكية
+        time.sleep(5)
         
-        # 1. البحث عن عنصر <video>
+        # البحث عن عنصر <video>
         try:
             video = driver.find_element(By.TAG_NAME, "video")
             src = video.get_attribute("src")
@@ -160,87 +144,38 @@ def extract_video_from_embed(driver, embed_url):
         except:
             pass
         
-        # 2. البحث عن عنصر <source>
+        # البحث عن عنصر <source>
         try:
-            source = driver.find_element(By.TAG_NAME, "source")
-            src = source.get_attribute("src")
-            if src and src.startswith("http"):
-                print(f"✅ تم العثور على فيديو في <source>: {src[:100]}...")
-                return src
+            sources = driver.find_elements(By.TAG_NAME, "source")
+            for src_elem in sources:
+                src = src_elem.get_attribute("src")
+                if src and src.startswith("http"):
+                    print(f"✅ تم العثور على فيديو في <source>: {src[:100]}...")
+                    return src
         except:
             pass
         
-        # 3. البحث عن رابط .mp4 في الصفحة
-        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
-        if match:
-            video_url = match.group(1)
-            print(f"✅ تم العثور على رابط mp4: {video_url[:100]}...")
-            return video_url
+        # البحث عن أي رابط .mp4 في الصفحة
+        page_source = driver.page_source
+        mp4_matches = re.findall(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+        if mp4_matches:
+            print(f"✅ تم العثور على رابط mp4: {mp4_matches[0][:100]}...")
+            return mp4_matches[0]
         
-        # 4. إذا لم نجد، نعيد embed_url لاستخدام yt-dlp
-        print("⚠️ لم يتم العثور على رابط مباشر، سيتم استخدام embed_url مع yt-dlp.")
-        return embed_url
+        # البحث عن أي رابط m3u8 (HLS)
+        m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
+        if m3u8_matches:
+            print(f"✅ تم العثور على رابط m3u8: {m3u8_matches[0][:100]}...")
+            return m3u8_matches[0]
+        
+        print("⚠️ لم يتم العثور على رابط مباشر.")
+        return None
     except Exception as e:
         print(f"❌ خطأ في استخراج الفيديو من embed: {e}")
-        return embed_url  # نعيد embed_url لاستخدام yt-dlp
+        return None
 
-def get_video_from_larozaa(driver, video_page_url):
-    """
-    استخراج رابط الفيديو من صفحة larozaa.
-    video_page_url: رابط صفحة المشاهدة مثل https://larozaa.xyz/play.php?vid=72c5aacd6
-    """
-    try:
-        print(f"🖥️ فتح صفحة الفيديو: {video_page_url}")
-        driver.get(video_page_url)
-        time.sleep(5)
-        
-        # البحث عن قائمة السيرفرات
-        try:
-            servers = driver.find_elements(By.CSS_SELECTOR, "ul.WatchList li")
-            if not servers:
-                print("❌ لم يتم العثور على قائمة السيرفرات")
-                return None, None
-            
-            # استخراج عناوين embed لجميع السيرفرات
-            embed_urls = []
-            for li in servers:
-                embed = li.get_attribute("data-embed-url")
-                if embed:
-                    embed_urls.append(embed)
-            print(f"📦 تم العثور على {len(embed_urls)} سيرفر")
-            
-        except Exception as e:
-            print(f"❌ خطأ في استخراج السيرفرات: {e}")
-            return None, None
-        
-        # تجربة كل سيرفر
-        for idx, embed_url in enumerate(embed_urls):
-            print(f"\n🔄 تجربة السيرفر {idx+1}: {embed_url}")
-            try:
-                video_url = extract_video_from_embed(driver, embed_url)
-                # إذا نجح الاستخراج (أي ليس None وليس مجرد embed_url بلا تغيير)
-                # لكن قد يكون embed_url صالحًا للتنزيل بواسطة yt-dlp، لذا نترك المحاولة لاحقًا
-                # نعتبره نجاحًا إذا لم يكن embed_url نفسه (أي وجدنا رابط مباشر)
-                # أو حتى لو كان embed_url نفسه، سنترك لـ yt-dlp المحاولة
-                if video_url:
-                    print(f"✅ تم استخراج رابط من السيرفر {idx+1}")
-                    return video_url, embed_url
-            except Exception as e:
-                print(f"⚠️ فشل السيرفر {idx+1}: {e}")
-                continue
-            # تأخير بسيط بين المحاولات
-            time.sleep(2)
-        
-        # إذا فشل كل السيرفرات
-        print("❌ فشلت جميع السيرفرات")
-        return None, None
-        
-    except Exception as e:
-        print(f"❌ خطأ رئيسي في استخراج الفيديو: {e}")
-        return None, None
-
-def download_video(video_url, output_path, referer):
-    """تنزيل الفيديو باستخدام yt-dlp مع impersonation وإضافة referer"""
+def download_with_ytdlp(url, output_path, referer=None):
+    """محاولة تنزيل فيديو باستخدام yt-dlp مع impersonate"""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -252,15 +187,63 @@ def download_video(video_url, output_path, referer):
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': referer,
             }
         }
+        if referer:
+            ydl_opts['http_headers']['Referer'] = referer
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+            ydl.download([url])
         return os.path.exists(output_path)
     except Exception as e:
-        print(f"❌ Download error: {e}")
+        print(f"❌ yt-dlp error: {e}")
         return False
+
+def get_embed_urls_from_larozaa(driver, video_page_url):
+    """استخراج جميع عناوين embed من صفحة larozaa"""
+    try:
+        print(f"🖥️ فتح صفحة الفيديو: {video_page_url}")
+        driver.get(video_page_url)
+        time.sleep(5)
+        
+        servers = driver.find_elements(By.CSS_SELECTOR, "ul.WatchList li")
+        if not servers:
+            print("❌ لم يتم العثور على قائمة السيرفرات")
+            return []
+        
+        embed_urls = []
+        for li in servers:
+            embed = li.get_attribute("data-embed-url")
+            if embed:
+                embed_urls.append(embed)
+        print(f"📦 تم العثور على {len(embed_urls)} سيرفر")
+        return embed_urls
+    except Exception as e:
+        print(f"❌ خطأ في استخراج السيرفرات: {e}")
+        return []
+
+def download_video_from_servers(embed_urls, output_path, driver):
+    """تجربة السيرفرات حتى نجاح التنزيل"""
+    for idx, embed_url in enumerate(embed_urls):
+        print(f"\n🔄 تجربة السيرفر {idx+1}: {embed_url}")
+        
+        # محاولة استخراج رابط مباشر
+        direct_url = try_extract_video_from_embed(driver, embed_url)
+        if direct_url:
+            print(f"✅ تم استخراج رابط مباشر، محاولة التنزيل...")
+            if download_with_ytdlp(direct_url, output_path, referer=embed_url):
+                return True
+            else:
+                print(f"⚠️ فشل التنزيل من الرابط المباشر.")
+        else:
+            print(f"⚠️ لم يتم العثور على رابط مباشر، محاولة تنزيل embed_url مباشرة...")
+            if download_with_ytdlp(embed_url, output_path, referer=embed_url):
+                return True
+            else:
+                print(f"⚠️ فشل تنزيل embed_url مباشرة.")
+        
+        # تأخير قبل المحاولة التالية
+        time.sleep(3)
+    return False
 
 def compress_to_240p(input_path, output_path):
     """ضغط الفيديو إلى 240p"""
@@ -340,20 +323,23 @@ async def process_video(video_url, series_name_arabic, season_num, episode_num, 
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # إعداد Selenium واستخراج الفيديو
+    # إعداد Selenium
     driver = setup_selenium()
     if not driver:
         return False, "فشل إعداد Selenium"
     
-    video_url_direct, referer = get_video_from_larozaa(driver, video_url)
-    driver.quit()
-
-    if not video_url_direct:
-        return False, "فشل استخراج رابط الفيديو"
+    # استخراج قائمة السيرفرات
+    embed_urls = get_embed_urls_from_larozaa(driver, video_url)
+    if not embed_urls:
+        driver.quit()
+        return False, "لم يتم العثور على سيرفرات"
     
-    # تنزيل الفيديو
-    if not download_video(video_url_direct, temp_file, referer=referer):
-        return False, "فشل التنزيل"
+    # محاولة التنزيل من السيرفرات
+    download_success = download_video_from_servers(embed_urls, temp_file, driver)
+    driver.quit()
+    
+    if not download_success:
+        return False, "فشل التنزيل من جميع السيرفرات"
     
     # ضغط الفيديو
     if not compress_to_240p(temp_file, final_file):
