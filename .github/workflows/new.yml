@@ -1,4 +1,4 @@
-name: 📺 Uploader2
+name: 📺 Up
 
 on:
   workflow_dispatch:
@@ -12,10 +12,20 @@ on:
         required: true
         default: '1'
         type: number
-      episode_urls:
-        description: 'روابط الحلقات (مفصولة بفواصل)'
+      start_episode:
+        description: 'بداية الحلقات'
         required: true
-        default: 'https://larozaa.xyz/play.php?vid=f57acd210,https://larozaa.xyz/play.php?vid=56d8e939c,https://larozaa.xyz/play.php?vid=cd76b5310,https://larozaa.xyz/play.php?vid=d66ecb057,https://larozaa.xyz/play.php?vid=c959f6fcc,https://larozaa.xyz/play.php?vid=27cbc3a68,https://larozaa.xyz/play.php?vid=4e0779709,https://larozaa.xyz/play.php?vid=b8c4927dd,https://larozaa.xyz/play.php?vid=fd5a69b30,https://larozaa.xyz/play.php?vid=fb7d44c8a,https://larozaa.xyz/play.php?vid=f8abb5a14,https://larozaa.xyz/play.php?vid=7d0774e19,https://larozaa.xyz/play.php?vid=b1e1204e4,https://larozaa.xyz/play.php?vid=a4a009c3c,https://larozaa.xyz/play.php?vid=934810a70,https://larozaa.xyz/play.php?vid=bcd62e737,https://larozaa.xyz/play.php?vid=07aa2f6db,https://larozaa.xyz/play.php?vid=2c71d31ae,https://larozaa.xyz/play.php?vid=d2face5c4,https://larozaa.xyz/play.php?vid=3fccb6322'
+        default: '5'
+        type: number
+      end_episode:
+        description: 'نهاية الحلقات'
+        required: true
+        default: '15'
+        type: number
+      video_ids:
+        description: 'قائمة معرفات الفيديو (مفصولة بفواصل)'
+        required: true
+        default: 'c959f6fcc,27cbc3a68,4e0779709,b8c4927dd,fd5a69b30,fb7d44c8a,f8abb5a14,7d0774e19,b1e1204e4,a4a009c3c,934810a70'
 
 jobs:
   upload-series:
@@ -44,20 +54,15 @@ jobs:
 
       - name: Create config
         run: |
-          # تقسيم الروابط المدخلة إلى مصفوفة
-          IFS=',' read -r -a urls <<< "${{ github.event.inputs.episode_urls }}"
-          echo '{' > series_config.json
-          echo '  "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",' >> series_config.json
-          echo '  "season_num": ${{ github.event.inputs.season_num }},' >> series_config.json
-          echo '  "episodes": [' >> series_config.json
-          idx=1
-          for url in "${urls[@]}"; do
-            echo '    {"num": '$idx', "url": "'$url'"}' >> series_config.json
-            if [ $idx -lt ${#urls[@]} ]; then echo ',' >> series_config.json; fi
-            idx=$((idx+1))
-          done
-          echo '  ]' >> series_config.json
-          echo '}' >> series_config.json
+          cat > series_config.json <<EOF
+          {
+            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
+            "season_num": ${{ github.event.inputs.season_num }},
+            "start_episode": ${{ github.event.inputs.start_episode }},
+            "end_episode": ${{ github.event.inputs.end_episode }},
+            "video_ids": [$(echo "${{ github.event.inputs.video_ids }}" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')]
+          }
+          EOF
           cat series_config.json
 
       - name: Run processor
@@ -66,4 +71,4 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: python main2.py
+        run: python mai.py
