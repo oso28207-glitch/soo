@@ -1,0 +1,81 @@
+name: 📺 mai
+
+on:
+  workflow_dispatch:
+    inputs:
+      series_name:
+        description: 'اسم المسلسل (إنجليزي)'
+        required: true
+        default: 'yasak-elma'
+      series_name_arabic:
+        description: 'اسم المسلسل (عربي)'
+        required: true
+        default: 'التفاح الحرام'
+      season_num:
+        description: 'رقم الموسم (اختياري)'
+        required: false
+        default: ''
+        type: number
+      episode_number:
+        description: 'رقم الحلقة (اختياري)'
+        required: false
+        default: ''
+        type: number
+      episode_url:
+        description: 'رابط الحلقة المباشر (مثال: https://v.rmd.quest/albaplayer/...)'
+        required: true
+        default: ''
+
+jobs:
+  upload-series:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install ffmpeg (if not present)
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "ffmpeg not found, installing..."
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "ffmpeg already installed"
+          fi
+
+      - name: Install Chrome
+        run: |
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Install Chromedriver
+        run: |
+          sudo apt-get install -y chromium-chromedriver
+          chromedriver --version
+
+      - name: Create config
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "series_name": "${{ github.event.inputs.series_name }}",
+            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
+            "season_num": ${{ github.event.inputs.season_num }},
+            "episode_number": ${{ github.event.inputs.episode_number }},
+            "episode_url": "${{ github.event.inputs.episode_url }}"
+          }
+          EOF
+
+      - name: Run processor
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python mai.py
