@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من larozaa.xyz
+يدعم معالجة عدة حلقات من ملف الإعدادات (نطاق + video_ids)
 """
 
 import os
@@ -66,10 +67,7 @@ import yt_dlp
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from bs4 import BeautifulSoup
 
 app = None
 
@@ -131,7 +129,6 @@ def try_extract_video_from_embed(driver, embed_url):
     try:
         print(f"🔄 فتح embed: {embed_url}")
         driver.get(embed_url)
-        # انتظار تحميل الصفحة مع إمكانية ظهور عناصر ديناميكية
         time.sleep(5)
         
         # البحث عن عنصر <video>
@@ -155,14 +152,13 @@ def try_extract_video_from_embed(driver, embed_url):
         except:
             pass
         
-        # البحث عن أي رابط .mp4 في الصفحة
+        # البحث عن أي رابط .mp4 أو .m3u8 في الصفحة
         page_source = driver.page_source
         mp4_matches = re.findall(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
         if mp4_matches:
             print(f"✅ تم العثور على رابط mp4: {mp4_matches[0][:100]}...")
             return mp4_matches[0]
         
-        # البحث عن أي رابط m3u8 (HLS)
         m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
         if m3u8_matches:
             print(f"✅ تم العثور على رابط m3u8: {m3u8_matches[0][:100]}...")
@@ -312,10 +308,8 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-async def process_video(video_url, series_name_arabic, season_num, episode_num, download_dir):
-    """
-    معالجة فيديو واحد من larozaa
-    """
+async def process_video(episode_num, video_url, series_name_arabic, season_num, download_dir):
+    """معالجة حلقة واحدة"""
     print(f"\n🎬 Processing episode {episode_num}")
     print(f"🔗 Video page URL: {video_url}")
     
@@ -395,28 +389,73 @@ async def main():
 
     series_name_arabic = config.get("series_name_arabic", "").strip()
     season_num = int(config.get("season_num", 1))
-    episode_num = int(config.get("episode_num", 1))
-    video_url = config.get("video_url", "").strip()
-
-    if not series_name_arabic:
-        print("❌ series_name_arabic مفقود في config")
+    
+    # استخراج قائمة الحلقات
+    episodes = []
+    
+    # 1. إذا كانت هناك قائمة `episodes` جاهزة
+    if "episodes" in config and config["episodes"]:
+        episodes = config["episodes"]
+    # 2. إذا كانت هناك `start_episode`, `end_episode` و `video_ids`
+    elif "start_episode" in config and "end_episode" in config and "video_ids" in config:
+        start = int(config["start_episode"])
+        end = int(config["end_episode"])
+        video_ids = config["video_ids"]
+        expected_count = end - start + 1
+        if len(video_ids) != expected_count:
+            print(f"❌ عدد video_ids ({len(video_ids)}) لا يتطابق مع عدد الحلقات ({expected_count})")
+            return
+        # بناء قائمة الحلقات
+        for idx, vid in enumerate(video_ids):
+            ep_num = start + idx
+            url = f"https://larozaa.xyz/play.php?vid={vid}"
+            episodes.append({"num": ep_num, "url": url})
+    # 3. دعم الحلقة الواحدة القديمة
+    elif "video_url" in config:
+        ep_num = config.get("episode_num", 1)
+        episodes = [{"num": ep_num, "url": config["video_url"]}]
+    else:
+        print("❌ لم يتم العثور على بيانات الحلقات في config (episodes أو start_episode+video_ids أو video_url)")
         return
-    if not video_url:
-        print("❌ video_url مفقود في config")
+
+    if not episodes:
+        print("❌ قائمة الحلقات فارغة")
         return
 
     print(f"📺 المسلسل: {series_name_arabic}")
-    print(f"🎬 الحلقة: {episode_num} (الموسم {season_num})")
-    print(f"🔗 رابط المشاهدة: {video_url}")
+    print(f"🎬 عدد الحلقات المطلوب معالجتها: {len(episodes)}")
 
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
 
-    success, msg = await process_video(video_url, series_name_arabic, season_num, episode_num, download_dir)
-    if success:
-        print(f"✅ تم رفع الحلقة بنجاح")
-    else:
-        print(f"❌ فشل الرفع: {msg}")
+    successful = 0
+    failed = []
+
+    for idx, ep in enumerate(episodes):
+        ep_num = ep.get("num")
+        ep_url = ep.get("url")
+        if not ep_num or not ep_url:
+            print(f"⚠️ تخطي حلقة غير مكتملة البيانات: {ep}")
+            continue
+
+        print(f"\n--- معالجة الحلقة {ep_num} ---")
+        success, msg = await process_video(ep_num, ep_url, series_name_arabic, season_num, download_dir)
+        if success:
+            successful += 1
+            print(f"✅ الحلقة {ep_num} اكتملت بنجاح")
+        else:
+            failed.append(ep_num)
+            print(f"❌ الحلقة {ep_num} فشلت: {msg}")
+
+        # انتظار عشوائي بين الحلقات
+        if idx < len(episodes) - 1:
+            wait_time = random.randint(30, 60)
+            print(f"⏳ انتظار {wait_time} ثانية قبل الحلقة التالية...")
+            await asyncio.sleep(wait_time)
+
+    print(f"\n✅ الحلقات الناجحة: {successful}/{len(episodes)}")
+    if failed:
+        print(f"❌ الحلقات الفاشلة: {failed}")
 
     # تنظيف
     try:
