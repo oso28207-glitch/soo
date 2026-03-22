@@ -201,27 +201,39 @@ def get_video_from_larozaa(driver, video_page_url):
                 print("❌ لم يتم العثور على قائمة السيرفرات")
                 return None, None
             
-            # اختيار السيرفر النشط (active) أو الأول
-            embed_url = None
+            # استخراج عناوين embed لجميع السيرفرات
+            embed_urls = []
             for li in servers:
-                if "active" in li.get_attribute("class"):
-                    embed_url = li.get_attribute("data-embed-url")
-                    break
-            if not embed_url:
-                embed_url = servers[0].get_attribute("data-embed-url")
+                embed = li.get_attribute("data-embed-url")
+                if embed:
+                    embed_urls.append(embed)
+            print(f"📦 تم العثور على {len(embed_urls)} سيرفر")
             
-            if not embed_url:
-                print("❌ لم يتم العثور على رابط embed")
-                return None, None
-            
-            print(f"📦 تم العثور على embed URL: {embed_url}")
         except Exception as e:
-            print(f"❌ خطأ في استخراج embed: {e}")
+            print(f"❌ خطأ في استخراج السيرفرات: {e}")
             return None, None
         
-        # استخراج الفيديو من embed
-        video_url = extract_video_from_embed(driver, embed_url)
-        return video_url, embed_url
+        # تجربة كل سيرفر
+        for idx, embed_url in enumerate(embed_urls):
+            print(f"\n🔄 تجربة السيرفر {idx+1}: {embed_url}")
+            try:
+                video_url = extract_video_from_embed(driver, embed_url)
+                # إذا نجح الاستخراج (أي ليس None وليس مجرد embed_url بلا تغيير)
+                # لكن قد يكون embed_url صالحًا للتنزيل بواسطة yt-dlp، لذا نترك المحاولة لاحقًا
+                # نعتبره نجاحًا إذا لم يكن embed_url نفسه (أي وجدنا رابط مباشر)
+                # أو حتى لو كان embed_url نفسه، سنترك لـ yt-dlp المحاولة
+                if video_url:
+                    print(f"✅ تم استخراج رابط من السيرفر {idx+1}")
+                    return video_url, embed_url
+            except Exception as e:
+                print(f"⚠️ فشل السيرفر {idx+1}: {e}")
+                continue
+            # تأخير بسيط بين المحاولات
+            time.sleep(2)
+        
+        # إذا فشل كل السيرفرات
+        print("❌ فشلت جميع السيرفرات")
+        return None, None
         
     except Exception as e:
         print(f"❌ خطأ رئيسي في استخراج الفيديو: {e}")
