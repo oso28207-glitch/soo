@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium لاستخراج الفيديو من larozaa.xyz
-يدعم معالجة عدة حلقات من ملف الإعدادات (نطاق + video_ids)
+يدعم معالجة عدة حلقات مع نظام أمان زمني (إيقاف تلقائي بعد 2:45 ساعة افتراضيًا)
 """
 
 import os
@@ -20,6 +20,10 @@ TELEGRAM_API_ID = os.environ.get("API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
 TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
 STRING_SESSION = os.environ.get("STRING_SESSION", "")
+
+# الحد الأقصى لوقت التشغيل (بالساعات) - يمكن ضبطه عبر متغير البيئة
+MAX_RUNTIME_HOURS = float(os.environ.get("MAX_RUNTIME_HOURS", "2.75"))  # 2 ساعة و 45 دقيقة
+MAX_RUNTIME_SECONDS = MAX_RUNTIME_HOURS * 3600
 
 def validate_env():
     errors = []
@@ -356,10 +360,23 @@ async def process_video(episode_num, video_url, series_name_arabic, season_num, 
     
     return success, "تم بنجاح" if success else "فشل الرفع"
 
+def check_time_limit(start_time, max_seconds):
+    """التحقق من الوقت المنقضي، وإذا تجاوز الحد يخرج السكريبت"""
+    elapsed = time.time() - start_time
+    if elapsed >= max_seconds:
+        print(f"\n⏰ تم تجاوز الحد الزمني المسموح به ({MAX_RUNTIME_HOURS} ساعات).")
+        print(f"⏰ الوقت المنقضي: {elapsed/60:.1f} دقيقة.")
+        return True
+    return False
+
 async def main():
     print("="*50)
     print("🎬 معالج الفيديو المتكامل (larozaa.xyz)")
     print("="*50)
+    print(f"⏰ الحد الأقصى لوقت التشغيل: {MAX_RUNTIME_HOURS} ساعة ({MAX_RUNTIME_SECONDS/60:.0f} دقيقة)")
+
+    # تسجيل وقت البدء
+    start_time = time.time()
 
     # التحقق من ffmpeg
     try:
@@ -432,11 +449,21 @@ async def main():
     failed = []
 
     for idx, ep in enumerate(episodes):
+        # التحقق من الوقت قبل بدء الحلقة
+        if check_time_limit(start_time, MAX_RUNTIME_SECONDS):
+            print("⚠️ تم إيقاف السكريبت بسبب تجاوز الحد الزمني.")
+            break
+
         ep_num = ep.get("num")
         ep_url = ep.get("url")
         if not ep_num or not ep_url:
             print(f"⚠️ تخطي حلقة غير مكتملة البيانات: {ep}")
             continue
+
+        # طباعة الوقت المتبقي
+        elapsed = time.time() - start_time
+        remaining = MAX_RUNTIME_SECONDS - elapsed
+        print(f"\n⏳ الوقت المنقضي: {elapsed/60:.1f} دقيقة | الوقت المتبقي: {remaining/60:.1f} دقيقة")
 
         print(f"\n--- معالجة الحلقة {ep_num} ---")
         success, msg = await process_video(ep_num, ep_url, series_name_arabic, season_num, download_dir)
@@ -446,6 +473,11 @@ async def main():
         else:
             failed.append(ep_num)
             print(f"❌ الحلقة {ep_num} فشلت: {msg}")
+
+        # التحقق من الوقت بعد الحلقة
+        if check_time_limit(start_time, MAX_RUNTIME_SECONDS):
+            print("⚠️ تم إيقاف السكريبت بسبب تجاوز الحد الزمني.")
+            break
 
         # انتظار عشوائي بين الحلقات
         if idx < len(episodes) - 1:
@@ -465,6 +497,7 @@ async def main():
 
     await app.stop()
     print("🔌 تم قطع الاتصال بتليغرام")
+    print(f"⏰ إجمالي وقت التشغيل: {(time.time() - start_time)/60:.1f} دقيقة")
 
 if __name__ == "__main__":
     asyncio.run(main())
