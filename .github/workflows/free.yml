@@ -1,0 +1,56 @@
+name: 🎬 Movie Uploader (Avatar Parts)
+
+on:
+  workflow_dispatch:
+    # لا توجد مدخلات مطلوبة؛ يتم استخدام ملف movie_config.json الموجود في المستودع
+
+jobs:
+  upload-movie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Chrome
+        run: |
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Install Chromedriver
+        run: |
+          sudo apt-get install -y chromium-chromedriver
+          chromedriver --version
+
+      # إذا لم يكن لديك ملف movie_config.json ثابت في المستودع، يمكن إنشاؤه هنا مباشرة
+      - name: Create movie_config.json
+        run: |
+          cat > movie_config.json <<EOF
+          {
+            "movie_name": "افاتار",
+            "parts": [
+              { "url": "https://vidspeed.org/embed-5q877sypsfhv.html", "part": 1 },
+              { "url": "https://uqload.is/embed-0iducs0duumn.html", "part": 2 },
+              { "url": "https://vipserver.liiivideo.com/embed-beipd7qwvyuf.html", "part": 3 }
+            ]
+          }
+          EOF
+
+      - name: Run video processor
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python main3.py
