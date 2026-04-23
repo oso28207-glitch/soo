@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Telegram Video Uploader - يدعم روابط embed من vidspeed, uqload, vipserver
-مع تحسينات لاستخراج الفيديو من vidspeed
+Telegram Video Uploader - يدعم روابط embed من vidspeed, uqload, vipserver, mp4.okhd.site
+مع الاعتماد على Selenium بشكل أساسي للمواقع غير المباشرة
 """
 
 import os
@@ -124,8 +124,16 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
+def is_direct_url(url):
+    """تحديد ما إذا كان الرابط مباشرًا لملف فيديو (mp4, m3u8, mkv, ...)"""
+    direct_extensions = ('.mp4', '.m3u8', '.mkv', '.avi', '.mov', '.ts')
+    return url.lower().endswith(direct_extensions)
+
 def extract_with_ytdlp(url):
-    """محاولة استخراج رابط الفيديو المباشر باستخدام yt-dlp"""
+    """استخدام yt-dlp فقط إذا كان الرابط مباشرًا (لأن المواقع embed غير مدعومة)"""
+    if not is_direct_url(url):
+        print("  ⏩ الرابط ليس مباشراً، تخطي yt-dlp (لن يعمل)")
+        return None
     try:
         ydl_opts = {
             'quiet': True,
@@ -143,100 +151,70 @@ def extract_with_ytdlp(url):
     return None
 
 def extract_with_selenium(driver, url):
-    """محاولة استخراج الرابط باستخدام Selenium مع دعم خاص لـ vidspeed"""
+    """استخراج الرابط باستخدام Selenium مع دعم لجميع المواقع"""
     try:
         print(f"  🔄 تجربة Selenium مع: {url}")
         driver.get(url)
-        # انتظار أطول للصفحات الثقيلة مثل vidspeed
-        time.sleep(12)
+        # انتظار تحميل الصفحة بالكامل (حتى 30 ثانية)
+        wait = WebDriverWait(driver, 30)
         
-        # ----- معالجة خاصة لـ vidspeed -----
-        if 'vidspeed.org' in url:
-            # البحث عن أي iframe
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            for iframe in iframes:
-                src = iframe.get_attribute("src")
-                if src and ('player' in src or 'video' in src or 'embed' in src):
-                    print(f"  📦 تم العثور على iframe: {src}")
-                    # فتح iframe مباشرة
-                    driver.get(src)
-                    time.sleep(8)
-                    # استدعاء الدالة مرة أخرى على الرابط الجديد (قد يكون uqload أو غيره)
-                    return extract_with_selenium(driver, src)
-            
-            # محاولة الدخول إلى الإطار الأول مباشرة
-            try:
-                driver.switch_to.frame(0)
-                time.sleep(4)
-                # البحث عن عنصر الفيديو
-                video = driver.find_element(By.TAG_NAME, "video")
-                src = video.get_attribute("src")
-                if src and src.startswith("http"):
-                    driver.switch_to.default_content()
-                    return src
-                # البحث في الصفحة داخل الإطار
-                page = driver.page_source
-                match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page)
-                if match:
-                    src = match.group(1)
-                    driver.switch_to.default_content()
-                    return src
-                driver.switch_to.default_content()
-            except:
-                driver.switch_to.default_content()
-            
-            # تنفيذ JavaScript للبحث عن الفيديو
-            js_code = """
-            var video = document.querySelector('video');
-            if (video && video.src) return video.src;
-            var sources = document.querySelectorAll('source');
-            for (var i=0; i<sources.length; i++) {
-                if (sources[i].src) return sources[i].src;
-            }
-            return null;
-            """
-            video_url = driver.execute_script(js_code)
-            if video_url:
-                return video_url
-            
-            # البحث في شيفرة الصفحة عن روابط mp4
-            page_source = driver.page_source
-            patterns = [
-                r'file\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
-                r'src\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
-                r'videoUrl\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
-                r'url\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
-                r'(https?://[^"\'\s]+\.mp4)'
-            ]
-            for pattern in patterns:
-                matches = re.findall(pattern, page_source, re.IGNORECASE)
-                if matches:
-                    return matches[0]
+        # انتظار وجود أي iframe أو عنصر فيديو
+        try:
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
+        except:
+            pass
         
-        # ----- معالجة عامة للمواقع الأخرى (uqload, vipserver, إلخ) -----
-        # البحث عن iframes
+        time.sleep(5)  # تأمين إضافي
+        
+        # ----- البحث عن iframes -----
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
         for iframe in iframes:
             src = iframe.get_attribute("src")
-            if src and ('embed' in src or 'player' in src or 'video' in src):
+            if src and ('embed' in src or 'player' in src or 'video' in src or 'okhd' in src):
+                print(f"  📦 تم العثور على iframe: {src}")
+                # فتح iframe مباشرة ومعالجته
                 driver.get(src)
-                time.sleep(5)
+                time.sleep(8)
                 return extract_with_selenium(driver, src)
         
-        # البحث عن عناصر الفيديو المباشرة
-        videos = driver.find_elements(By.TAG_NAME, "video")
-        for video in videos:
+        # ----- البحث عن عنصر الفيديو -----
+        try:
+            video = driver.find_element(By.TAG_NAME, "video")
             src = video.get_attribute("src")
             if src and src.startswith("http"):
                 return src
+        except:
+            pass
         
-        # البحث في النص عن روابط mp4 أو m3u8
+        # ----- تنفيذ JavaScript للحصول على الرابط -----
+        js_get_video = """
+        var video = document.querySelector('video');
+        if (video && video.src) return video.src;
+        var sources = document.querySelectorAll('source');
+        for (var i=0; i<sources.length; i++) {
+            if (sources[i].src) return sources[i].src;
+        }
+        // البحث في data-src أو data-video
+        var elements = document.querySelectorAll('[data-src], [data-video]');
+        for (var i=0; i<elements.length; i++) {
+            var src = elements[i].getAttribute('data-src') || elements[i].getAttribute('data-video');
+            if (src && src.startsWith('http')) return src;
+        }
+        return null;
+        """
+        video_url = driver.execute_script(js_get_video)
+        if video_url:
+            return video_url
+        
+        # ----- البحث في النص عن روابط mp4 أو m3u8 -----
         page_source = driver.page_source
         patterns = [
-            r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]',
             r'file:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
-            r'(https?://[^"\']+\.mp4[^"\']*)',
-            r'(https?://[^"\']+\.m3u8[^"\']*)'
+            r'src:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
+            r'videoUrl:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
+            r'url:\s*["\']([^"\']+\.mp4[^"\']*)["\']',
+            r'(https?://[^"\'\s]+\.mp4)',
+            r'(https?://[^"\'\s]+\.m3u8)'
         ]
         for pattern in patterns:
             match = re.search(pattern, page_source, re.IGNORECASE)
@@ -251,31 +229,33 @@ def extract_with_selenium(driver, url):
 def get_video_url(part_info):
     """
     الحصول على رابط الفيديو المباشر.
-    إذا وُجد 'direct_url' في بيانات الجزء يتم استخدامه مباشرة.
-    وإلا يحاول yt-dlp ثم Selenium.
+    إذا وُجد 'direct_url' يتم استخدامه مباشرة.
+    وإذا كان الرابط مباشراً يستخدم yt-dlp.
+    وإلا يستخدم Selenium.
     """
-    # رابط مباشر مقدم من المستخدم (حل بديل)
     if 'direct_url' in part_info and part_info['direct_url']:
         print(f"  🔗 استخدام الرابط المباشر المقدم: {part_info['direct_url'][:80]}...")
         return part_info['direct_url']
     
     url = part_info['url']
-    print(f"  📡 محاولة الاستخراج باستخدام yt-dlp...")
-    video_url = extract_with_ytdlp(url)
-    if video_url:
-        print(f"  ✅ تم الاستخراج بواسطة yt-dlp: {video_url[:80]}...")
-        return video_url
     
-    print(f"  ⚠️ yt-dlp فشل، ننتقل إلى Selenium...")
-    driver = setup_selenium()
-    if driver:
-        video_url = extract_with_selenium(driver, url)
-        driver.quit()
+    # إذا كان الرابط مباشراً (ينتهي بـ mp4 إلخ)، استخدم yt-dlp
+    if is_direct_url(url):
+        print(f"  📡 الرابط مباشر، استخراج بواسطة yt-dlp...")
+        video_url = extract_with_ytdlp(url)
         if video_url:
-            print(f"  ✅ تم الاستخراج بواسطة Selenium: {video_url[:80]}...")
             return video_url
+        # إذا فشل، نعتبر الرابط نفسه صالحاً
+        return url
     
-    return None
+    # خلاف ذلك، استخدم Selenium فقط (لأن yt-dlp لا يدعم صفحات embed)
+    print(f"  🌐 الرابط ليس مباشراً، استخدام Selenium للاستخراج...")
+    driver = setup_selenium()
+    if not driver:
+        return None
+    video_url = extract_with_selenium(driver, url)
+    driver.quit()
+    return video_url
 
 def download_video(video_url, output_path, referer_url):
     """تنزيل الفيديو باستخدام yt-dlp مع إضافة referer"""
@@ -367,14 +347,6 @@ async def upload_video(file_path, caption, thumb_path=None):
         return False
 
 async def process_part(part_info, download_dir):
-    """
-    معالجة جزء واحد من الفيلم.
-    part_info قد يحتوي على:
-        - url: رابط الصفحة (embed)
-        - direct_url: رابط مباشر اختياري (لحل مشكلة vidspeed)
-        - part: رقم الجزء
-        - movie_name: اسم الفيلم
-    """
     part_num = part_info['part']
     movie_name = part_info['movie_name']
     
@@ -385,29 +357,23 @@ async def process_part(part_info, download_dir):
     final_file = os.path.join(download_dir, f"final_part{part_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_part{part_num:02d}.jpg")
 
-    # استخراج رابط الفيديو
     video_url = get_video_url(part_info)
     if not video_url:
-        return False, "فشل استخراج رابط الفيديو (حتى بعد محاولة yt-dlp و Selenium)"
+        return False, "فشل استخراج رابط الفيديو"
 
-    # تنزيل الفيديو
     referer = part_info.get('url', video_url)
     if not download_video(video_url, temp_file, referer_url=referer):
         return False, "فشل التنزيل"
     
-    # ضغط الفيديو (يمكن تعطيله إذا أردت توفير الوقت)
+    # ضغط (يمكن تعطيله إذا أردت توفير الوقت)
     if not compress_to_240p(temp_file, final_file):
-        # إذا فشل الضغط، استخدم الملف الأصلي
         shutil.copy2(temp_file, final_file)
     
-    # إنشاء صورة مصغرة
     create_thumbnail(final_file, thumb_file)
     
-    # رفع إلى تليغرام
     caption = f"{movie_name} - الجزء {part_num}"
     success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
     
-    # تنظيف
     for f in [temp_file, final_file, thumb_file]:
         try:
             if os.path.exists(f):
@@ -419,7 +385,7 @@ async def process_part(part_info, download_dir):
 
 async def main():
     print("="*50)
-    print("🎬 رافع الأفلام إلى تليغرام (يدعم vidspeed, uqload, vipserver)")
+    print("🎬 رافع الأفلام إلى تليغرام (Selenium بشكل أساسي)")
     print("="*50)
 
     # التحقق من ffmpeg
@@ -430,15 +396,13 @@ async def main():
         print("❌ ffmpeg غير موجود")
         return
 
-    # التحقق من chromedriver
     if not shutil.which('chromedriver'):
-        print("⚠️ chromedriver غير موجود، سيتم الاعتماد فقط على yt-dlp والروابط المباشرة")
+        print("❌ chromedriver غير موجود. تأكد من تثبيته.")
+        return
 
-    # الاتصال بتليغرام
     if not await setup_telegram():
         return
 
-    # قراءة ملف الإعدادات
     config_file = "movie_config.json"
     if not os.path.exists(config_file):
         print("❌ movie_config.json غير موجود")
@@ -453,9 +417,7 @@ async def main():
         print("❌ لا توجد أجزاء محددة في movie_config.json")
         return
 
-    # ترتيب الأجزاء حسب رقم الجزء
     parts = sorted(parts, key=lambda x: x.get('part', 0))
-
     print(f"🎥 الفيلم: {movie_name}")
     print(f"📀 عدد الأجزاء: {len(parts)}")
 
@@ -466,8 +428,7 @@ async def main():
     failed = []
 
     for idx, part in enumerate(parts, start=1):
-        part['movie_name'] = movie_name  # إضافة اسم الفيلم لكل جزء
-        
+        part['movie_name'] = movie_name
         success, msg = await process_part(part, download_dir)
         if success:
             successful += 1
@@ -476,17 +437,15 @@ async def main():
             failed.append(part.get('part', idx))
             print(f"❌ الجزء {part.get('part', idx)}: {msg}")
 
-        # انتظار عشوائي بين الأجزاء (تجنب الحظر)
         if idx < len(parts):
             wait_time = random.randint(30, 60)
-            print(f"⏳ انتظار {wait_time} ثانية قبل الجزء التالي...")
+            print(f"⏳ انتظار {wait_time} ثانية...")
             await asyncio.sleep(wait_time)
 
     print(f"\n✅ الناجحة: {successful}/{len(parts)}")
     if failed:
         print(f"❌ الفاشلة: {failed}")
 
-    # تنظيف المجلد المؤقت
     try:
         shutil.rmtree(download_dir)
     except:
