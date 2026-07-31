@@ -42,7 +42,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-          # تثبيت Google Chrome أحدث إصدار مستقر
+          # تثبيت Google Chrome
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
@@ -51,7 +51,7 @@ jobs:
       - name: 📦 تثبيت مكتبات Python
         run: |
           pip install --upgrade pip
-          pip install yt-dlp selenium beautifulsoup4 webdriver-manager requests
+          pip install yt-dlp selenium beautifulsoup4 webdriver-manager requests json5
 
       - name: ⚙️ إنشاء ملف الإعدادات من مدخلات المستخدم
         env:
