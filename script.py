@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 تنزيل وضغط فيديو من lodynet.watch/top
-استخراج روابط السيرفرات من كود JavaScript في الصفحة مباشرة.
+استخراج روابط السيرفرات من كود JavaScript، واستخدام Selenium للحصول على الرابط المباشر.
 """
 
 import os
@@ -24,7 +24,7 @@ def install_requirements():
         "beautifulsoup4>=4.12.0",
         "webdriver-manager>=4.0.0",
         "requests>=2.28.0",
-        "json5>=0.9.0"  # لقراءة كائنات JavaScript بسهولة
+        "json5>=0.9.0"
     ]
     for req in reqs:
         try:
@@ -41,9 +41,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import json5  # مكتبة قوية لقراءة كائنات JavaScript
+import json5
 
-# ===== إعداد Selenium (كحل احتياطي) =====
+# ===== إعداد Selenium =====
 def setup_selenium():
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -68,16 +68,13 @@ def setup_selenium():
         print(f"❌ فشل إعداد Selenium: {e}")
         return None
 
-# ===== استخراج PostData من HTML (باستخدام json5) =====
+# ===== استخراج PostData باستخدام json5 =====
 def extract_post_data(html):
-    """استخراج كائن PostData وتحويله إلى قاموس Python باستخدام json5."""
-    # البحث عن بداية الكائن
     start_match = re.search(r'PostData\s*=\s*\{', html)
     if not start_match:
         return None
     
     start_index = start_match.start()
-    # البحث عن نهاية الكائن (الأقواس المتطابقة مع تجاهل السلاسل)
     brace_count = 0
     end_index = start_index
     in_string = False
@@ -106,29 +103,20 @@ def extract_post_data(html):
     if brace_count != 0:
         return None
     
-    # استخراج النص
     post_data_str = html[start_index:end_index]
-    
-    # إزالة "PostData = " من البداية
     post_data_str = post_data_str.replace('PostData = ', '').strip()
-    
-    # إزالة الفاصلة المنقوطة الأخيرة إن وجدت
     if post_data_str.endswith(';'):
         post_data_str = post_data_str[:-1]
     
-    # استخدام json5 لقراءة الكائن (يتسامح مع أسماء المفاتيح بدون اقتباس)
     try:
         return json5.loads(post_data_str)
     except Exception as e:
-        print(f"⚠️ فشل تحويل PostData باستخدام json5: {e}")
-        # حفظ الصفحة للتشخيص
+        print(f"⚠️ فشل تحويل PostData: {e}")
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(html)
-        print("💾 تم حفظ الصفحة في debug_page.html للمساعدة في التشخيص.")
         return None
 
 def get_page_html(url):
-    """الحصول على HTML الصفحة باستخدام requests."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'ar-SA,ar;q=0.9,en;q=0.8',
@@ -141,9 +129,7 @@ def get_page_html(url):
         print(f"❌ فشل تحميل الصفحة: {e}")
         return None
 
-# ===== فك تشفير Embed =====
 def decode_embed(embed_str):
-    """فك تشفير Embed إذا كان مشفراً (base64)."""
     if not embed_str:
         return None
     try:
@@ -154,9 +140,7 @@ def decode_embed(embed_str):
         pass
     return embed_str
 
-# ===== استخراج قائمة روابط السيرفرات =====
 def extract_server_urls(post_data):
-    """استخراج روابط المشغل من PostData."""
     servers = post_data.get('ServersWatch', [])
     urls = []
     for server in servers:
@@ -167,59 +151,60 @@ def extract_server_urls(post_data):
                 urls.append(decoded)
     return urls
 
-# ===== محاولة تنزيل الفيديو من رابط السيرفر =====
-def download_video_from_server(server_url, output_path, referer):
-    """محاولة تنزيل الفيديو من رابط السيرفر باستخدام yt-dlp."""
+# ===== التنزيل باستخدام requests =====
+def download_with_requests(url, output_path, referer):
+    """تنزيل الفيديو مباشرة باستخدام requests مع دعم التقدم."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': referer,
+        'Accept-Language': 'ar-SA,ar;q=0.9,en;q=0.8',
+    }
     try:
-        ydl_opts = {
-            'format': 'best[height<=720]/best',
-            'outtmpl': output_path,
-            'quiet': False,
-            'retries': 5,
-            'fragment_retries': 5,
-            'socket_timeout': 30,
-            'extractor_args': {'generic': 'impersonate'},
-            'encoding': 'utf-8',
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': referer,
-                'Accept-Language': 'ar-SA,ar;q=0.9,en;q=0.8',
-            }
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([server_url])
+        with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            total_size = int(r.headers.get('content-length', 0))
+            block_size = 8192
+            downloaded = 0
+            with open(output_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=block_size):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            percent = (downloaded / total_size) * 100
+                            print(f"\r⏳ جاري التحميل: {percent:.1f}%", end='')
+            print()
         return os.path.exists(output_path)
     except Exception as e:
-        print(f"⚠️ فشل التحميل من {server_url[:100]}: {e}")
+        print(f"❌ فشل التنزيل عبر requests: {e}")
         return False
 
-# ===== حل احتياطي: استخدام Selenium لاستخراج الفيديو من صفحة السيرفر =====
-def extract_video_with_selenium(server_url, referer):
-    """فتح صفحة السيرفر باستخدام Selenium واستخراج رابط الفيديو المباشر."""
+# ===== استخراج الفيديو المباشر باستخدام Selenium =====
+def extract_direct_video_with_selenium(server_url, referer):
     driver = setup_selenium()
     if not driver:
         return None
     try:
-        print(f"🔄 فتح صفحة السيرفر باستخدام Selenium: {server_url}")
+        print(f"🔄 فتح السيرفر باستخدام Selenium: {server_url[:80]}...")
         driver.get(server_url)
-        time.sleep(5)  # انتظار تحميل الصفحة
+        time.sleep(5)
         page_source = driver.page_source
         
-        # البحث عن رابط mp4
+        # البحث عن mp4
         match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
         if match:
-            video_url = match.group(1)
-            print(f"✅ تم استخراج رابط mp4: {video_url[:100]}...")
-            return video_url
+            return match.group(1)
         
-        # البحث عن sources في JavaScript
+        # البحث عن sources
         match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
         if match:
-            video_url = match.group(1)
-            print(f"✅ تم استخراج رابط من sources: {video_url[:100]}...")
-            return video_url
+            return match.group(1)
         
-        print("❌ لم يتم العثور على رابط فيديو في صفحة السيرفر.")
+        # البحث عن رابط m3u8
+        match = re.search(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
+        if match:
+            return match.group(1)
+        
         return None
     except Exception as e:
         print(f"❌ خطأ في Selenium: {e}")
@@ -227,78 +212,99 @@ def extract_video_with_selenium(server_url, referer):
     finally:
         driver.quit()
 
+# ===== محاولة التنزيل باستخدام yt-dlp (كحل أخير) =====
+def download_with_ytdlp(url, output_path, referer):
+    try:
+        # نزيل الأحرف العربية من الـ referer إن وجدت
+        safe_referer = re.sub(r'[^\x00-\x7F]+', '', referer) if referer else ''
+        ydl_opts = {
+            'format': 'best[height<=720]/best',
+            'outtmpl': output_path,
+            'quiet': False,
+            'retries': 3,
+            'fragment_retries': 3,
+            'socket_timeout': 30,
+            'extractor_args': {'generic': 'impersonate'},
+            'encoding': 'utf-8',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': safe_referer,
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return os.path.exists(output_path)
+    except Exception as e:
+        print(f"⚠️ فشل yt-dlp: {e}")
+        return False
+
 # ===== دالة التحميل الرئيسية =====
 def download_episode(episode_num, series_name_arabic, download_dir, config):
-    """تحميل حلقة واحدة باستخدام السيرفرات المستخرجة."""
     domain = config.get("domain", "lodynet.watch")
     page_url = f"https://{domain}/{series_name_arabic}-حلقة-{episode_num}"
     
     print(f"\n🎬 Episode {episode_num}")
     print(f"🔗 Page URL: {page_url}")
 
-    # 1. الحصول على HTML الصفحة
+    # 1. الحصول على HTML
     html = get_page_html(page_url)
     if not html:
-        # محاولة النطاق البديل
-        if 'lodynet.watch' in domain:
-            alt_domain = 'lodynet.top'
-        else:
-            alt_domain = 'lodynet.watch'
+        alt_domain = 'lodynet.top' if 'lodynet.watch' in domain else 'lodynet.watch'
         alt_url = f"https://{alt_domain}/{series_name_arabic}-حلقة-{episode_num}"
         print(f"🔄 محاولة النطاق البديل: {alt_url}")
         html = get_page_html(alt_url)
         if html:
             domain = alt_domain
             page_url = alt_url
-
     if not html:
         return False, "فشل تحميل الصفحة"
 
     # 2. استخراج PostData
     post_data = extract_post_data(html)
     if not post_data:
-        return False, "فشل استخراج بيانات السيرفرات من الصفحة"
-    
-    # 3. استخراج روابط السيرفرات
+        return False, "فشل استخراج بيانات السيرفرات"
+
     server_urls = extract_server_urls(post_data)
     if not server_urls:
-        return False, "لم يتم العثور على أي سيرفر في الصفحة"
-    
+        return False, "لا توجد سيرفرات"
+
     print(f"🔍 تم العثور على {len(server_urls)} سيرفر.")
-    
-    # 4. محاولة التحميل من كل سيرفر
+
     temp_file = os.path.join(download_dir, f"temp_{episode_num}.mp4")
     downloaded = False
+
     for idx, server_url in enumerate(server_urls, 1):
-        print(f"🔄 محاولة السيرفر {idx}: {server_url[:100]}...")
+        print(f"🔄 محاولة السيرفر {idx}: {server_url[:80]}...")
         
-        # محاولة التحميل مباشرة باستخدام yt-dlp
-        if download_video_from_server(server_url, temp_file, page_url):
-            downloaded = True
-            break
-        
-        # إذا فشل yt-dlp، نحاول Selenium لاستخراج رابط mp4 ثم التحميل
-        print("🔄 محاولة استخراج الفيديو باستخدام Selenium...")
-        video_url = extract_video_with_selenium(server_url, page_url)
-        if video_url:
-            if download_video_from_server(video_url, temp_file, page_url):
+        # أولاً: نحاول استخراج رابط مباشر باستخدام Selenium
+        direct_url = extract_direct_video_with_selenium(server_url, page_url)
+        if direct_url:
+            print(f"✅ تم استخراج رابط مباشر: {direct_url[:80]}...")
+            if download_with_requests(direct_url, temp_file, page_url):
                 downloaded = True
                 break
-    
+            else:
+                print("⚠️ فشل التنزيل عبر requests، نحاول yt-dlp...")
+                if download_with_ytdlp(direct_url, temp_file, page_url):
+                    downloaded = True
+                    break
+        
+        # إذا لم نستطع استخراج رابط مباشر، نحاول yt-dlp مباشرة على رابط السيرفر
+        print("🔄 محاولة التنزيل عبر yt-dlp على رابط السيرفر...")
+        if download_with_ytdlp(server_url, temp_file, page_url):
+            downloaded = True
+            break
+
     if not downloaded:
         return False, "فشل التحميل من جميع السيرفرات"
 
-    # 5. ضغط الفيديو
+    # 3. ضغط الفيديو
     final_file = os.path.join(download_dir, f"{series_name_arabic}_e{episode_num:02d}_240p.mp4")
     if not compress_to_240p(temp_file, final_file):
         shutil.copy2(temp_file, final_file)
         print("⚠️ فشل الضغط، تم حفظ الملف الأصلي.")
 
-    # إنشاء صورة مصغرة (اختياري)
-    thumb_file = os.path.join(download_dir, f"thumb_{episode_num}.jpg")
-    create_thumbnail(final_file, thumb_file)
-
-    # تنظيف الملف المؤقت
     try:
         os.remove(temp_file)
     except:
@@ -339,18 +345,16 @@ def create_thumbnail(video_path, thumb_path):
 # ===== الدالة الرئيسية =====
 def main():
     print("="*50)
-    print("🎬 تنزيل وضغط فيديو من lodynet (باستخدام json5)")
+    print("🎬 تنزيل وضغط فيديو من lodynet (باستخدام requests)")
     print("="*50)
 
-    # التحقق من ffmpeg
     try:
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
         print("✅ ffmpeg موجود")
     except:
-        print("❌ ffmpeg غير موجود. يرجى تثبيته.")
+        print("❌ ffmpeg غير موجود.")
         return
 
-    # قراءة الإعدادات
     config_file = "series_config.json"
     if not os.path.exists(config_file):
         print("❌ series_config.json غير موجود")
@@ -361,14 +365,14 @@ def main():
 
     series_name_arabic = config.get("series_name_arabic", "").strip()
     if not series_name_arabic:
-        print("❌ يجب تحديد series_name_arabic في config")
+        print("❌ يجب تحديد series_name_arabic")
         return
 
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
 
     if end_ep - start_ep + 1 > 25:
-        print("⚠️ عدد الحلقات كبير جداً، سيتم معالجة 25 حلقه فقط.")
+        print("⚠️ عدد الحلقات كبير، سيتم معالجة 25 حلقة فقط.")
         end_ep = start_ep + 24
 
     print(f"📺 المسلسل: {series_name_arabic}")
@@ -389,7 +393,6 @@ def main():
             failed.append(ep)
             print(f"❌ الحلقة {ep}: {msg}")
 
-        # انتظار عشوائي
         wait_time = random.randint(30, 45)
         print(f"⏳ انتظار {wait_time} ثانية...")
         time.sleep(wait_time)
