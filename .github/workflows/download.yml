@@ -1,4 +1,4 @@
-name: تحميل وضغط حلقات المسلسل من lodynet.watch
+name: تحميل وضغط حلقات المسلسل من lodynet
 
 on:
   workflow_dispatch:
@@ -19,25 +19,17 @@ on:
         default: 'مسلسل-إشراقة-السحر-مترجم'
         type: string
       domain:
-        description: 'النطاق (lodynet.watch)'
+        description: 'النطاق (lodynet.watch أو lodynet.top)'
         required: true
         default: 'lodynet.watch'
         type: string
-      use_ytdlp_direct:
-        description: 'استخدام yt-dlp مباشرة (true/false)'
-        required: true
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 jobs:
   download-and-compress:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 سحب الكود من المستودع
+      - name: 📥 سحب الكود
         uses: actions/checkout@v4
 
       - name: 🐍 إعداد Python
@@ -59,7 +51,7 @@ jobs:
       - name: 📦 تثبيت مكتبات Python
         run: |
           pip install --upgrade pip
-          pip install yt-dlp selenium beautifulsoup4 webdriver-manager
+          pip install yt-dlp selenium beautifulsoup4 webdriver-manager requests
 
       - name: ⚙️ إنشاء ملف الإعدادات من مدخلات المستخدم
         env:
@@ -67,16 +59,13 @@ jobs:
           SERIES_NAME_ARABIC: ${{ github.event.inputs.series_name_arabic }}
           START_EP: ${{ github.event.inputs.start_episode }}
           END_EP: ${{ github.event.inputs.end_episode }}
-          USE_YTLDP: ${{ github.event.inputs.use_ytdlp_direct }}
         run: |
           cat > series_config.json <<EOF
           {
             "domain": "${DOMAIN}",
             "series_name_arabic": "${SERIES_NAME_ARABIC}",
             "start_episode": ${START_EP},
-            "end_episode": ${END_EP},
-            "use_ytdlp_direct": ${USE_YTLDP},
-            "custom_url": null
+            "end_episode": ${END_EP}
           }
           EOF
           echo "✅ تم إنشاء series_config.json:"
