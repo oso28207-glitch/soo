@@ -14,7 +14,6 @@ import random
 import re
 import base64
 from datetime import datetime
-from urllib.parse import urlparse, quote
 
 # ===== تثبيت المتطلبات =====
 def install_requirements():
@@ -24,7 +23,8 @@ def install_requirements():
         "selenium>=4.15.0",
         "beautifulsoup4>=4.12.0",
         "webdriver-manager>=4.0.0",
-        "requests>=2.28.0"
+        "requests>=2.28.0",
+        "json5>=0.9.0"  # لقراءة كائنات JavaScript بسهولة
     ]
     for req in reqs:
         try:
@@ -36,12 +36,12 @@ def install_requirements():
 install_requirements()
 
 import requests
-from bs4 import BeautifulSoup
 import yt_dlp
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import json5  # مكتبة قوية لقراءة كائنات JavaScript
 
 # ===== إعداد Selenium (كحل احتياطي) =====
 def setup_selenium():
@@ -68,16 +68,16 @@ def setup_selenium():
         print(f"❌ فشل إعداد Selenium: {e}")
         return None
 
-# ===== استخراج PostData من HTML (مُحسّن) =====
+# ===== استخراج PostData من HTML (باستخدام json5) =====
 def extract_post_data(html):
-    """استخراج كائن PostData من كود JavaScript في الصفحة."""
+    """استخراج كائن PostData وتحويله إلى قاموس Python باستخدام json5."""
     # البحث عن بداية الكائن
     start_match = re.search(r'PostData\s*=\s*\{', html)
     if not start_match:
         return None
     
     start_index = start_match.start()
-    # البحث عن نهاية الكائن
+    # البحث عن نهاية الكائن (الأقواس المتطابقة مع تجاهل السلاسل)
     brace_count = 0
     end_index = start_index
     in_string = False
@@ -85,19 +85,15 @@ def extract_post_data(html):
     
     for i in range(start_index, len(html)):
         char = html[i]
-        
         if escape:
             escape = False
             continue
-        
         if char == '\\' and in_string:
             escape = True
             continue
-        
         if char == '"' and not escape:
             in_string = not in_string
             continue
-        
         if not in_string:
             if char == '{':
                 brace_count += 1
@@ -110,20 +106,21 @@ def extract_post_data(html):
     if brace_count != 0:
         return None
     
-    # استخراج النص بين البداية والنهاية
+    # استخراج النص
     post_data_str = html[start_index:end_index]
     
-    # إزالة الفواصل الزائدة (Trailing commas) التي قد تسبب مشكلة في JSON
-    post_data_str = re.sub(r',\s*}', '}', post_data_str)
-    post_data_str = re.sub(r',\s*]', ']', post_data_str)
+    # إزالة "PostData = " من البداية
+    post_data_str = post_data_str.replace('PostData = ', '').strip()
     
-    # استخراج الجزء الخاص بـ ServersWatch
+    # إزالة الفاصلة المنقوطة الأخيرة إن وجدت
+    if post_data_str.endswith(';'):
+        post_data_str = post_data_str[:-1]
+    
+    # استخدام json5 لقراءة الكائن (يتسامح مع أسماء المفاتيح بدون اقتباس)
     try:
-        # محاولة تحويل النص إلى JSON
-        data = json.loads(post_data_str.replace('PostData = ', ''))
-        return data
-    except json.JSONDecodeError as e:
-        print(f"⚠️ فشل تحويل PostData إلى JSON: {e}")
+        return json5.loads(post_data_str)
+    except Exception as e:
+        print(f"⚠️ فشل تحويل PostData باستخدام json5: {e}")
         # حفظ الصفحة للتشخيص
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(html)
@@ -193,7 +190,7 @@ def download_video_from_server(server_url, output_path, referer):
             ydl.download([server_url])
         return os.path.exists(output_path)
     except Exception as e:
-        print(f"⚠️ فشل التحميل من {server_url}: {e}")
+        print(f"⚠️ فشل التحميل من {server_url[:100]}: {e}")
         return False
 
 # ===== حل احتياطي: استخدام Selenium لاستخراج الفيديو من صفحة السيرفر =====
@@ -234,7 +231,6 @@ def extract_video_with_selenium(server_url, referer):
 def download_episode(episode_num, series_name_arabic, download_dir, config):
     """تحميل حلقة واحدة باستخدام السيرفرات المستخرجة."""
     domain = config.get("domain", "lodynet.watch")
-    # محاولة استخدام النطاقين: lodynet.watch أو lodynet.top
     page_url = f"https://{domain}/{series_name_arabic}-حلقة-{episode_num}"
     
     print(f"\n🎬 Episode {episode_num}")
@@ -298,6 +294,10 @@ def download_episode(episode_num, series_name_arabic, download_dir, config):
         shutil.copy2(temp_file, final_file)
         print("⚠️ فشل الضغط، تم حفظ الملف الأصلي.")
 
+    # إنشاء صورة مصغرة (اختياري)
+    thumb_file = os.path.join(download_dir, f"thumb_{episode_num}.jpg")
+    create_thumbnail(final_file, thumb_file)
+
     # تنظيف الملف المؤقت
     try:
         os.remove(temp_file)
@@ -339,7 +339,7 @@ def create_thumbnail(video_path, thumb_path):
 # ===== الدالة الرئيسية =====
 def main():
     print("="*50)
-    print("🎬 تنزيل وضغط فيديو من lodynet.watch (طريقة متطورة)")
+    print("🎬 تنزيل وضغط فيديو من lodynet (باستخدام json5)")
     print("="*50)
 
     # التحقق من ffmpeg
