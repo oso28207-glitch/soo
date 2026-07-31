@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 تنزيل وضغط فيديو من lodynet.watch (بدون رفع تليجرام)
+باستخدام Selenium + webdriver-manager لضمان توافق ChromeDriver
 """
 
 import os
@@ -13,13 +14,14 @@ import random
 import re
 from datetime import datetime
 
-# ===== تثبيت المتطلبات =====
+# ===== تثبيت المتطلبات تلقائياً (اختياري) =====
 def install_requirements():
     print("📦 Installing requirements...")
     reqs = [
         "yt-dlp>=2024.4.9",
         "selenium>=4.15.0",
-        "beautifulsoup4>=4.12.0"
+        "beautifulsoup4>=4.12.0",
+        "webdriver-manager>=4.0.0"
     ]
     for req in reqs:
         try:
@@ -28,6 +30,7 @@ def install_requirements():
         except:
             print(f"  ⚠️ Failed to install {req}")
 
+# قم بتعليق السطر التالي إذا كنت تفضل التثبيت اليدوي
 install_requirements()
 
 from selenium import webdriver
@@ -36,9 +39,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 import yt_dlp
 
-# ===== إعداد Selenium =====
+# ===== إعداد Selenium باستخدام webdriver-manager =====
 def setup_selenium():
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -54,15 +58,9 @@ def setup_selenium():
     chrome_options.add_argument('--disable-notifications')
     chrome_options.add_argument('--ignore-certificate-errors')
     
-    chromedriver_path = '/usr/bin/chromedriver'
-    if not os.path.exists(chromedriver_path):
-        chromedriver_path = shutil.which('chromedriver')
-        if not chromedriver_path:
-            print("❌ لم يتم العثور على chromedriver. تأكد من تثبيته.")
-            return None
-    
     try:
-        service = Service(executable_path=chromedriver_path)
+        # التحميل التلقائي لـ ChromeDriver المناسب لإصدار Chrome المثبت
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
@@ -70,7 +68,29 @@ def setup_selenium():
         print(f"❌ فشل إعداد Selenium: {e}")
         return None
 
-# ===== استخراج الفيديو من صفحة lodynet =====
+# ===== استخراج الفيديو من صفحة uqload (دالة مساعدة) =====
+def extract_video_from_uqload_page(driver, url):
+    """فتح صفحة Uqload واستخراج رابط الفيديو المباشر."""
+    try:
+        if 'uqload.to' in url:
+            url = url.replace('uqload.to', 'uqload.is')
+        print(f"🔄 فتح صفحة Uqload: {url}")
+        driver.get(url)
+        time.sleep(5)
+        page_source = driver.page_source
+        # البحث عن sources
+        match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
+        if match:
+            return match.group(1)
+        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
+        if match:
+            return match.group(1)
+        return None
+    except Exception as e:
+        print(f"❌ خطأ في uqload: {e}")
+        return None
+
+# ===== استخراج الفيديو من صفحة lodynet.watch =====
 def extract_video_from_lodynet_page(driver, url):
     """فتح صفحة الحلقة واستخراج رابط الفيديو المباشر."""
     try:
@@ -143,30 +163,11 @@ def extract_video_from_lodynet_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو: {e}")
         return None
 
-def extract_video_from_uqload_page(driver, url):
-    """استخراج الفيديو من صفحة uqload (نفس الكود السابق)."""
-    try:
-        if 'uqload.to' in url:
-            url = url.replace('uqload.to', 'uqload.is')
-        driver.get(url)
-        time.sleep(5)
-        page_source = driver.page_source
-        match = re.search(r'sources:\s*\[\s*"([^"]+\.mp4[^"]*)"\s*\]', page_source)
-        if match:
-            return match.group(1)
-        match = re.search(r'(https?://[^"\']+\.mp4[^"\']*)', page_source)
-        if match:
-            return match.group(1)
-        return None
-    except Exception as e:
-        print(f"❌ خطأ في uqload: {e}")
-        return None
-
 # ===== دالة رئيسية لاستخراج الرابط =====
-def get_video_url(page_url):
+def get_video_url(page_url, use_ytdlp_direct=False):
     """تحاول استخراج رابط الفيديو من صفحة الحلقة."""
     # محاولة استخدام yt-dlp مباشرة (إذا كان مفعلاً)
-    if config.get("use_ytdlp_direct", False):
+    if use_ytdlp_direct:
         try:
             ydl_opts = {'quiet': True, 'extract_flat': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -174,8 +175,10 @@ def get_video_url(page_url):
                 if info and 'url' in info:
                     print(f"✅ تم الحصول على الرابط عبر yt-dlp مباشرة.")
                     return info['url'], page_url
-        except:
-            pass
+                elif info and 'entries' in info and len(info['entries']) > 0:
+                    return info['entries'][0]['url'], page_url
+        except Exception as e:
+            print(f"⚠️ فشل yt-dlp المباشر: {e}")
 
     driver = setup_selenium()
     if not driver:
@@ -189,8 +192,9 @@ def get_video_url(page_url):
     finally:
         driver.quit()
 
-# ===== دوال التحميل والضغط (نفسها) =====
+# ===== دوال التحميل والضغط =====
 def download_video(video_url, output_path, referer):
+    """تنزيل الفيديو باستخدام yt-dlp مع إضافة referer."""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -213,6 +217,7 @@ def download_video(video_url, output_path, referer):
         return False
 
 def compress_to_240p(input_path, output_path):
+    """ضغط الفيديو إلى دقة 240p باستخدام ffmpeg."""
     if not os.path.exists(input_path):
         return False
     cmd = [
@@ -229,6 +234,7 @@ def compress_to_240p(input_path, output_path):
         return False
 
 def create_thumbnail(video_path, thumb_path):
+    """إنشاء صورة مصغرة من الفيديو (اختياري)."""
     cmd = [
         'ffmpeg', '-i', video_path,
         '-ss', '00:00:05', '-vframes', '1', '-s', '320x180',
@@ -240,10 +246,12 @@ def create_thumbnail(video_path, thumb_path):
     except:
         return False
 
-# ===== معالجة حلقة =====
+# ===== معالجة حلقة واحدة =====
 def process_episode(episode_num, series_name_arabic, download_dir, config):
+    """تحميل وضغط حلقة واحدة وحفظها محلياً."""
     domain = config.get("domain", "lodynet.watch")
     custom_url = config.get("custom_url")
+    use_ytdlp_direct = config.get("use_ytdlp_direct", False)
     
     if custom_url:
         page_url = custom_url
@@ -255,7 +263,7 @@ def process_episode(episode_num, series_name_arabic, download_dir, config):
     print(f"🔗 Page URL: {page_url}")
 
     # استخراج رابط الفيديو
-    video_url, referer = get_video_url(page_url)
+    video_url, referer = get_video_url(page_url, use_ytdlp_direct)
     if not video_url:
         return False, "فشل استخراج رابط الفيديو"
 
@@ -270,6 +278,10 @@ def process_episode(episode_num, series_name_arabic, download_dir, config):
         shutil.copy2(temp_file, final_file)
         print("⚠️ فشل الضغط، تم حفظ الملف الأصلي.")
 
+    # إنشاء صورة مصغرة (اختياري)
+    thumb_file = os.path.join(download_dir, f"thumb_{episode_num}.jpg")
+    create_thumbnail(final_file, thumb_file)
+
     # تنظيف الملف المؤقت
     try:
         os.remove(temp_file)
@@ -279,7 +291,7 @@ def process_episode(episode_num, series_name_arabic, download_dir, config):
     print(f"✅ تم حفظ الفيديو المضغوط في: {final_file}")
     return True, "تم بنجاح"
 
-# ===== الرئيسي =====
+# ===== الدالة الرئيسية =====
 def main():
     print("="*50)
     print("🎬 تنزيل وضغط فيديو من lodynet.watch")
@@ -290,7 +302,7 @@ def main():
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
         print("✅ ffmpeg موجود")
     except:
-        print("❌ ffmpeg غير موجود")
+        print("❌ ffmpeg غير موجود. يرجى تثبيته.")
         return
 
     # قراءة الإعدادات
@@ -310,6 +322,7 @@ def main():
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
 
+    # حماية من عدد كبير جداً
     if end_ep - start_ep + 1 > 25:
         print("⚠️ عدد الحلقات كبير جداً، سيتم معالجة 25 حلقه فقط.")
         end_ep = start_ep + 24
@@ -332,6 +345,7 @@ def main():
             failed.append(ep)
             print(f"❌ الحلقة {ep}: {msg}")
 
+        # انتظار عشوائي بين الحلقات لتجنب الحظر
         wait_time = random.randint(30, 45)
         print(f"⏳ انتظار {wait_time} ثانية...")
         time.sleep(wait_time)
