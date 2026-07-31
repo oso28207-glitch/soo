@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 تنزيل وضغط فيديو من lodynet.watch (بدون رفع تليجرام)
-باستخدام Selenium + webdriver-manager لضمان توافق ChromeDriver
+مع دعم كامل للغة العربية وترميز UTF-8
 """
 
 import os
@@ -13,6 +13,11 @@ import shutil
 import random
 import re
 from datetime import datetime
+from urllib.parse import quote
+
+# ===== تعيين ترميز الإخراج إلى UTF-8 لحل مشاكل الأحرف العربية =====
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+sys.stdout.reconfigure(encoding='utf-8')
 
 # ===== تثبيت المتطلبات تلقائياً (اختياري) =====
 def install_requirements():
@@ -146,15 +151,17 @@ def extract_video_from_lodynet_page(driver, url):
         # 4. محاولة استخدام yt-dlp على الصفحة (كحل أخير)
         print("🔄 محاولة استخراج الرابط عبر yt-dlp...")
         try:
-            ydl_opts = {'quiet': True, 'extract_flat': True}
+            # استخدام عنوان URL مشفر لتجنب مشاكل الترميز
+            encoded_url = quote(url, safe=':/')
+            ydl_opts = {'quiet': True, 'extract_flat': True, 'encoding': 'utf-8'}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                info = ydl.extract_info(encoded_url, download=False)
                 if info and 'url' in info:
                     return info['url']
                 elif info and 'entries' in info and len(info['entries']) > 0:
                     return info['entries'][0]['url']
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ فشل yt-dlp في استخراج الرابط: {e}")
 
         print("❌ لم يتم العثور على أي رابط فيديو.")
         return None
@@ -169,9 +176,11 @@ def get_video_url(page_url, use_ytdlp_direct=False):
     # محاولة استخدام yt-dlp مباشرة (إذا كان مفعلاً)
     if use_ytdlp_direct:
         try:
-            ydl_opts = {'quiet': True, 'extract_flat': True}
+            # استخدام عنوان URL مشفر
+            encoded_url = quote(page_url, safe=':/')
+            ydl_opts = {'quiet': True, 'extract_flat': True, 'encoding': 'utf-8'}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(page_url, download=False)
+                info = ydl.extract_info(encoded_url, download=False)
                 if info and 'url' in info:
                     print(f"✅ تم الحصول على الرابط عبر yt-dlp مباشرة.")
                     return info['url'], page_url
@@ -204,9 +213,11 @@ def download_video(video_url, output_path, referer):
             'fragment_retries': 5,
             'socket_timeout': 30,
             'extractor_args': {'generic': 'impersonate'},
+            'encoding': 'utf-8',  # تحديد الترميز
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': referer,
+                'Accept-Language': 'ar-SA,ar;q=0.9,en;q=0.8',  # إضافة تفضيل اللغة العربية
             }
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
