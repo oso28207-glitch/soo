@@ -1,30 +1,94 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-# ... باقي الاستيرادات
+name: تحميل وضغط حلقات المسلسل من lodynet.watch
 
-def setup_selenium():
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
-    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--disable-notifications')
-    chrome_options.add_argument('--ignore-certificate-errors')
-    
-    try:
-        # استخدام ChromeDriverManager لتوفير المسار تلقائياً
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
-    except Exception as e:
-        print(f"❌ فشل إعداد Selenium: {e}")
-        return None
+on:
+  workflow_dispatch:
+    inputs:
+      start_episode:
+        description: 'رقم بداية الحلقات'
+        required: true
+        default: '126'
+        type: number
+      end_episode:
+        description: 'رقم نهاية الحلقات'
+        required: true
+        default: '126'
+        type: number
+      series_name_arabic:
+        description: 'اسم المسلسل بالعربية (كما في الرابط)'
+        required: true
+        default: 'مسلسل-إشراقة-السحر-مترجم'
+        type: string
+      domain:
+        description: 'النطاق (lodynet.watch)'
+        required: true
+        default: 'lodynet.watch'
+        type: string
+      use_ytdlp_direct:
+        description: 'استخدام yt-dlp مباشرة (true/false)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  download-and-compress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 سحب الكود من المستودع
+        uses: actions/checkout@v4
+
+      - name: 🐍 إعداد Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 📦 تثبيت الاعتماديات النظامية (ffmpeg, Chrome)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+          # تثبيت Google Chrome أحدث إصدار مستقر
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: 📦 تثبيت مكتبات Python
+        run: |
+          pip install --upgrade pip
+          pip install yt-dlp selenium beautifulsoup4 webdriver-manager
+
+      - name: ⚙️ إنشاء ملف الإعدادات من مدخلات المستخدم
+        env:
+          DOMAIN: ${{ github.event.inputs.domain }}
+          SERIES_NAME_ARABIC: ${{ github.event.inputs.series_name_arabic }}
+          START_EP: ${{ github.event.inputs.start_episode }}
+          END_EP: ${{ github.event.inputs.end_episode }}
+          USE_YTLDP: ${{ github.event.inputs.use_ytdlp_direct }}
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "domain": "${DOMAIN}",
+            "series_name_arabic": "${SERIES_NAME_ARABIC}",
+            "start_episode": ${START_EP},
+            "end_episode": ${END_EP},
+            "use_ytdlp_direct": ${USE_YTLDP},
+            "custom_url": null
+          }
+          EOF
+          echo "✅ تم إنشاء series_config.json:"
+          cat series_config.json
+
+      - name: 🚀 تشغيل السكربت
+        run: |
+          python3 script.py
+
+      - name: 📤 رفع الملفات المضغوطة كـ Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: episodes-240p
+          path: downloads_*/
+          retention-days: 7
