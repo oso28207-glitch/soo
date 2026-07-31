@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-تنزيل وضغط فيديو من lodynet.watch (بدون رفع تليجرام)
-استخراج الروابط من كود JavaScript في الصفحة مباشرة.
+تنزيل وضغط فيديو من lodynet.watch/top
+استخراج روابط السيرفرات من كود JavaScript في الصفحة مباشرة.
 """
 
 import os
@@ -68,23 +68,67 @@ def setup_selenium():
         print(f"❌ فشل إعداد Selenium: {e}")
         return None
 
-# ===== استخراج PostData من HTML =====
+# ===== استخراج PostData من HTML (مُحسّن) =====
 def extract_post_data(html):
     """استخراج كائن PostData من كود JavaScript في الصفحة."""
-    # البحث عن script يحتوي على PostData
-    soup = BeautifulSoup(html, 'html.parser')
-    scripts = soup.find_all('script')
-    for script in scripts:
-        if script.string and 'PostData =' in script.string:
-            # استخراج النص بين 'PostData =' و ';' (أو نهاية الكتلة)
-            match = re.search(r'PostData\s*=\s*({.*?});', script.string, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group(1))
-                    return data
-                except json.JSONDecodeError:
-                    continue
-    return None
+    # البحث عن بداية الكائن
+    start_match = re.search(r'PostData\s*=\s*\{', html)
+    if not start_match:
+        return None
+    
+    start_index = start_match.start()
+    # البحث عن نهاية الكائن
+    brace_count = 0
+    end_index = start_index
+    in_string = False
+    escape = False
+    
+    for i in range(start_index, len(html)):
+        char = html[i]
+        
+        if escape:
+            escape = False
+            continue
+        
+        if char == '\\' and in_string:
+            escape = True
+            continue
+        
+        if char == '"' and not escape:
+            in_string = not in_string
+            continue
+        
+        if not in_string:
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end_index = i + 1
+                    break
+    
+    if brace_count != 0:
+        return None
+    
+    # استخراج النص بين البداية والنهاية
+    post_data_str = html[start_index:end_index]
+    
+    # إزالة الفواصل الزائدة (Trailing commas) التي قد تسبب مشكلة في JSON
+    post_data_str = re.sub(r',\s*}', '}', post_data_str)
+    post_data_str = re.sub(r',\s*]', ']', post_data_str)
+    
+    # استخراج الجزء الخاص بـ ServersWatch
+    try:
+        # محاولة تحويل النص إلى JSON
+        data = json.loads(post_data_str.replace('PostData = ', ''))
+        return data
+    except json.JSONDecodeError as e:
+        print(f"⚠️ فشل تحويل PostData إلى JSON: {e}")
+        # حفظ الصفحة للتشخيص
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(html)
+        print("💾 تم حفظ الصفحة في debug_page.html للمساعدة في التشخيص.")
+        return None
 
 def get_page_html(url):
     """الحصول على HTML الصفحة باستخدام requests."""
@@ -105,14 +149,13 @@ def decode_embed(embed_str):
     """فك تشفير Embed إذا كان مشفراً (base64)."""
     if not embed_str:
         return None
-    # إذا كان النص يبدو كـ base64 (يبدأ بـ aHR0c أو يحتوي على أحرف base64)
     try:
         decoded = base64.b64decode(embed_str).decode('utf-8')
         if decoded.startswith('http'):
             return decoded
     except:
         pass
-    return embed_str  # إذا لم يكن مشفراً، نعيده كما هو
+    return embed_str
 
 # ===== استخراج قائمة روابط السيرفرات =====
 def extract_server_urls(post_data):
@@ -191,6 +234,7 @@ def extract_video_with_selenium(server_url, referer):
 def download_episode(episode_num, series_name_arabic, download_dir, config):
     """تحميل حلقة واحدة باستخدام السيرفرات المستخرجة."""
     domain = config.get("domain", "lodynet.watch")
+    # محاولة استخدام النطاقين: lodynet.watch أو lodynet.top
     page_url = f"https://{domain}/{series_name_arabic}-حلقة-{episode_num}"
     
     print(f"\n🎬 Episode {episode_num}")
@@ -198,6 +242,19 @@ def download_episode(episode_num, series_name_arabic, download_dir, config):
 
     # 1. الحصول على HTML الصفحة
     html = get_page_html(page_url)
+    if not html:
+        # محاولة النطاق البديل
+        if 'lodynet.watch' in domain:
+            alt_domain = 'lodynet.top'
+        else:
+            alt_domain = 'lodynet.watch'
+        alt_url = f"https://{alt_domain}/{series_name_arabic}-حلقة-{episode_num}"
+        print(f"🔄 محاولة النطاق البديل: {alt_url}")
+        html = get_page_html(alt_url)
+        if html:
+            domain = alt_domain
+            page_url = alt_url
+
     if not html:
         return False, "فشل تحميل الصفحة"
 
@@ -217,7 +274,7 @@ def download_episode(episode_num, series_name_arabic, download_dir, config):
     temp_file = os.path.join(download_dir, f"temp_{episode_num}.mp4")
     downloaded = False
     for idx, server_url in enumerate(server_urls, 1):
-        print(f"🔄 محاولة السيرفر {idx}: {server_url}")
+        print(f"🔄 محاولة السيرفر {idx}: {server_url[:100]}...")
         
         # محاولة التحميل مباشرة باستخدام yt-dlp
         if download_video_from_server(server_url, temp_file, page_url):
@@ -250,7 +307,7 @@ def download_episode(episode_num, series_name_arabic, download_dir, config):
     print(f"✅ تم حفظ الفيديو في: {final_file}")
     return True, "تم بنجاح"
 
-# ===== دوال الضغط والصور المصغرة (نفسها) =====
+# ===== دوال الضغط والصور المصغرة =====
 def compress_to_240p(input_path, output_path):
     if not os.path.exists(input_path):
         return False
