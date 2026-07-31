@@ -1,0 +1,75 @@
+name: تحميل وضغط حلقات المسلسل
+
+on:
+  workflow_dispatch:  # تشغيل يدوي من علامة التبويب Actions
+  # schedule:
+  #   - cron: '0 0 * * *'  # (اختياري) تشغيل يومي عند منتصف الليل
+
+jobs:
+  download-and-compress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 سحب الكود من المستودع
+        uses: actions/checkout@v4
+
+      - name: 🐍 إعداد Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 📦 تثبيت الاعتماديات النظامية (ffmpeg, Chrome, ChromeDriver)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+          # تثبيت Google Chrome
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+          # تثبيت ChromeDriver (بنفس إصدار Chrome)
+          CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
+          CHROME_MAJOR=${CHROME_VERSION%.*.*}
+          wget -O /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROME_MAJOR}/linux64/chromedriver-linux64.zip"
+          unzip /tmp/chromedriver.zip -d /tmp/
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver
+          sudo chmod +x /usr/bin/chromedriver
+
+      - name: 📦 تثبيت مكتبات Python
+        run: |
+          pip install --upgrade pip
+          pip install yt-dlp selenium beautifulsoup4
+
+      - name: ⚙️ إنشاء ملف الإعدادات من المتغيرات
+        env:
+          DOMAIN: ${{ vars.DOMAIN || 'lodynet.watch' }}
+          SERIES_NAME_ARABIC: ${{ vars.SERIES_NAME_ARABIC || 'مسلسل-إشراقة-السحر-مترجم' }}
+          START_EP: ${{ vars.START_EPISODE || 126 }}
+          END_EP: ${{ vars.END_EPISODE || 126 }}
+          USE_YTLDP: ${{ vars.USE_YTLDP_DIRECT || 'false' }}
+          CUSTOM_URL: ${{ vars.CUSTOM_URL || 'null' }}
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "domain": "${DOMAIN}",
+            "series_name_arabic": "${SERIES_NAME_ARABIC}",
+            "start_episode": ${START_EP},
+            "end_episode": ${END_EP},
+            "use_ytdlp_direct": ${USE_YTLDP},
+            "custom_url": ${CUSTOM_URL}
+          }
+          EOF
+          echo "✅ تم إنشاء series_config.json:"
+          cat series_config.json
+
+      - name: 🚀 تشغيل السكربت
+        run: |
+          python3 script.py
+
+      - name: 📤 رفع الملفات المضغوطة كـ Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: episodes-240p
+          path: downloads_*/
