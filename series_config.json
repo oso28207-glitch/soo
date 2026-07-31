@@ -2,7 +2,5 @@
   "domain": "lodynet.watch",
   "series_name_arabic": "مسلسل-إشراقة-السحر-مترجم",
   "start_episode": 126,
-  "end_episode": 135,
-  "use_ytdlp_direct": false,
-  "custom_url": null
+  "end_episode": 126
 }
