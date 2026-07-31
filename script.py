@@ -95,9 +95,9 @@ def extract_video_from_uqload_page(driver, url):
         print(f"❌ خطأ في uqload: {e}")
         return None
 
-# ===== استخراج الفيديو من صفحة lodynet.watch =====
+# ===== استخراج الفيديو من صفحة lodynet.watch (بدون استخدام yt-dlp) =====
 def extract_video_from_lodynet_page(driver, url):
-    """فتح صفحة الحلقة واستخراج رابط الفيديو المباشر."""
+    """فتح صفحة الحلقة واستخراج رابط الفيديو المباشر باستخدام Selenium فقط."""
     try:
         print(f"🔄 فتح صفحة lodynet: {url}")
         driver.get(url)
@@ -148,20 +148,7 @@ def extract_video_from_lodynet_page(driver, url):
             print(f"✅ تم العثور على رابط mp4 في الصفحة: {video_url[:100]}...")
             return video_url
 
-        # 4. محاولة استخدام yt-dlp على الصفحة (كحل أخير)
-        print("🔄 محاولة استخراج الرابط عبر yt-dlp...")
-        try:
-            # استخدام عنوان URL مشفر لتجنب مشاكل الترميز
-            encoded_url = quote(url, safe=':/')
-            ydl_opts = {'quiet': True, 'extract_flat': True, 'encoding': 'utf-8'}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(encoded_url, download=False)
-                if info and 'url' in info:
-                    return info['url']
-                elif info and 'entries' in info and len(info['entries']) > 0:
-                    return info['entries'][0]['url']
-        except Exception as e:
-            print(f"⚠️ فشل yt-dlp في استخراج الرابط: {e}")
+        # 4. تم إزالة محاولة استخدام yt-dlp لتجنب مشاكل الترميز
 
         print("❌ لم يتم العثور على أي رابط فيديو.")
         return None
@@ -170,25 +157,12 @@ def extract_video_from_lodynet_page(driver, url):
         print(f"❌ خطأ في استخراج الفيديو: {e}")
         return None
 
-# ===== دالة رئيسية لاستخراج الرابط =====
+# ===== دالة رئيسية لاستخراج الرابط (تعتمد فقط على Selenium) =====
 def get_video_url(page_url, use_ytdlp_direct=False):
-    """تحاول استخراج رابط الفيديو من صفحة الحلقة."""
-    # محاولة استخدام yt-dlp مباشرة (إذا كان مفعلاً)
-    if use_ytdlp_direct:
-        try:
-            # استخدام عنوان URL مشفر
-            encoded_url = quote(page_url, safe=':/')
-            ydl_opts = {'quiet': True, 'extract_flat': True, 'encoding': 'utf-8'}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(encoded_url, download=False)
-                if info and 'url' in info:
-                    print(f"✅ تم الحصول على الرابط عبر yt-dlp مباشرة.")
-                    return info['url'], page_url
-                elif info and 'entries' in info and len(info['entries']) > 0:
-                    return info['entries'][0]['url'], page_url
-        except Exception as e:
-            print(f"⚠️ فشل yt-dlp المباشر: {e}")
-
+    """
+    تستخرج رابط الفيديو من صفحة الحلقة باستخدام Selenium فقط.
+    يتم تجاهل وسيط use_ytdlp_direct لتجنب مشاكل الترميز.
+    """
     driver = setup_selenium()
     if not driver:
         return None, None
@@ -262,7 +236,6 @@ def process_episode(episode_num, series_name_arabic, download_dir, config):
     """تحميل وضغط حلقة واحدة وحفظها محلياً."""
     domain = config.get("domain", "lodynet.watch")
     custom_url = config.get("custom_url")
-    use_ytdlp_direct = config.get("use_ytdlp_direct", False)
     
     if custom_url:
         page_url = custom_url
@@ -273,8 +246,8 @@ def process_episode(episode_num, series_name_arabic, download_dir, config):
     print(f"\n🎬 Episode {episode_num}")
     print(f"🔗 Page URL: {page_url}")
 
-    # استخراج رابط الفيديو
-    video_url, referer = get_video_url(page_url, use_ytdlp_direct)
+    # استخراج رابط الفيديو (دائماً باستخدام Selenium)
+    video_url, referer = get_video_url(page_url, use_ytdlp_direct=False)
     if not video_url:
         return False, "فشل استخراج رابط الفيديو"
 
