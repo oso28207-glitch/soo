@@ -254,15 +254,28 @@ def compress_to_240p(input_path, output_path):
     except:
         return False
 
-# ===== رفع الملف إلى gofile.io =====
+# ===== رفع الملف إلى gofile.io (باستخدام API الصحيح) =====
 def upload_file(file_path):
     """رفع الملف إلى gofile.io والحصول على رابط المشاهدة."""
-    url = "https://api.gofile.io/uploadFile"
     try:
+        # 1. الحصول على سيرفر متاح
+        server_resp = requests.get("https://api.gofile.io/getServer", timeout=10)
+        if server_resp.status_code != 200:
+            print(f"⚠️ فشل الحصول على السيرفر: HTTP {server_resp.status_code}")
+            return None
+        server_data = server_resp.json()
+        if server_data.get('status') != 'ok':
+            print(f"⚠️ استجابة السيرفر غير متوقعة: {server_data}")
+            return None
+        server = server_data['data']['server']
+        upload_url = f"https://{server}.gofile.io/uploadFile"
+        print(f"🔄 تم اختيار السيرفر: {server}")
+
+        # 2. رفع الملف
         with open(file_path, 'rb') as f:
             files = {'file': f}
             print("⏳ جاري رفع الملف إلى gofile.io ...")
-            response = requests.post(url, files=files, timeout=120)
+            response = requests.post(upload_url, files=files, timeout=120)
             if response.status_code == 200:
                 data = response.json()
                 if data.get('status') == 'ok':
