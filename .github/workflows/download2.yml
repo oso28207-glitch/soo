@@ -1,0 +1,83 @@
+name: تحميل وضغط حلقات المسلسل من lodynet
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_episode:
+        description: 'رقم بداية الحلقات'
+        required: true
+        default: '126'
+        type: number
+      end_episode:
+        description: 'رقم نهاية الحلقات'
+        required: true
+        default: '126'
+        type: number
+      series_name_arabic:
+        description: 'اسم المسلسل بالعربية (كما في الرابط)'
+        required: true
+        default: 'مسلسل-إشراقة-السحر-مترجم'
+        type: string
+      domain:
+        description: 'النطاق (lodynet.watch أو lodynet.top)'
+        required: true
+        default: 'lodynet.watch'
+        type: string
+
+jobs:
+  download-and-compress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 سحب الكود
+        uses: actions/checkout@v4
+
+      - name: 🐍 إعداد Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 تثبيت الاعتماديات النظامية (ffmpeg, Chrome)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+          # تثبيت Google Chrome
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: 📦 تثبيت مكتبات Python
+        run: |
+          pip install --upgrade pip
+          pip install yt-dlp selenium beautifulsoup4 webdriver-manager requests json5
+
+      - name: ⚙️ إنشاء ملف الإعدادات من مدخلات المستخدم
+        env:
+          DOMAIN: ${{ github.event.inputs.domain }}
+          SERIES_NAME_ARABIC: ${{ github.event.inputs.series_name_arabic }}
+          START_EP: ${{ github.event.inputs.start_episode }}
+          END_EP: ${{ github.event.inputs.end_episode }}
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "domain": "${DOMAIN}",
+            "series_name_arabic": "${SERIES_NAME_ARABIC}",
+            "start_episode": ${START_EP},
+            "end_episode": ${END_EP}
+          }
+          EOF
+          echo "✅ تم إنشاء series_config.json:"
+          cat series_config.json
+
+      - name: 🚀 تشغيل السكربت
+        run: |
+          python3 t.py
+
+      - name: 📤 رفع الملفات المضغوطة كـ Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: episodes-240p
+          path: downloads_*/
+          retention-days: 7
