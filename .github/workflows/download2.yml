@@ -1,4 +1,4 @@
-name: تحميل وضغط حلقات المسلسل من lodynet
+name: مشاهده
 
 on:
   workflow_dispatch:
