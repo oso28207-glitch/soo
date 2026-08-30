@@ -1,29 +1,24 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>مسلسلات تركية مدبلجة - مثل Netflix</title>
-    <!-- استيراد FFmpeg.wasm من CDN -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مسلسلات تركية مدبلجة - مع ضغط 240p</title>
     <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js">
     </script>
     <style>
-        /* ===== إعادة تعيين أساسية ===== */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
         body {
             background: #141414;
             color: #fff;
             padding: 0 20px 40px;
             min-height: 100vh;
         }
-
-        /* ===== شريط العنوان ===== */
         .header {
             display: flex;
             justify-content: space-between;
@@ -48,17 +43,13 @@
             font-size: 14px;
             font-weight: 600;
             color: #fff;
-            -webkit-text-fill-color: #fff;
         }
-
-        /* ===== شبكة البطاقات (مثل Netflix) ===== */
         .series-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 25px 15px;
             margin-top: 10px;
         }
-
         .series-card {
             background: #1f1f1f;
             border-radius: 12px;
@@ -66,13 +57,11 @@
             cursor: pointer;
             transition: transform 0.25s ease, box-shadow 0.25s ease;
             border: 2px solid transparent;
-            position: relative;
         }
         .series-card:hover {
             transform: scale(1.04);
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
             border-color: #e50914;
-            z-index: 2;
         }
         .series-card img {
             width: 100%;
@@ -91,13 +80,6 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .series-card:hover .card-title {
-            white-space: normal;
-            overflow: visible;
-            text-overflow: clip;
-        }
-
-        /* ===== قسم الحلقات ===== */
         .episodes-section {
             margin: 30px 0 20px;
             padding: 20px 15px;
@@ -163,8 +145,6 @@
             background: #e50914;
             border-color: #e50914;
         }
-
-        /* ===== مشغل الفيديو وشريط التقدم ===== */
         .video-wrapper {
             margin-top: 30px;
             background: #000;
@@ -180,9 +160,15 @@
             max-width: 780px;
             border-radius: 12px;
             background: #0a0a0a;
-            box-shadow: 0 0 40px rgba(229, 9, 20, 0.2);
         }
-
+        iframe {
+            width: 100%;
+            max-width: 780px;
+            height: 440px;
+            border: none;
+            border-radius: 12px;
+            background: #000;
+        }
         #progress-container {
             width: 100%;
             max-width: 780px;
@@ -210,8 +196,6 @@
             text-align: center;
             min-height: 22px;
         }
-
-        /* ===== رسائل الخطأ والتحميل ===== */
         .loading {
             text-align: center;
             padding: 60px 20px;
@@ -228,13 +212,6 @@
             margin: 20px 0;
             grid-column: 1 / -1;
         }
-        .no-data {
-            text-align: center;
-            padding: 40px;
-            color: #888;
-            grid-column: 1 / -1;
-        }
-
         .close-episodes {
             background: none;
             border: none;
@@ -248,8 +225,25 @@
             color: #fff;
             transform: rotate(90deg);
         }
-
-        /* ===== استجابة ===== */
+        .compress-btn {
+            background: #e50914;
+            border: none;
+            color: #fff;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: 0.2s;
+        }
+        .compress-btn:hover {
+            background: #f5c518;
+            color: #000;
+        }
+        .compress-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         @media (max-width: 600px) {
             .series-grid {
                 grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -265,23 +259,13 @@
             .video-wrapper {
                 padding: 12px;
             }
-        }
-        /* شريط التمرير للحلقات */
-        .episodes-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        .episodes-list::-webkit-scrollbar-track {
-            background: #2a2a2a;
-            border-radius: 10px;
-        }
-        .episodes-list::-webkit-scrollbar-thumb {
-            background: #e50914;
-            border-radius: 10px;
+            iframe {
+                height: 250px;
+            }
         }
     </style>
 </head>
 <body>
-
     <header class="header">
         <h1>🎬 تركيـات مدبلج</h1>
         <span class="badge">محدث يومياً</span>
@@ -304,7 +288,10 @@
             </div>
             <div id="status-text">⏳ جاري التهيئة...</div>
         </div>
-        <video id="video-player" controls preload="metadata"></video>
+        <div id="player-container" style="width:100%; max-width:780px;">
+            <!-- سيتم وضع iframe أو video هنا -->
+        </div>
+        <button class="compress-btn" id="compressBtn" style="display:none;">⬇️ تحميل وضغط إلى 240p</button>
     </div>
 
     <script>
@@ -315,17 +302,19 @@
         let currentSeriesIndex = -1;
         let isProcessing = false;
         let ffmpeg = null;
+        let currentEpisodeData = null; // يحتفظ ببيانات الحلقة الحالية
 
         const gridEl = document.getElementById('series-grid');
         const episodesSection = document.getElementById('episodes-section');
         const episodesListEl = document.getElementById('episodes-list');
         const seriesNameEl = document.getElementById('series-name');
         const videoWrapper = document.getElementById('video-wrapper');
-        const videoPlayer = document.getElementById('video-player');
+        const playerContainer = document.getElementById('player-container');
         const progressContainer = document.getElementById('progress-container');
         const progressFill = document.getElementById('progress-fill');
         const statusText = document.getElementById('status-text');
         const closeEpisodesBtn = document.getElementById('closeEpisodesBtn');
+        const compressBtn = document.getElementById('compressBtn');
 
         // ======================================================================
         // 2. تحميل البيانات
@@ -402,7 +391,6 @@
                         e.stopPropagation();
                         const epIdx = parseInt(this.dataset.epIndex);
                         playEpisode(index, epIdx);
-                        // تمييز الزر النشط
                         document.querySelectorAll('.episode-btn').forEach(b => b.classList.remove('active'));
                         this.classList.add('active');
                     });
@@ -415,12 +403,70 @@
         }
 
         // ======================================================================
-        // 5. تشغيل الحلقة + ضغط إلى 240p
+        // 5. تشغيل الحلقة
+        // ======================================================================
+        function playEpisode(seriesIdx, episodeIdx) {
+            const series = seriesData[seriesIdx];
+            const episode = series?.episodes?.[episodeIdx];
+            if (!episode) {
+                alert('الحلقة غير موجودة!');
+                return;
+            }
+
+            currentEpisodeData = episode;
+            videoWrapper.style.display = 'flex';
+            playerContainer.innerHTML = '';
+            compressBtn.style.display = 'none';
+            progressContainer.style.display = 'none';
+
+            // 5.1 التحقق من وجود سيرفرات
+            if (episode.servers && episode.servers.length > 0) {
+                // عرض أول سيرفر في iframe
+                const firstServer = episode.servers[0];
+                const embedUrl = firstServer.embed;
+                // نضيف iframe
+                const iframe = document.createElement('iframe');
+                iframe.src = embedUrl;
+                iframe.allowFullscreen = true;
+                iframe.loading = 'lazy';
+                iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
+                playerContainer.appendChild(iframe);
+
+                // زر الضغط
+                if (episode.directVideo) {
+                    compressBtn.style.display = 'inline-block';
+                    compressBtn.onclick = () => compressVideo(episode.directVideo);
+                } else {
+                    compressBtn.style.display = 'inline-block';
+                    compressBtn.textContent = '⚠️ لا يوجد رابط مباشر، حاول باستخدام السيرفر';
+                    compressBtn.disabled = true;
+                }
+                statusText.innerText = '✅ يتم التشغيل عبر السيرفر. يمكنك الضغط على زر الضغط إذا توفر رابط مباشر.';
+                progressContainer.style.display = 'none';
+            } else if (episode.url && episode.url.startsWith('http')) {
+                // إذا كان الرابط يشير إلى صفحة حلقة، نحاول فتحها في iframe
+                const iframe = document.createElement('iframe');
+                iframe.src = episode.url;
+                iframe.allowFullscreen = true;
+                iframe.loading = 'lazy';
+                playerContainer.appendChild(iframe);
+                compressBtn.style.display = 'none';
+                statusText.innerText = '⏳ جاري تحميل صفحة الحلقة...';
+            } else {
+                playerContainer.innerHTML = '<p style="color:#ff6b6b;">لا يوجد رابط تشغيل متاح لهذه الحلقة.</p>';
+                compressBtn.style.display = 'none';
+                statusText.innerText = '❌ لا يمكن تشغيل هذه الحلقة.';
+            }
+        }
+
+        // ======================================================================
+        // 6. ضغط الفيديو إلى 240p باستخدام FFmpeg.wasm
         // ======================================================================
         async function loadFFmpeg() {
             if (ffmpeg) return ffmpeg;
             try {
                 statusText.innerText = '⏳ جاري تحميل محرك الضغط...';
+                progressContainer.style.display = 'block';
                 progressFill.style.width = '5%';
                 const { FFmpeg } = window.FFmpegWASM;
                 ffmpeg = new FFmpeg();
@@ -445,35 +491,26 @@
             }
         }
 
-        async function playEpisode(seriesIdx, episodeIdx) {
+        async function compressVideo(videoUrl) {
             if (isProcessing) {
-                alert('يتم معالجة حلقة أخرى حالياً، انتظر قليلاً.');
+                alert('جاري معالجة فيديو آخر، انتظر.');
                 return;
             }
-
-            const series = seriesData[seriesIdx];
-            const episode = series?.episodes?.[episodeIdx];
-            if (!episode || !episode.url) {
-                alert('رابط الحلقة غير متوفر!');
-                return;
-            }
-
-            videoWrapper.style.display = 'flex';
-            progressContainer.style.display = 'block';
-            progressFill.style.width = '0%';
-            statusText.innerText = '⏳ جاري تحميل الفيديو...';
-            videoPlayer.poster = series.image || '';
-            videoPlayer.src = '';
-            videoPlayer.removeAttribute('src');
             isProcessing = true;
+            compressBtn.disabled = true;
+            compressBtn.textContent = '⏳ جاري الضغط...';
 
             try {
-                const rawUrl = episode.url;
-                // استخدام corsproxy.io لتجاوز CORS
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`;
-                statusText.innerText = '⬇️ جاري تحميل الفيديو من السيرفر...';
-                progressFill.style.width = '25%';
+                // إظهار شريط التقدم وإخفاء iframe
+                progressContainer.style.display = 'block';
+                progressFill.style.width = '0%';
+                statusText.innerText = '⬇️ جاري تحميل الفيديو...';
+                // إخفاء iframe
+                const iframe = playerContainer.querySelector('iframe');
+                if (iframe) iframe.style.display = 'none';
 
+                // تحميل الفيديو عبر Proxy
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(videoUrl)}`;
                 const response = await fetch(proxyUrl, {
                     headers: { 'Origin': window.location.origin }
                 });
@@ -484,10 +521,11 @@
                 statusText.innerText = `📦 تم التحميل (${(inputData.length / 1024 / 1024).toFixed(2)} ميجابايت)`;
                 progressFill.style.width = '40%';
 
+                // تهيئة FFmpeg
                 const ff = await loadFFmpeg();
                 await ff.writeFile('input.mp4', inputData);
 
-                statusText.innerText = '⚙️ بدء عملية الضغط (قد تستغرق دقائق)...';
+                statusText.innerText = '⚙️ بدء الضغط إلى 240p (قد يستغرق دقائق)...';
                 progressFill.style.width = '50%';
 
                 await ff.exec([
@@ -509,13 +547,21 @@
                 const blob = new Blob([outputData.buffer], { type: 'video/mp4' });
                 const url = URL.createObjectURL(blob);
 
-                videoPlayer.src = url;
-                videoPlayer.load();
-                await videoPlayer.play();
+                // عرض الفيديو المعالج
+                playerContainer.innerHTML = '';
+                const video = document.createElement('video');
+                video.src = url;
+                video.controls = true;
+                video.autoplay = true;
+                video.style.width = '100%';
+                video.style.maxWidth = '780px';
+                video.style.borderRadius = '12px';
+                playerContainer.appendChild(video);
 
                 statusText.innerText = '✅ تم الضغط بنجاح! جودة 240p جاهزة.';
                 progressFill.style.width = '100%';
 
+                // تنظيف
                 await ff.deleteFile('input.mp4');
                 await ff.deleteFile('output.mp4');
 
@@ -523,32 +569,30 @@
                 console.error(err);
                 statusText.innerText = `❌ خطأ: ${err.message}`;
                 progressFill.style.width = '0%';
-                alert('حدث خطأ أثناء المعالجة. تأكد من صحة رابط الحلقة وحاول مجدداً.');
+                alert('حدث خطأ أثناء الضغط. تأكد من صحة رابط الفيديو وحاول مجدداً.');
             } finally {
                 isProcessing = false;
+                compressBtn.disabled = false;
+                compressBtn.textContent = '⬇️ تحميل وضغط إلى 240p';
             }
         }
 
         // ======================================================================
-        // 6. إغلاق قسم الحلقات
+        // 7. إغلاق قسم الحلقات
         // ======================================================================
         closeEpisodesBtn.addEventListener('click', function() {
             episodesSection.style.display = 'none';
             videoWrapper.style.display = 'none';
-            videoPlayer.pause();
-            videoPlayer.src = '';
+            playerContainer.innerHTML = '';
+            compressBtn.style.display = 'none';
+            progressContainer.style.display = 'none';
         });
 
         // ======================================================================
-        // 7. بدء التطبيق
+        // 8. بدء التطبيق
         // ======================================================================
         loadSeries();
-
-        videoPlayer.addEventListener('ended', () => {
-            statusText.innerText = '✅ انتهى التشغيل. يمكنك اختيار حلقة أخرى.';
-        });
-
-        console.log('🎬 تطبيق المسلسلات التركية المدبلجة جاهز!');
+        console.log('🎬 تطبيق المسلسلات التركية المدبلجة مع ضغط 240p جاهز!');
     </script>
 </body>
 </html>
