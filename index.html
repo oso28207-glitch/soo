@@ -446,6 +446,8 @@
         }
 
         async function playEpisode(seriesIdx, episodeIdx) {
+            if (episode.url.includes('/category/') || episode.url.includes('/tag/')) {
+                alert('هذا الرابط هو صفحة تصنيف وليس رابط فيديو مباشر. قد لا يعمل التشغيل.');
             if (isProcessing) {
                 alert('يتم معالجة حلقة أخرى حالياً، انتظر قليلاً.');
                 return;
