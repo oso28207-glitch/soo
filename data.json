@@ -1,9 +1,9 @@
 [
   {
     "name": "قيامة عثمان",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=قيامة+عثمان",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D9%82%D9%8A%D8%A7%D9%85%D8%A9%20%D8%B9%D8%AB%D9%85%D8%A7%D9%86",
+    "link": "https://3isk.homes/series/قيامة-عثمان-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -17,9 +17,9 @@
   },
   {
     "name": "السلطان عبد الحميد",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=السلطان+عبد+الحميد",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D9%84%D8%B3%D9%84%D8%B7%D8%A7%D9%86%20%D8%B9%D8%A8%D8%AF%20%D8%A7%D9%84%D8%AD%D9%85%D9%8A%D8%AF",
+    "link": "https://3isk.homes/series/السلطان-عبد-الحميد-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -33,21 +33,25 @@
   },
   {
     "name": "حكاية حب",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حكاية+حب",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%AD%D9%83%D8%A7%D9%8A%D8%A9%20%D8%AD%D8%A8",
+    "link": "https://3isk.homes/series/حكاية-حب-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
         "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
       }
     ]
   },
   {
     "name": "العشق الممنوع",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=العشق+الممنوع",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D9%84%D8%B9%D8%B4%D9%82%20%D8%A7%D9%84%D9%85%D9%85%D9%86%D9%88%D8%B9",
+    "link": "https://3isk.homes/series/العشق-الممنوع-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -61,21 +65,25 @@
   },
   {
     "name": "وادي الذئاب",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=وادي+الذئاب",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D9%88%D8%A7%D8%AF%D9%8A%20%D8%A7%D9%84%D8%B0%D8%A6%D8%A7%D8%A8",
+    "link": "https://3isk.homes/series/وادي-الذئاب-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
         "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
       }
     ]
   },
   {
     "name": "حب للايجار",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حب+للايجار",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%AD%D8%A8%20%D9%84%D9%84%D8%A7%D9%8A%D8%AC%D8%A7%D8%B1",
+    "link": "https://3isk.homes/series/حب-للايجار-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -89,21 +97,25 @@
   },
   {
     "name": "ندى العمر",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=ندى+العمر",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D9%86%D8%AF%D9%89%20%D8%A7%D9%84%D8%B9%D9%85%D8%B1",
+    "link": "https://3isk.homes/series/ندى-العمر-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
         "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
       }
     ]
   },
   {
     "name": "الوردة السوداء",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=الوردة+السوداء",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D9%84%D9%88%D8%B1%D8%AF%D8%A9%20%D8%A7%D9%84%D8%B3%D9%88%D8%AF%D8%A7%D8%A1",
+    "link": "https://3isk.homes/series/الوردة-السوداء-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -117,21 +129,105 @@
   },
   {
     "name": "عودة مهند",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=عودة+مهند",
-    "link": "#",
-    "source": "قائمة مضمونة",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%B9%D9%88%D8%AF%D8%A9%20%D9%85%D9%87%D9%86%D8%AF",
+    "link": "https://3isk.homes/series/عودة-مهند-مدبلج/",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
         "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
       }
     ]
   },
   {
     "name": "الآسيوي",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=الآسيوي",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D9%84%D8%A2%D8%B3%D9%8A%D9%88%D9%8A",
+    "link": "https://3isk.homes/series/الآسيوي-مدبلج/",
+    "source": "قائمة يدوية",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "ابن الحلال",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D8%A8%D9%86%20%D8%A7%D9%84%D8%AD%D9%84%D8%A7%D9%84",
+    "link": "https://3isk.homes/series/ابن-الحلال-مدبلج/",
+    "source": "قائمة يدوية",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "زهرة القصر",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%B2%D9%87%D8%B1%D8%A9%20%D8%A7%D9%84%D9%82%D8%B5%D8%B1",
+    "link": "https://3isk.homes/series/زهرة-القصر-مدبلج/",
+    "source": "قائمة يدوية",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "أميرة اسطنبول",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A3%D9%85%D9%8A%D8%B1%D8%A9%20%D8%A7%D8%B3%D8%B7%D9%86%D8%A8%D9%88%D9%84",
+    "link": "https://3isk.homes/series/أميرة-اسطنبول-مدبلج/",
+    "source": "قائمة يدوية",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "اغتيال عثمان",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D8%A7%D8%BA%D8%AA%D9%8A%D8%A7%D9%84%20%D8%B9%D8%AB%D9%85%D8%A7%D9%86",
+    "link": "https://3isk.homes/series/اغتيال-عثمان-مدبلج/",
+    "source": "قائمة يدوية",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "مسلسل تركي 1",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=%D9%85%D8%B3%D9%84%D8%B3%D9%84%20%D8%AA%D8%B1%D9%83%D9%8A%201",
     "link": "#",
-    "source": "قائمة مضمونة",
+    "source": "قائمة يدوية",
     "episodes": [
       {
         "name": "الحلقة 1",
@@ -144,610 +240,194 @@
     ]
   },
   {
-    "name": "جعفر العمدة",
+    "name": "المحقق التركي مترجم",
     "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/3/مشاهدة-المسلسل-المترجم-جعفر-العمدة",
-    "source": "EgyWatch",
+    "link": "https://egywatch.live/serie/7541/مشاهدة-المسلسل-المترجم-المحقق-التركي-مترجم",
+    "source": "Sitemap",
     "episodes": [
       {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%AF%D8%A8%D9%84%D8%AC/"
+      },
+      {
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D8%A5%D9%86%D9%85%D9%8A/"
+      },
+      {
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA/"
+      },
+      {
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%AF%D8%A8%D9%84%D8%AC/"
+      },
+      {
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D8%A5%D9%86%D9%85%D9%8A/"
+      },
+      {
+        "name": "Egy Watch",
+        "url": "https://egywatch.live/"
+      },
+      {
+        "name": "الحلقة 8",
+        "url": "https://www.facebook.com/egywatchapp"
+      },
+      {
+        "name": "الحلقة 9",
+        "url": "https://www.instagram.com/egy_watchmoive"
+      },
+      {
+        "name": "الحلقة 10",
+        "url": "https://t.me/egywatchapp"
+      },
+      {
+        "name": "الصفحة الرئيسية",
+        "url": "https://egywatch.live/"
+      },
+      {
+        "name": "أفلام",
+        "url": "https://egywatch.live/page/movies/"
+      },
+      {
+        "name": "مسلسلات",
+        "url": "https://egywatch.live/page/series/"
+      },
+      {
+        "name": "مدبلج",
+        "url": "https://egywatch.live/page/modablaj/"
+      },
+      {
+        "name": "إنمي",
+        "url": "https://egywatch.live/page/animes/"
+      },
+      {
+        "name": "سلاسل الأفلام",
+        "url": "https://egywatch.live/page/سلاسل-الأفلام/"
+      },
+      {
+        "name": "سياسة الخصوصية",
+        "url": "https://egywatch.live/page/info/privacy.php"
+      },
+      {
+        "name": "شروط الاستخدام",
+        "url": "https://egywatch.live/page/info/terms.php"
+      },
+      {
+        "name": "أخلاء المسؤلية",
+        "url": "https://egywatch.live/page/info/disclaimer.php"
+      },
+      {
+        "name": "من نحن",
+        "url": "https://egywatch.live/page/info/about.php"
+      },
+      {
+        "name": "اتصل بنا",
+        "url": "https://egywatch.live/page/info/contact.php"
+      },
+      {
+        "name": "DMCA",
+        "url": "https://egywatch.live/page/info/dmca.php"
       }
     ]
   },
   {
-    "name": "بابا المجال",
+    "name": "المسلسل المدبلج دماء ابدية في عروق تركية",
     "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/4/مشاهدة-المسلسل-المترجم-بابا-المجال",
-    "source": "EgyWatch",
+    "link": "https://egywatch.live/modablaj/268/مشاهدة-المسلسل-المدبلج-دماء-ابدية-في-عروق-تركية",
+    "source": "Sitemap",
     "episodes": [
       {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "رشيد",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/5/مشاهدة-المسلسل-المترجم-رشيد",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%AF%D8%A8%D9%84%D8%AC/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "الصفارة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/6/مشاهدة-المسلسل-المترجم-الصفارة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D8%A5%D9%86%D9%85%D9%8A/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "الكبير أوي",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/7/مشاهدة-المسلسل-المترجم-الكبير-أوي",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "الأجهر",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/8/مشاهدة-المسلسل-المترجم-الأجهر",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%AF%D8%A8%D9%84%D8%AC/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "وعود سخية",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/9/مشاهدة-المسلسل-المترجم-وعود-سخية",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "آخر الحلقات المضافة",
+        "url": "https://egywatch.live/page/lastepisodes/%D8%A3%D8%AE%D8%B1-%D8%AD%D9%84%D9%82%D8%A7%D8%AA-%D8%A7%D9%84%D8%A5%D9%86%D9%85%D9%8A/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "الصندوق",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/10/مشاهدة-المسلسل-المترجم-الصندوق",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "Egy Watch",
+        "url": "https://egywatch.live/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "تلت التلاتة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/12/مشاهدة-المسلسل-المترجم-تلت-التلاتة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "الحلقة 8",
+        "url": "https://www.facebook.com/egywatchapp"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "جت سليمة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/13/مشاهدة-المسلسل-المترجم-جت-سليمة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "الحلقة 9",
+        "url": "https://www.instagram.com/egy_watchmoive"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "ضرب نار",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/14/مشاهدة-المسلسل-المترجم-ضرب-نار",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "الحلقة 10",
+        "url": "https://t.me/egywatchapp"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "تحت الوصاية",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/15/مشاهدة-المسلسل-المترجم-تحت-الوصاية",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "الصفحة الرئيسية",
+        "url": "https://egywatch.live/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "سوق الكانتو",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/16/مشاهدة-المسلسل-المترجم-سوق-الكانتو",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "أفلام",
+        "url": "https://egywatch.live/page/movies/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "سره الباتع",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/17/مشاهدة-المسلسل-المترجم-سره-الباتع",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "مسلسلات",
+        "url": "https://egywatch.live/page/series/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "حضرة العمدة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/18/مشاهدة-المسلسل-المترجم-حضرة-العمدة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "مدبلج",
+        "url": "https://egywatch.live/page/modablaj/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "تغيير جو",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/19/مشاهدة-المسلسل-المترجم-تغيير-جو",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "إنمي",
+        "url": "https://egywatch.live/page/animes/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "عملة نادرة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/20/مشاهدة-المسلسل-المترجم-عملة-نادرة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "سلاسل الأفلام",
+        "url": "https://egywatch.live/page/سلاسل-الأفلام/"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "رمضان كريم",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/21/مشاهدة-المسلسل-المترجم-رمضان-كريم",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "سياسة الخصوصية",
+        "url": "https://egywatch.live/page/info/privacy.php"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "١٠٠٠ حمد الله على السلامة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/22/مشاهدة-المسلسل-المترجم-١٠٠٠-حمد-الله-على-السلامة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "شروط الاستخدام",
+        "url": "https://egywatch.live/page/info/terms.php"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "مذكرات زوج",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/29/مشاهدة-المسلسل-المترجم-مذكرات-زوج",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "أخلاء المسؤلية",
+        "url": "https://egywatch.live/page/info/disclaimer.php"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "ستهم",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/30/مشاهدة-المسلسل-المترجم-ستهم",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "من نحن",
+        "url": "https://egywatch.live/page/info/about.php"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "جميلة",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/31/مشاهدة-المسلسل-المترجم-جميلة",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "اتصل بنا",
+        "url": "https://egywatch.live/page/info/contact.php"
       },
       {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "كامل العدد",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/32/مشاهدة-المسلسل-المترجم-كامل-العدد",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Superman and Lois",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/33/مشاهدة-المسلسل-المترجم-Superman-and-Lois",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "The Power",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/34/مشاهدة-المسلسل-المترجم-The-Power",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "The Boys",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/35/مشاهدة-المسلسل-المترجم-The-Boys",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "House of the Dragon",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/37/مشاهدة-المسلسل-المترجم-House-of-the-Dragon",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Tokyo Vice",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/39/مشاهدة-المسلسل-المترجم-Tokyo-Vice",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Vis a vis",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/40/مشاهدة-المسلسل-المترجم-Vis-a-vis",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "السلطان ألب أرسلان",
-    "image": "https://egywatch.live/page/images/og-banner.jpg",
-    "link": "https://egywatch.live/serie/41/مشاهدة-المسلسل-المترجم-السلطان-ألب-أرسلان",
-    "source": "EgyWatch",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Series sitemap.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series%20sitemap.xml",
-    "link": "https://3sk.autos/series-sitemap.xml",
-    "source": "قصة عشق (3sk)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Series sitemap2.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series%20sitemap2.xml",
-    "link": "https://3sk.autos/series-sitemap2.xml",
-    "source": "قصة عشق (3sk)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Seasons sitemap.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Seasons%20sitemap.xml",
-    "link": "https://3sk.autos/seasons-sitemap.xml",
-    "source": "قصة عشق (3sk)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Series sitemap1.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series%20sitemap1.xml",
-    "link": "https://new.eishq.net/series-sitemap1.xml",
-    "source": "قصة عشق (eishq)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Series sitemap3.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series%20sitemap3.xml",
-    "link": "https://new.eishq.net/series-sitemap3.xml",
-    "source": "قصة عشق (eishq)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Seasons sitemap1.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Seasons%20sitemap1.xml",
-    "link": "https://new.eishq.net/seasons-sitemap1.xml",
-    "source": "قصة عشق (eishq)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Seasons sitemap2.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Seasons%20sitemap2.xml",
-    "link": "https://new.eishq.net/seasons-sitemap2.xml",
-    "source": "قصة عشق (eishq)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      }
-    ]
-  },
-  {
-    "name": "Seasons sitemap3.xml",
-    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Seasons%20sitemap3.xml",
-    "link": "https://new.eishq.net/seasons-sitemap3.xml",
-    "source": "قصة عشق (eishq)",
-    "episodes": [
-      {
-        "name": "الحلقة 1",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-      },
-      {
-        "name": "الحلقة 2",
-        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        "name": "DMCA",
+        "url": "https://egywatch.live/page/info/dmca.php"
       }
     ]
   }
