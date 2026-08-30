@@ -2,14 +2,14 @@ name: تحديث المسلسلات التركية
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # يومياً عند الساعة 6 صباحاً UTC
+    - cron: '0 6 * * *'   # يومياً الساعة 6 صباحاً بتوقيت UTC
   workflow_dispatch:      # تشغيل يدوي
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # للسماح بدفع التغييرات إلى المستودع
+      contents: write
     steps:
       - name: استنساخ المستودع
         uses: actions/checkout@v4
@@ -17,15 +17,15 @@ jobs:
       - name: إعداد Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # 🔄 التحديث من 18 إلى 20
+          node-version: '20'
 
       - name: تثبيت الاعتماديات
-        run: npm install cheerio   # ✅ إزالة axios
+        run: npm install cheerio
 
       - name: تشغيل سكربت الجلب
         run: node scraper.js
 
-      - name: حفظ التغييرات في المستودع
+      - name: حفظ التغييرات
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "🤖 تحديث تلقائي لقائمة المسلسلات"
