@@ -593,6 +593,77 @@
         // ======================================================================
         loadSeries();
         console.log('🎬 تطبيق المسلسلات التركية المدبلجة مع ضغط 240p جاهز!');
+        // === تحسين عرض السيرفرات ===
+// بعد عرض الحلقات، إذا كانت الحلقة تحتوي على عدة سيرفرات، نضيف أزراراً للتبديل
+function renderEpisodeServers(episode) {
+    if (!episode.servers || episode.servers.length === 0) return '';
+    let html = '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">';
+    episode.servers.forEach((s, idx) => {
+        html += `<button class="server-btn" data-src="${s.embed}" style="background:#333; border:none; color:#fff; padding:4px 12px; border-radius:20px; cursor:pointer; font-size:12px;">${s.name}</button>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+// تعديل دالة showEpisodes لعرض السيرفرات
+const originalShowEpisodes = window.showEpisodes;
+window.showEpisodes = function(index) {
+    originalShowEpisodes(index);
+    // إضافة أزرار السيرفرات بعد كل زر حلقة
+    const btns = document.querySelectorAll('.episode-btn');
+    btns.forEach((btn, i) => {
+        const epIndex = parseInt(btn.dataset.epIndex);
+        const series = seriesData[currentSeriesIndex];
+        const ep = series?.episodes?.[epIndex];
+        if (ep && ep.servers && ep.servers.length > 0) {
+            const container = document.createElement('div');
+            container.className = 'server-buttons';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '5px';
+            container.style.marginTop = '5px';
+            ep.servers.forEach(s => {
+                const sbtn = document.createElement('button');
+                sbtn.textContent = s.name;
+                sbtn.style.background = '#444';
+                sbtn.style.border = 'none';
+                sbtn.style.color = '#fff';
+                sbtn.style.padding = '2px 10px';
+                sbtn.style.borderRadius = '15px';
+                sbtn.style.fontSize = '11px';
+                sbtn.style.cursor = 'pointer';
+                sbtn.dataset.embed = s.embed;
+                sbtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // تحديث iframe في المشغل
+                    const iframe = document.querySelector('#player-container iframe');
+                    if (iframe) {
+                        iframe.src = s.embed;
+                    } else {
+                        // إذا لم يكن هناك iframe، نعيد تشغيل الحلقة بالسيرفر المختار
+                        // نمرر السيرفر المختار إلى دالة playEpisode
+                        playEpisodeWithServer(currentSeriesIndex, epIndex, s.embed);
+                    }
+                });
+                container.appendChild(sbtn);
+            });
+            btn.parentNode.insertBefore(container, btn.nextSibling);
+        }
+    });
+};
+
+// دالة لتشغيل الحلقة بسيرفر محدد
+function playEpisodeWithServer(seriesIdx, episodeIdx, serverEmbed) {
+    const series = seriesData[seriesIdx];
+    const episode = series?.episodes?.[episodeIdx];
+    if (!episode) return;
+    // عرض iframe
+    videoWrapper.style.display = 'flex';
+    playerContainer.innerHTML = `<iframe src="${serverEmbed}" allowfullscreen loading="lazy" style="width:100%; max-width:780px; height:440px; border:none; border-radius:12px; background:#000;"></iframe>`;
+    statusText.innerText = `✅ تشغيل عبر السيرفر المختار`;
+    compressBtn.style.display = 'none';
+    progressContainer.style.display = 'none';
+}
     </script>
 </body>
 </html>
