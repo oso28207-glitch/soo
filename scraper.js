@@ -2,12 +2,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 
 // ============================================================
-// قائمة المواقع المستهدفة (مرتبة حسب الأولوية)
-// يحتوي كل موقع على:
-//   - name: اسم الموقع
-//   - sitemap: رابط ملف خريطة الموقع (إن وجد)
-//   - mainUrl: الرابط الرئيسي (للاحتياط)
-//   - selectors: محددات العناصر في حال احتجنا تحليل HTML مباشر
+// قائمة المواقع (كما هي مع بعض الإضافات)
 // ============================================================
 const SITES = [
     {
@@ -72,7 +67,7 @@ const SITES = [
     },
     {
         name: 'دراما تركية (DramaTurk)',
-        sitemap: null, // قد لا يوجد
+        sitemap: null,
         mainUrl: 'https://dramaturk.com/',
         selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
     },
@@ -103,12 +98,9 @@ const SITES = [
 ];
 
 // ============================================================
-// دوال مساعدة
+// دوال مساعدة (نفسها مع تحسينات)
 // ============================================================
 
-/**
- * جلب محتوى صفحة مع محاولة تجاوز الحظر
- */
 async function fetchContent(url, retries = 2) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -126,7 +118,6 @@ async function fetchContent(url, retries = 2) {
         } catch (error) {
             console.warn(`  ⚠️ محاولة ${i+1} فشلت: ${error.message}`);
             if (i === retries - 1) return null;
-            // انتظر قبل إعادة المحاولة
             await new Promise(r => setTimeout(r, 2000));
         }
     }
@@ -134,7 +125,47 @@ async function fetchContent(url, retries = 2) {
 }
 
 /**
- * استخراج روابط المسلسلات من ملف Sitemap
+ * 🔍 فلترة الروابط: نقبل فقط الروابط التي تبدو كمسلسلات تركية مدبلجة
+ */
+function isTurkishDramaSeries(url, name = '') {
+    const lowerUrl = url.toLowerCase();
+    const lowerName = name.toLowerCase();
+
+    // 🚫 استبعاد الأفلام بشكل قاطع
+    const excludeKeywords = [
+        'فيلم', 'movie', 'film', 'cinema', 'theater',
+        'black adam', 'avatar', 'antman', 'john wick', 'shazam', 'scream',
+        'creed', 'guardians', 'galaxy', 'spider', 'man', 'batman', 'superman',
+        'wonder woman', 'aquaman', 'flash', 'green lantern', 'justice league',
+        'avengers', 'thor', 'iron man', 'captain america', 'deadpool',
+        'venom', 'morbius', 'uncharted', 'sonic', 'detective pikachu'
+    ];
+    if (excludeKeywords.some(k => lowerUrl.includes(k) || lowerName.includes(k))) {
+        return false;
+    }
+
+    // ✅ كلمات تدل على مسلسل تركي مدبلج
+    const includeKeywords = [
+        'مسلسل', 'series', 'drama', 'episode', 'season', 'حلقات', 'موسم',
+        'تركي', 'turkish', 'turkey', 'مدبلج', 'dubbed', 'عربي', 'arabic',
+        'اسطنبول', 'istanbul', 'الحب', 'love', 'آخر', 'عشق', 'دمعة', 'فراق'
+    ];
+    // إذا احتوى الرابط أو الاسم على أي كلمة من القائمة، نعتبره مسلسل تركي
+    if (includeKeywords.some(k => lowerUrl.includes(k) || lowerName.includes(k))) {
+        return true;
+    }
+
+    // 🧠 فحص إضافي: إذا كان الرابط يحتوي على /episode/ أو /season/ فهو مسلسل
+    if (lowerUrl.includes('/episode/') || lowerUrl.includes('/season/')) {
+        return true;
+    }
+
+    // ❌ استبعاد الروابط التي تحتوي على كلمات تدل على أفلام
+    return false;
+}
+
+/**
+ * استخراج روابط المسلسلات من Sitemap مع فلترة قوية
  */
 function extractSeriesUrlsFromSitemap(xmlText) {
     const $ = cheerio.load(xmlText, { xmlMode: true });
@@ -145,32 +176,29 @@ function extractSeriesUrlsFromSitemap(xmlText) {
         let loc = $(el).text().trim();
         if (!loc) return;
 
-        // فلترة الروابط التي تبدو كمسلسلات
-        const keywords = ['/series/', '/show/', '/مسلسل/', '/drama/', '/episode/', '/season/'];
-        if (keywords.some(k => loc.includes(k))) {
-            // نستبعد روابط الحلقات الفردية ونأخذ روابط المسلسلات فقط
-            if (!loc.includes('/episode/') && !loc.includes('/season/')) {
-                urls.add(loc);
+        // نستخرج اسم المسلسل من الرابط لتقديم للفلترة
+        let name = '';
+        try {
+            const path = new URL(loc).pathname;
+            const parts = path.split('/').filter(p => p && p !== 'series' && p !== 'show' && p !== 'drama');
+            if (parts.length > 0) {
+                name = parts[parts.length - 1].replace(/-/g, ' ');
             }
+        } catch {}
+
+        // تطبيق الفلترة
+        if (isTurkishDramaSeries(loc, name)) {
+            urls.add(loc);
         }
     });
 
-    // إذا كانت النتيجة صفر، حاول استخراج كل الروابط التي تحوي تاريخ (بعض المواقع تضع المسلسلات في sitemap الرئيسي)
-    if (urls.size === 0) {
-        $('url > loc').each((i, el) => {
-            let loc = $(el).text().trim();
-            // أي رابط ليس صفحة رئيسية أو تصنيف، غالباً هو مسلسل
-            if (loc && loc.split('/').length >= 4 && !loc.endsWith('/')) {
-                urls.add(loc);
-            }
-        });
-    }
-
+    // إحصائيات للمساعدة في التتبع
+    console.log(`  📊 تم فلترة ${$('url > loc').length} رابط، بقي ${urls.size} مسلسل تركي مدبلج.`);
     return Array.from(urls);
 }
 
 /**
- * استخراج اسم المسلسل من الرابط
+ * استخراج اسم المسلسل من الرابط (مع تنظيف)
  */
 function extractSeriesNameFromUrl(url) {
     try {
@@ -180,6 +208,10 @@ function extractSeriesNameFromUrl(url) {
             let name = parts[parts.length - 1].replace(/-/g, ' ');
             // ترجمة بعض الكلمات الشائعة
             name = name.replace(/\bseason\b/gi, 'موسم').replace(/\bepisode\b/gi, 'حلقة');
+            // إذا كان الاسم يحتوي على "فيلم" استبعده
+            if (name.toLowerCase().includes('فيلم') || name.toLowerCase().includes('film')) {
+                return null;
+            }
             return name.charAt(0).toUpperCase() + name.slice(1);
         }
         return url;
@@ -189,14 +221,13 @@ function extractSeriesNameFromUrl(url) {
 }
 
 /**
- * محاولة جلب صورة المسلسل من صفحته
+ * محاولة جلب صورة المسلسل (نفسها)
  */
 async function fetchSeriesImage(seriesUrl) {
     try {
         const html = await fetchContent(seriesUrl, 1);
         if (!html) return null;
         const $ = cheerio.load(html);
-        // البحث عن الصورة في الـ OG tags أو في أي img رئيسي
         let img = $('meta[property="og:image"]').attr('content');
         if (!img) img = $('meta[name="twitter:image"]').attr('content');
         if (!img) img = $('.poster img').attr('src');
@@ -214,7 +245,7 @@ async function fetchSeriesImage(seriesUrl) {
 }
 
 /**
- * محاولة جلب المسلسلات من HTML مباشر (احتياطي)
+ * محاولة جلب من HTML (احتياطي)
  */
 async function fetchSeriesFromHtml(mainUrl, selectors) {
     try {
@@ -232,7 +263,7 @@ async function fetchSeriesFromHtml(mainUrl, selectors) {
                 link = new URL(link, mainUrl).href;
             }
 
-            if (name && link) {
+            if (name && link && isTurkishDramaSeries(link, name)) {
                 seriesList.push({
                     name: name,
                     image: image || '',
@@ -249,7 +280,7 @@ async function fetchSeriesFromHtml(mainUrl, selectors) {
 }
 
 // ============================================================
-// الدالة الرئيسية: جلب البيانات من جميع المصادر
+// الدالة الرئيسية
 // ============================================================
 async function fetchTurkishSeries() {
     console.log('🔄 جاري البحث عن المسلسلات التركية المدبلجة...');
@@ -258,7 +289,7 @@ async function fetchTurkishSeries() {
     let allSeries = [];
     const processedUrls = new Set();
 
-    // المرحلة 1: محاولة جلب من Sitemap لكل موقع
+    // المرحلة 1: Sitemap
     for (const site of SITES) {
         if (!site.sitemap) {
             console.log(`⏭️  تخطي ${site.name} (لا يوجد Sitemap)`);
@@ -271,28 +302,27 @@ async function fetchTurkishSeries() {
         if (xmlContent) {
             const seriesUrls = extractSeriesUrlsFromSitemap(xmlContent);
             if (seriesUrls.length > 0) {
-                console.log(`✅ تم العثور على ${seriesUrls.length} مسلسل في ${site.name}`);
+                console.log(`✅ تم العثور على ${seriesUrls.length} مسلسل تركي مدبلج في ${site.name}`);
                 
-                // نأخذ أول 50 مسلسلاً فقط لتوفير الوقت
+                // نأخذ أول 50 مسلسلاً
                 const limitedUrls = seriesUrls.slice(0, 50);
                 let index = 0;
 
                 for (const url of limitedUrls) {
-                    // تجنب التكرار
                     if (processedUrls.has(url)) continue;
                     processedUrls.add(url);
                     index++;
                     
                     const name = extractSeriesNameFromUrl(url);
+                    if (!name) continue; // استبعاد إذا كان الاسم null (يعني فيلم)
+                    
                     console.log(`  🔍 (${index}/${limitedUrls.length}) جلب بيانات: ${name}`);
 
-                    // محاولة جلب الصورة
                     let image = null;
                     try {
                         image = await fetchSeriesImage(url);
                     } catch (e) {}
 
-                    // إضافة المسلسل مع حلقات تجريبية
                     allSeries.push({
                         name: name,
                         image: image || `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(name)}`,
@@ -305,18 +335,17 @@ async function fetchTurkishSeries() {
                     });
                 }
 
-                // إذا وجدنا عدداً كافياً من المسلسلات، نوقف البحث
                 if (allSeries.length >= 30) {
-                    console.log(`🎉 تم جلب ${allSeries.length} مسلسل من ${site.name} (كافي)`);
+                    console.log(`🎉 تم جلب ${allSeries.length} مسلسل تركي مدبلج (كافي)`);
                     break;
                 }
             } else {
-                console.log(`  ⚠️ لم يتم العثور على مسلسلات في ${site.name}`);
+                console.log(`  ⚠️ لم يتم العثور على مسلسلات تركية مدبلجة في ${site.name}`);
             }
         }
     }
 
-    // المرحلة 2: إذا لم نحصل على نتائج كافية، حاول جلب HTML مباشر
+    // المرحلة 2: HTML احتياطي
     if (allSeries.length < 10) {
         console.log('\n🔄 محاولة جلب البيانات من HTML مباشر (احتياطي)...');
         for (const site of SITES) {
@@ -330,7 +359,6 @@ async function fetchTurkishSeries() {
                 if (processedUrls.has(s.link)) continue;
                 processedUrls.add(s.link);
                 
-                // محاولة جلب الصورة
                 let image = s.image;
                 if (!image || image === '') {
                     try {
@@ -351,31 +379,29 @@ async function fetchTurkishSeries() {
             }
             
             if (allSeries.length > 0) {
-                console.log(`✅ تم جلب ${allSeries.length} مسلسل إجمالاً`);
+                console.log(`✅ تم جلب ${allSeries.length} مسلسل تركياً إجمالاً`);
             }
         }
     }
 
-    // المرحلة 3: إذا فشل الجميع، استخدم البيانات التجريبية
+    // المرحلة 3: بيانات تجريبية
     if (allSeries.length === 0) {
-        console.warn('\n⚠️ جميع محاولات الجلب فشلت. سيتم استخدام بيانات تجريبية.');
-        console.warn('💡 نصيحة: قد تكون المواقع تحجب البوتات. جرب تشغيل السكربت على جهازك الشخصي.');
-        console.warn('💡 أو استخدم خدمة Proxy مثل ScraperAPI لتجاوز الحظر.\n');
+        console.warn('\n⚠️ جميع محاولات الجلب فشلت أو لم تجد مسلسلات تركية. سيتم استخدام بيانات تجريبية.');
         return getMockData();
     }
 
-    console.log(`\n✅ تم جلب ${allSeries.length} مسلسل بنجاح.`);
+    console.log(`\n✅ تم جلب ${allSeries.length} مسلسل تركي مدبلج بنجاح.`);
     return allSeries;
 }
 
 // ============================================================
-// البيانات التجريبية (للاختبار)
+// البيانات التجريبية (مسلسلات تركية مدبلجة افتراضية)
 // ============================================================
 function getMockData() {
     return [
         {
-            name: 'مسلسل تركي تجريبي 1',
-            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series+1',
+            name: 'مسلسل تركي مدبلج 1',
+            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Turkish+Series+1',
             link: '#',
             source: 'تجريبي',
             episodes: [
@@ -384,17 +410,8 @@ function getMockData() {
             ]
         },
         {
-            name: 'مسلسل تركي تجريبي 2',
-            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series+2',
-            link: '#',
-            source: 'تجريبي',
-            episodes: [
-                { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-            ]
-        },
-        {
-            name: 'مسلسل تركي تجريبي 3',
-            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series+3',
+            name: 'مسلسل تركي مدبلج 2',
+            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Turkish+Series+2',
             link: '#',
             source: 'تجريبي',
             episodes: [
@@ -415,7 +432,6 @@ async function main() {
     console.log(`💾 تم حفظ ${series.length} مسلسل في data.json`);
 }
 
-// تشغيل السكربت
 main().catch(error => {
     console.error('❌ خطأ غير متوقع:', error.message);
     process.exit(1);
