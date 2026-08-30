@@ -2,7 +2,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 
 // ================================================================
-// قائمة مواقع المسلسلات التركية المدبلجة
+// إعدادات المواقع
 // ================================================================
 const SITE_CONFIGS = [
     {
@@ -91,82 +91,93 @@ function extractSeriesList(html, config) {
 }
 
 /**
- * استخراج روابط السيرفرات من صفحة الحلقة (PostData)
+ * استخراج PostData من صفحة الحلقة باستخدام regex مشابه للسكربت Python
  */
-function extractServersFromEpisode(html) {
-    const $ = cheerio.load(html);
-    let servers = [];
+function extractPostData(html) {
+    const startMatch = html.match(/PostData\s*=\s*\{/);
+    if (!startMatch) return null;
 
-    $('script').each((i, el) => {
-        const content = $(el).html() || '';
-        // البحث عن const PostData = {...};
-        const match = content.match(/const\s+PostData\s*=\s*({[^;]+});/);
-        if (match) {
-            try {
-                const postData = JSON.parse(match[1]);
-                if (postData.ServersWatch && Array.isArray(postData.ServersWatch)) {
-                    servers = postData.ServersWatch.map(server => ({
-                        name: server.Name,
-                        embed: Buffer.from(server.Embed, 'base64').toString('utf-8'),
-                        id: server.Id
-                    }));
+    let startIndex = startMatch.index;
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    let endIndex = startIndex;
+
+    for (let i = startIndex; i < html.length; i++) {
+        const char = html[i];
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        if (char === '\\' && inString) {
+            escape = true;
+            continue;
+        }
+        if (char === '"' && !escape) {
+            inString = !inString;
+            continue;
+        }
+        if (!inString) {
+            if (char === '{') braceCount++;
+            else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    endIndex = i + 1;
+                    break;
                 }
-            } catch (e) {
-                // قد يكون JSON غير صحيح، نتجاهل
             }
         }
-    });
+    }
 
-    return servers;
-}
+    if (braceCount !== 0) return null;
 
-/**
- * محاولة استخراج رابط فيديو مباشر من صفحة السيرفر (embed)
- */
-async function extractDirectVideoFromEmbed(embedUrl) {
+    let postDataStr = html.substring(startIndex, endIndex);
+    postDataStr = postDataStr.replace(/PostData\s*=\s*/, '').trim();
+    if (postDataStr.endsWith(';')) postDataStr = postDataStr.slice(0, -1);
+
     try {
-        const html = await fetchPage(embedUrl, 1);
-        if (!html) return null;
-
-        const $ = cheerio.load(html);
-        // البحث عن عناصر الفيديو
-        let videoUrl = null;
-        // 1. البحث عن video source
-        $('video source').each((i, el) => {
-            const src = $(el).attr('src');
-            if (src && src.startsWith('http')) videoUrl = src;
-        });
-        if (videoUrl) return videoUrl;
-
-        // 2. البحث عن iframe داخل الصفحة (قد يكون هناك nested embed)
-        const iframeSrc = $('iframe').attr('src');
-        if (iframeSrc && iframeSrc.startsWith('http')) {
-            // محاولة جلب الـ iframe المتداخل
-            const nestedHtml = await fetchPage(iframeSrc, 1);
-            if (nestedHtml) {
-                const nested$ = cheerio.load(nestedHtml);
-                nested$('video source').each((i, el) => {
-                    const src = nested$(el).attr('src');
-                    if (src && src.startsWith('http')) videoUrl = src;
-                });
-            }
-        }
-
-        // 3. البحث عن روابط .mp4 في النص
-        if (!videoUrl) {
-            const text = html;
-            const mp4Match = text.match(/https?:\/\/[^\s"']+\.mp4/);
-            if (mp4Match) videoUrl = mp4Match[0];
-        }
-
-        return videoUrl;
+        // استخدام Function بدلاً من eval لتقييم JSON مع تعليقات (نعم، قد يحتوي على تعليقات)
+        // لكننا سنستخدم محاولة بسيطة: نقوم بتحويل إلى JSON صحيح عن طريق إزالة التعليقات
+        // لكن الأسهل: استخدام json5 لو كان مثبتاً، وإلا نستخدم JSON.parse بعد تنظيف بسيط.
+        // سنستخدم JSON.parse بعد إزالة التعليقات (بدون استخدام مكتبة خارجية)
+        const cleaned = postDataStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        return JSON.parse(cleaned);
     } catch (e) {
-        return null;
+        // محاولة مع Function constructor (آخر حل)
+        try {
+            const fn = new Function(`return ${postDataStr}`);
+            return fn();
+        } catch (err) {
+            console.warn(`  ⚠️ فشل تحليل PostData: ${e.message}`);
+            return null;
+        }
     }
 }
 
 /**
- * جلب الحلقات من صفحة المسلسل مع روابط السيرفرات
+ * استخراج روابط السيرفرات من PostData مع فك التشفير base64
+ */
+function extractServerUrls(postData) {
+    const servers = postData.ServersWatch || [];
+    const urls = [];
+    for (const server of servers) {
+        const embed = server.Embed;
+        if (embed) {
+            try {
+                const decoded = Buffer.from(embed, 'base64').toString('utf-8');
+                if (decoded.startsWith('http')) {
+                    urls.push({ name: server.Name, embed: decoded });
+                }
+            } catch (e) {
+                // تجاهل
+            }
+        }
+    }
+    return urls;
+}
+
+/**
+ * جلب الحلقات من صفحة المسلسل مع استخراج PostData من كل حلقة
  */
 async function fetchEpisodesWithServers(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
@@ -176,7 +187,7 @@ async function fetchEpisodesWithServers(seriesUrl) {
     const episodes = [];
     const seenUrls = new Set();
 
-    // البحث عن روابط الحلقات في #AreaEpisodes أو .ItemNewly
+    // 1. استخراج روابط الحلقات من #AreaEpisodes (خاص بلودي نت)
     const areaEpisodes = $('#AreaEpisodes');
     if (areaEpisodes.length) {
         areaEpisodes.find('a.ItemEpisode, a.CurrentEpisode').each((i, el) => {
@@ -190,7 +201,7 @@ async function fetchEpisodesWithServers(seriesUrl) {
             }
         });
     } else {
-        // محاولة البحث العام
+        // 2. محاولة البحث العام عن روابط تحتوي على "الحلقة"
         $('a[href*="الحلقة"], a[href*="episode"]').each((i, el) => {
             let href = $(el).attr('href');
             if (!href) return;
@@ -203,27 +214,24 @@ async function fetchEpisodesWithServers(seriesUrl) {
         });
     }
 
-    // الآن لكل حلقة، نجلب صفحتها لاستخراج السيرفرات
+    // 3. لكل حلقة، نجلب صفحتها لاستخراج PostData
     for (let ep of episodes) {
         console.log(`    🔍 جلب سيرفرات الحلقة: ${ep.name}`);
         const epHtml = await fetchPage(ep.url, 2);
         if (epHtml) {
-            const servers = extractServersFromEpisode(epHtml);
-            if (servers.length > 0) {
-                ep.servers = servers;
-                // محاولة استخراج رابط فيديو مباشر من أول سيرفر
-                const firstServer = servers[0];
-                if (firstServer && firstServer.embed) {
-                    const directVideo = await extractDirectVideoFromEmbed(firstServer.embed);
-                    if (directVideo) {
-                        ep.directVideo = directVideo;
-                        console.log(`      ✅ تم العثور على رابط فيديو مباشر: ${directVideo.substring(0, 50)}...`);
-                    } else {
-                        console.log(`      ⚠️ لم نتمكن من استخراج رابط فيديو مباشر من السيرفر: ${firstServer.name}`);
-                    }
+            const postData = extractPostData(epHtml);
+            if (postData) {
+                const serverUrls = extractServerUrls(postData);
+                if (serverUrls.length > 0) {
+                    ep.servers = serverUrls;
+                    // نأخذ أول سيرفر كمصدر رئيسي
+                    ep.embed = serverUrls[0].embed;
+                    console.log(`      ✅ تم العثور على ${serverUrls.length} سيرفر`);
+                } else {
+                    console.log(`      ⚠️ لا توجد سيرفرات في PostData`);
                 }
             } else {
-                console.log(`      ⚠️ لم نجد سيرفرات لهذه الحلقة`);
+                console.log(`      ⚠️ لم نجد PostData في صفحة الحلقة`);
             }
         }
     }
@@ -265,10 +273,9 @@ async function fetchTurkishSeries() {
             }
 
             if (!episodes || episodes.length === 0) {
-                episodes = [
-                    { name: 'الحلقة 1 (تجريبي)', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-                ];
-                console.log(`    ⚠️ استخدام حلقات تجريبية.`);
+                // لا نضع حلقات تجريبية، نتركها فارغة
+                episodes = [];
+                console.log(`    ⚠️ لم نجد أي حلقة حقيقية.`);
             } else {
                 console.log(`    ✅ جلب ${episodes.length} حلقة مع سيرفراتها.`);
                 const sample = episodes.slice(0, 2).map(e => e.name).join(' | ');
@@ -291,8 +298,8 @@ async function fetchTurkishSeries() {
     }
 
     if (allSeries.length === 0) {
-        console.warn('\n⚠️ لم يتم جلب أي بيانات. استخدم القائمة الاحتياطية.');
-        return getFallbackData();
+        console.warn('\n⚠️ لم يتم جلب أي بيانات. الخروج.');
+        return [];
     }
 
     // إزالة التكرارات حسب الاسم
@@ -307,20 +314,6 @@ async function fetchTurkishSeries() {
     const final = Array.from(unique.values());
     console.log(`\n✅ تم جمع ${final.length} مسلسل فريد.`);
     return final;
-}
-
-function getFallbackData() {
-    return [
-        {
-            name: 'مسلسل تركي تجريبي 1',
-            image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Turkish+Series+1',
-            link: '#',
-            source: 'تجريبي',
-            episodes: [
-                { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-            ]
-        }
-    ];
 }
 
 // ================================================================
