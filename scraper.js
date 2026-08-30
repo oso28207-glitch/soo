@@ -2,15 +2,12 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 
 // ================================================================
-// 1. قائمة احتياطية موسعة (ضمان عمل الواجهة)
+// 1. قائمة احتياطية (ضمان عمل الواجهة)
 // ================================================================
 const FALLBACK_SERIES = [
     { name: 'قيامة عثمان', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=قيامة+عثمان' },
     { name: 'السلطان عبد الحميد', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=السلطان+عبد+الحميد' },
-    { name: 'حكاية حب', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حكاية+حب' },
-    { name: 'العشق الممنوع', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=العشق+الممنوع' },
-    { name: 'وادي الذئاب', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=وادي+الذئاب' },
-    { name: 'حب للايجار', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حب+للايجار' }
+    { name: 'حكاية حب', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حكاية+حب' }
 ];
 
 // ================================================================
@@ -19,10 +16,8 @@ const FALLBACK_SERIES = [
 const SITE_CONFIGS = [
     {
         name: 'LodyNet',
-        type: 'html',
         listUrl: 'https://lodynet.watch/category/%d9%85%d8%b4%d8%a7%d9%87%d8%af%d8%a9-%d9%85%d8%b3%d9%84%d8%b3%d9%84%d8%a7%d8%aa-%d8%aa%d8%b1%d9%83%d9%8a%d8%a9-%d9%85%d8%af%d8%a8%d9%84%d8%ac%d8%a9/',
         selectors: {
-            // محددات صفحة التصنيف
             item: '.ItemNewly',
             title: '.NewlyTitle',
             link: 'a',
@@ -30,8 +25,7 @@ const SITE_CONFIGS = [
         }
     },
     {
-        name: 'Eishq (قصة عشق)',
-        type: 'html',
+        name: 'Eishq',
         listUrl: 'https://new.eishq.net/video/category/%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA-%D8%AA%D8%B1%D9%83%D9%8A%D8%A9-%D9%85%D8%AF%D8%A8%D9%84%D8%AC%D8%A9/',
         selectors: {
             item: 'article.post',
@@ -43,10 +37,9 @@ const SITE_CONFIGS = [
 ];
 
 // ================================================================
-// 3. دوال مساعدة أساسية
+// 3. دوال مساعدة
 // ================================================================
 
-/** جلب محتوى صفحة مع إعادة محاولة */
 async function fetchPage(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -70,8 +63,7 @@ async function fetchPage(url, retries = 3) {
 }
 
 /** استخراج الصورة من style أو data-src */
-function extractImageFromElement($el) {
-    // محاولة من style
+function extractImage($el) {
     const style = $el.attr('style') || '';
     const match = style.match(/url\(["']?([^"')]+)["']?\)/);
     if (match) {
@@ -79,17 +71,15 @@ function extractImageFromElement($el) {
         if (url.startsWith('//')) url = 'https:' + url;
         return url;
     }
-    // محاولة من data-src
     const dataSrc = $el.attr('data-src');
     if (dataSrc) return dataSrc;
-    // محاولة من src
     const src = $el.attr('src');
     if (src) return src;
     return null;
 }
 
 /** استخراج قائمة المسلسلات من صفحة التصنيف */
-function extractSeriesFromList(html, config) {
+function extractSeriesList(html, config) {
     const $ = cheerio.load(html);
     const results = [];
     const { item, title, link, image } = config.selectors;
@@ -99,27 +89,22 @@ function extractSeriesFromList(html, config) {
         const name = $el.find(title).text().trim();
         const href = $el.find(link).attr('href');
         const imgEl = $el.find(image);
-        let img = extractImageFromElement(imgEl);
-
-        // إذا لم نجد صورة، نستخدم placeholder
+        let img = extractImage(imgEl);
         if (!img) {
             img = `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(name)}`;
         }
-
         if (name && href) {
             const absoluteUrl = href.startsWith('http') ? href : new URL(href, config.listUrl).href;
-            results.push({
-                name: name,
-                link: absoluteUrl,
-                image: img
-            });
+            results.push({ name, link: absoluteUrl, image: img });
         }
     });
-
     return results;
 }
 
-/** جلب الحلقات من صفحة المسلسل (محسّن) */
+/**
+ * 🔥 الدالة الأهم: جلب الحلقات من صفحة المسلسل الفردية فقط
+ * مع استبعاد الروابط التي تشير إلى تصنيفات أو قوائم جانبية
+ */
 async function fetchEpisodes(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
     if (!html) return null;
@@ -128,86 +113,106 @@ async function fetchEpisodes(seriesUrl) {
     const episodes = [];
     const seenUrls = new Set();
 
-    // 🔍 المحاولة 1: البحث عن روابط الحلقات في الصفحة الرئيسية
-    // البحث عن روابط تحتوي على "episode" أو "watch" أو "mp4"
-    $('a[href*="episode"], a[href*="watch"], a[href*=".mp4"]').each((i, el) => {
-        let href = $(el).attr('href');
-        if (!href) return;
-        let name = $(el).text().trim() || `الحلقة ${i+1}`;
-        href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
-        
-        // نتجنب الروابط المكررة وروابط التصنيفات
-        if (!seenUrls.has(href) && 
-            !href.includes('/category/') && 
-            !href.includes('/tag/') &&
-            !href.includes('/series/') &&
-            !href.includes('#')) {
-            seenUrls.add(href);
-            episodes.push({ name, url: href });
-        }
-    });
+    // ✅ الخطوة 1: البحث عن روابط الحلقات داخل .episodes-list أو .season-episodes
+    // هذه هي المنطقة التي تحتوي على الحلقات الفعلية
+    const episodeContainers = [
+        '.episodes-list',
+        '.season-episodes',
+        '.list-episodes',
+        '.episode-items',
+        '.post-content .episodes',
+        '.entry-content .episodes'
+    ];
 
-    // 🔍 المحاولة 2: البحث داخل عناصر الحلقات النموذجية
-    if (episodes.length === 0) {
-        $('.episode-item a, .episode-link a, .episodes-list a, .season-episodes a, .list-episodes a').each((i, el) => {
+    let found = false;
+    for (const container of episodeContainers) {
+        const $container = $(container);
+        if ($container.length > 0) {
+            $container.find('a').each((i, el) => {
+                let href = $(el).attr('href');
+                if (!href) return;
+                let name = $(el).text().trim() || `الحلقة ${i+1}`;
+                href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
+                // ✅ فقط الروابط التي تحتوي على "episode" أو "watch" أو ".mp4"
+                if (href.includes('/episode/') || href.includes('/watch/') || href.includes('.mp4')) {
+                    if (!seenUrls.has(href)) {
+                        seenUrls.add(href);
+                        episodes.push({ name, url: href });
+                    }
+                }
+            });
+            if (episodes.length > 0) {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    // ✅ الخطوة 2: إذا لم نجد، نبحث في كل الروابط التي تحتوي على "episode" أو "watch"
+    if (!found || episodes.length === 0) {
+        $('a[href*="episode"], a[href*="watch"]').each((i, el) => {
             let href = $(el).attr('href');
             if (!href) return;
             let name = $(el).text().trim() || `الحلقة ${i+1}`;
             href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
-            
-            if (!seenUrls.has(href) && 
-                !href.includes('/category/') && 
-                !href.includes('/tag/') &&
-                !href.includes('/series/')) {
-                seenUrls.add(href);
-                episodes.push({ name, url: href });
+            // استبعاد الروابط التي تشير إلى تصنيفات أو صفحات أخرى
+            if (!href.includes('/category/') && !href.includes('/tag/') && !href.includes('/series/')) {
+                if (!seenUrls.has(href)) {
+                    seenUrls.add(href);
+                    episodes.push({ name, url: href });
+                }
             }
         });
     }
 
-    // 🔍 المحاولة 3: استخدام بيانات JSON المضمنة (خاص بلودي نت)
+    // ✅ الخطوة 3: استخراج من بيانات JSON المضمنة (خاص بلودي نت)
     if (episodes.length === 0) {
         try {
-            // البحث عن بيانات JSON في الصفحة
             const scripts = $('script').toArray();
             for (const script of scripts) {
                 const content = $(script).html() || '';
-                // البحث عن TheRequesterData (خاص بلودي نت)
                 if (content.includes('TheRequesterData')) {
                     const match = content.match(/TheRequesterData\s*=\s*({[^;]+});/);
                     if (match) {
                         const data = JSON.parse(match[1]);
                         if (data && data.Items && Array.isArray(data.Items)) {
-                            // الحلقات موجودة في Items
-                            data.Items.forEach(item => {
+                            for (const item of data.Items) {
                                 if (item.url && item.title) {
                                     const href = item.url.startsWith('http') ? item.url : new URL(item.url, seriesUrl).href;
-                                    if (!seenUrls.has(href) && 
-                                        !href.includes('/category/') && 
-                                        !href.includes('/tag/')) {
+                                    if (!seenUrls.has(href) && !href.includes('/category/') && !href.includes('/tag/')) {
                                         seenUrls.add(href);
-                                        episodes.push({ 
-                                            name: item.title || `الحلقة`, 
-                                            url: href 
-                                        });
+                                        episodes.push({ name: item.title, url: href });
                                     }
                                 }
-                            });
+                            }
                         }
                     }
                 }
             }
         } catch (e) {
-            console.warn(`  ⚠️ فشل استخراج JSON: ${e.message}`);
+            // تجاهل الأخطاء
         }
     }
 
-    // نأخذ أول 50 حلقة فقط
-    if (episodes.length > 50) {
-        episodes.length = 50;
+    // ✅ الخطوة 4: تصفية الحلقات - استبعاد أي حلقة لا تحتوي على كلمات مفتاحية تدل على حلقة
+    const filtered = episodes.filter(ep => {
+        const name = ep.name.toLowerCase();
+        const url = ep.url.toLowerCase();
+        // يجب أن يحتوي الاسم أو الرابط على كلمة تدل على حلقة
+        const keywords = ['حلقة', 'episode', 'الحلقة', 'ep', 'جزء', 'season', 'الموسم'];
+        const hasKeyword = keywords.some(k => name.includes(k) || url.includes(k));
+        // استبعاد الروابط التي تشبه تصنيفات
+        const isCategory = url.includes('/category/') || url.includes('/tag/') || url.includes('/series/');
+        return hasKeyword && !isCategory;
+    });
+
+    // إذا وجدنا حلقات، نأخذ أول 50
+    if (filtered.length > 0) {
+        return filtered.slice(0, 50);
     }
 
-    return episodes.length > 0 ? episodes : null;
+    // إذا لم نجد أي حلقة، نعيد null
+    return null;
 }
 
 // ================================================================
@@ -226,19 +231,17 @@ async function fetchTurkishSeries() {
             continue;
         }
 
-        const seriesList = extractSeriesFromList(html, config);
+        const seriesList = extractSeriesList(html, config);
         console.log(`  ✅ تم العثور على ${seriesList.length} مسلسل.`);
 
         let count = 0;
         for (const item of seriesList) {
-            // تجنب التكرار
             if (processedLinks.has(item.link)) continue;
             processedLinks.add(item.link);
             count++;
 
             console.log(`  🔍 (${count}/${seriesList.length}) جلب حلقات: ${item.name}`);
 
-            // محاولة جلب الحلقات
             let episodes = null;
             try {
                 episodes = await fetchEpisodes(item.link);
@@ -246,7 +249,6 @@ async function fetchTurkishSeries() {
                 console.warn(`    ⚠️ فشل جلب الحلقات: ${e.message}`);
             }
 
-            // إذا لم نجد حلقات، نستخدم حلقات تجريبية
             if (!episodes) {
                 episodes = [
                     { name: 'الحلقة 1 (تجريبي)', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
@@ -255,8 +257,7 @@ async function fetchTurkishSeries() {
                 console.log(`    ⚠️ استخدام حلقات تجريبية.`);
             } else {
                 console.log(`    ✅ جلب ${episodes.length} حلقة.`);
-                // عرض أول 3 حلقات كمثال
-                const sample = episodes.slice(0, 3).map(e => e.name).join(', ');
+                const sample = episodes.slice(0, 3).map(e => e.name).join(' | ');
                 console.log(`    📝 مثال: ${sample}`);
             }
 
@@ -269,16 +270,14 @@ async function fetchTurkishSeries() {
             });
         }
 
-        // إذا جمعنا عدداً كافياً، نتوقف
         if (allSeries.length >= 30) {
             console.log(`\n🎉 تم جمع ${allSeries.length} مسلسل، كافٍ.`);
             break;
         }
     }
 
-    // إذا لم نجد أي بيانات، استخدم القائمة الاحتياطية
     if (allSeries.length === 0) {
-        console.warn('\n⚠️ لم يتم جلب أي بيانات من المواقع. استخدم القائمة الاحتياطية.');
+        console.warn('\n⚠️ لم يتم جلب أي بيانات. استخدم القائمة الاحتياطية.');
         return FALLBACK_SERIES.map(s => ({
             ...s,
             link: '#',
@@ -290,7 +289,7 @@ async function fetchTurkishSeries() {
         }));
     }
 
-    // إزالة التكرارات حسب الاسم
+    // إزالة التكرارات
     const unique = new Map();
     allSeries.forEach(s => {
         const key = s.name.trim().toLowerCase();
@@ -305,7 +304,7 @@ async function fetchTurkishSeries() {
 }
 
 // ================================================================
-// 5. التشغيل والحفظ
+// 5. التشغيل
 // ================================================================
 async function main() {
     const series = await fetchTurkishSeries();
