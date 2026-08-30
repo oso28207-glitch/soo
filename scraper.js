@@ -8,54 +8,56 @@ const FALLBACK_SERIES = [
     { name: 'قيامة عثمان', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=قيامة+عثمان' },
     { name: 'السلطان عبد الحميد', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=السلطان+عبد+الحميد' },
     { name: 'حكاية حب', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حكاية+حب' },
-    // ... يمكنك إضافة المزيد هنا
+    { name: 'العشق الممنوع', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=العشق+الممنوع' },
+    { name: 'وادي الذئاب', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=وادي+الذئاب' },
+    { name: 'حب للايجار', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حب+للايجار' },
+    { name: 'زهرة القصر', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=زهرة+القصر' },
+    { name: 'أميرة اسطنبول', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=أميرة+اسطنبول' },
+    { name: 'ابن الحلال', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=ابن+الحلال' },
+    { name: 'الآسيوي', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=الآسيوي' }
 ];
 
 // ================================================================
-// 2. تكوين المواقع (تم تحديث المحددات)
+// 2. تكوين المواقع (محددات دقيقة)
 // ================================================================
 const SITE_CONFIGS = [
-    // --- لودي نت: جلب البيانات من صفحة التصنيف مباشرة ---
     {
         name: 'LodyNet (HTML)',
         type: 'html',
         url: 'https://lodynet.watch/dubbed-turkish-series-g/',
         selectors: {
-            // المحددات الخاصة بصفحة لودي نت
-            item: '.ItemNewly', // العنصر الذي يحتوي على كل مسلسل
-            title: '.NewlyTitle', // مكان اسم المسلسل
-            link: 'a', // مكان الرابط
-            image: '.NewlyCover' // مكان الصورة (سيتم استخراجها من الخلفية)
+            // كل مسلسل داخل div.ItemNewly
+            item: '.ItemNewly',
+            // اسم المسلسل داخل div.NewlyTitle
+            title: '.NewlyTitle',
+            // الرابط داخل a
+            link: 'a',
+            // الصورة داخل .NewlyCover
+            image: '.NewlyCover'
+        },
+        // فلترة إضافية: فقط العناصر التي تحتوي على كلمة "مسلسل"
+        filter: (name) => {
+            return name && name.includes('مسلسل') && !name.includes('⌵') && !name.includes('مدبلجة');
         }
     },
-    // --- قصة عشق: جلب البيانات من صفحة التصنيف مباشرة ---
     {
         name: 'Eishq (HTML)',
         type: 'html',
         url: 'https://new.eishq.net/video/category/%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA-%D8%AA%D8%B1%D9%83%D9%8A%D8%A9-%D9%85%D8%AF%D8%A8%D9%84%D8%AC%D8%A9/',
         selectors: {
-            item: 'article.post', // العنصر الذي يحتوي على كل مسلسل
-            title: '.title', // مكان اسم المسلسل
-            link: 'a', // مكان الرابط
-            image: '.imgBg' // مكان الصورة (سيتم استخراجها من الخلفية)
-        }
-    },
-    // --- ماي سيما: مصدر إضافي ---
-    {
-        name: 'MyCima (HTML)',
-        type: 'html',
-        url: 'https://mycima.net/category/%D9%85%D8%B3%D9%84%D8%B3%D9%84%D8%A7%D8%AA-%D8%AA%D8%B1%D9%83%D9%8A%D8%A9/',
-        selectors: {
-            item: '.movie-item, .post-item',
-            title: '.title, h3',
+            item: 'article.post',
+            title: '.title',
             link: 'a',
-            image: 'img'
+            image: '.imgBg'
+        },
+        filter: (name) => {
+            return name && name.includes('مسلسل') && name.includes('مدبلج');
         }
     }
 ];
 
 // ================================================================
-// 3. دوال مساعدة أساسية (مع التصحيحات)
+// 3. دوال مساعدة
 // ================================================================
 
 /** جلب محتوى صفحة مع إعادة محاولة */
@@ -81,28 +83,37 @@ async function fetchPage(url, retries = 3) {
     return null;
 }
 
-/** استخراج المسلسلات من HTML (تم إصلاح خطأ 'url') */
+/** استخراج المسلسلات من HTML مع فلترة */
 function extractSeriesFromHTML(html, config) {
     const $ = cheerio.load(html);
     const results = [];
     const { item, title, link, image } = config.selectors;
+    const filter = config.filter || (() => true);
 
     $(item).each((i, el) => {
         const $el = $(el);
         const name = $el.find(title).text().trim();
         const href = $el.find(link).attr('href');
         
-        // محاولة استخراج الصورة
-        let img = $el.find(image).attr('src');
-        if (!img) {
-            // محاولة استخراج الصورة من خاصية style (مثل background-image)
-            const style = $el.find(image).attr('style') || '';
-            const match = style.match(/url\(["']?([^"')]+)["']?\)/);
-            if (match) img = match[1];
+        // تطبيق الفلترة
+        if (!filter(name)) return;
+
+        // استخراج الصورة
+        let img = null;
+        const imgEl = $el.find(image);
+        if (imgEl) {
+            img = imgEl.attr('src');
+            if (!img) {
+                const style = imgEl.attr('style') || '';
+                const match = style.match(/url\(["']?([^"')]+)["']?\)/);
+                if (match) img = match[1];
+            }
+            if (!img) {
+                img = imgEl.attr('data-src');
+            }
         }
 
         if (name && href) {
-            // **الإصلاح**: استخدام `config.url` لتحويل الرابط النسبي إلى مطلق
             const absoluteUrl = href.startsWith('http') ? href : new URL(href, config.url).href;
             results.push({
                 name: name,
@@ -111,6 +122,7 @@ function extractSeriesFromHTML(html, config) {
             });
         }
     });
+
     return results;
 }
 
@@ -121,11 +133,24 @@ async function fetchEpisodes(seriesUrl) {
     const $ = cheerio.load(html);
     const episodes = [];
 
-    $('a[href*="episode"], a[href*="watch"], a[href*=".mp4"]').each((i, el) => {
+    // البحث عن روابط الحلقات
+    const episodeSelectors = [
+        'a[href*="episode"]',
+        'a[href*="watch"]',
+        'a[href*=".mp4"]',
+        '.episode-item a',
+        '.episode-link a',
+        '.episodes-list a',
+        '.season-episodes a'
+    ];
+
+    $(episodeSelectors.join(', ')).each((i, el) => {
         let href = $(el).attr('href');
         if (!href) return;
         let name = $(el).text().trim() || `الحلقة ${i+1}`;
         href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
+        // تجاهل الروابط التي تحتوي على category أو tag
+        if (href.includes('/category/') || href.includes('/tag/')) return;
         if (!episodes.some(e => e.url === href)) {
             episodes.push({ name, url: href });
         }
@@ -140,16 +165,14 @@ function fallbackImage(name) {
 }
 
 // ================================================================
-// 4. الدالة الرئيسية (تم تعديلها لاستخدام المصادر الجديدة)
+// 4. الدالة الرئيسية
 // ================================================================
 async function fetchTurkishSeries() {
     console.log('🔄 جاري جلب المسلسلات التركية المدبلجة...\n');
     let allSeries = [];
     const processedLinks = new Set();
 
-    // جلب من جميع المواقع (HTML)
     for (const config of SITE_CONFIGS) {
-        if (config.type !== 'html') continue;
         console.log(`📡 جلب HTML: ${config.name} (${config.url})`);
         const html = await fetchPage(config.url);
         if (!html) {
@@ -157,15 +180,23 @@ async function fetchTurkishSeries() {
             continue;
         }
         const seriesList = extractSeriesFromHTML(html, config);
-        console.log(`  ✅ تم العثور على ${seriesList.length} مسلسل.`);
+        console.log(`  ✅ تم العثور على ${seriesList.length} مسلسل بعد الفلترة.`);
 
+        let count = 0;
         for (const item of seriesList) {
             if (processedLinks.has(item.link)) continue;
             processedLinks.add(item.link);
+            count++;
 
-            // محاولة جلب الحلقات (قد تكون بطيئة، يمكن تعطيلها مؤقتاً)
+            console.log(`  🔍 (${count}/${seriesList.length}) جلب: ${item.name}`);
+
+            // محاولة جلب الحلقات
             let episodes = null;
-            try { episodes = await fetchEpisodes(item.link); } catch (e) {}
+            try { 
+                episodes = await fetchEpisodes(item.link); 
+            } catch (e) {
+                console.warn(`    ⚠️ فشل جلب الحلقات: ${e.message}`);
+            }
 
             allSeries.push({
                 name: item.name,
