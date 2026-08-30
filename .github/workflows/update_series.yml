@@ -6,27 +6,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  update-data:
+  update:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: استنساخ المستودع
-        uses: actions/checkout@v4
-
-      - name: إعداد Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: تثبيت الاعتماديات
-        run: npm install cheerio
-
-      - name: تشغيل سكربت الجلب
-        run: node scraper.js
-
-      - name: حفظ التغييرات
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - run: npm install cheerio puppeteer
+      - run: node scraper.js
+      - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🤖 تحديث تلقائي لقائمة المسلسلات"
+          commit_message: "🤖 تحديث تلقائي للمسلسلات"
           file_pattern: data.json
