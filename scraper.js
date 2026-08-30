@@ -8,7 +8,7 @@ async function fetchTurkishSeries() {
     console.log('🔄 جاري جلب بيانات المسلسلات...');
     
     // ⚠️ استبدل هذا الرابط بالموقع الفعلي للمسلسلات التركية المدبلجة
-    const targetUrl = 'https://example-turkish-drama-site.com/'; 
+    const targetUrl = 'https://aa.3ick.net/'; 
     
     try {
         const response = await fetch(targetUrl, {
