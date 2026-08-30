@@ -1,13 +1,12 @@
 {
   "name": "turkish-scraper",
   "version": "1.0.0",
-  "description": "جلب المسلسلات التركية المدبلجة من مواقع متعددة",
+  "description": "جلب المسلسلات التركية المدبلجة",
   "main": "scraper.js",
   "scripts": {
     "start": "node scraper.js"
   },
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
-    "puppeteer": "^24.0.0"
+    "cheerio": "^1.0.0-rc.12"
   }
 }
