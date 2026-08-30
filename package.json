@@ -1,7 +1,7 @@
 {
-  "name": "turkish-scraper",
+  "name": "turkish-series-scraper",
   "version": "1.0.0",
-  "description": "جلب المسلسلات التركية المدبلجة",
+  "description": "جلب المسلسلات التركية المدبلجة مع سيرفرات المشاهدة",
   "main": "scraper.js",
   "scripts": {
     "start": "node scraper.js"
