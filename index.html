@@ -91,14 +91,13 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        /* تأثير التمرير على الاسم */
         .series-card:hover .card-title {
             white-space: normal;
             overflow: visible;
             text-overflow: clip;
         }
 
-        /* ===== قسم الحلقات (يظهر عند اختيار مسلسل) ===== */
+        /* ===== قسم الحلقات ===== */
         .episodes-section {
             margin: 30px 0 20px;
             padding: 20px 15px;
@@ -106,7 +105,6 @@
             border-radius: 16px;
             border: 1px solid #333;
             display: none;
-            /* يظهر عبر JS */;
         }
         .episodes-section h2 {
             font-size: 22px;
@@ -127,6 +125,20 @@
             display: flex;
             flex-wrap: wrap;
             gap: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+        .episodes-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .episodes-list::-webkit-scrollbar-track {
+            background: #2a2a2a;
+            border-radius: 10px;
+        }
+        .episodes-list::-webkit-scrollbar-thumb {
+            background: #e50914;
+            border-radius: 10px;
         }
         .episode-btn {
             background: #2a2a2a;
@@ -139,12 +151,17 @@
             transition: 0.2s;
             border: 1px solid #444;
             font-weight: 500;
+            flex-shrink: 0;
         }
         .episode-btn:hover {
             background: #e50914;
             border-color: #e50914;
             transform: translateY(-2px);
             box-shadow: 0 6px 14px rgba(229, 9, 20, 0.4);
+        }
+        .episode-btn.active {
+            background: #e50914;
+            border-color: #e50914;
         }
 
         /* ===== مشغل الفيديو وشريط التقدم ===== */
@@ -154,7 +171,6 @@
             border-radius: 16px;
             padding: 20px 20px 25px;
             display: none;
-            /* يظهر عبر JS */
             flex-direction: column;
             align-items: center;
             border: 1px solid #333;
@@ -167,7 +183,6 @@
             box-shadow: 0 0 40px rgba(229, 9, 20, 0.2);
         }
 
-        /* شريط التقدم */
         #progress-container {
             width: 100%;
             max-width: 780px;
@@ -220,7 +235,6 @@
             grid-column: 1 / -1;
         }
 
-        /* ===== زر إغلاق الحلقات ===== */
         .close-episodes {
             background: none;
             border: none;
@@ -235,7 +249,7 @@
             transform: rotate(90deg);
         }
 
-        /* ===== استجابة للشاشات الصغيرة ===== */
+        /* ===== استجابة ===== */
         @media (max-width: 600px) {
             .series-grid {
                 grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -252,29 +266,37 @@
                 padding: 12px;
             }
         }
+        /* شريط التمرير للحلقات */
+        .episodes-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .episodes-list::-webkit-scrollbar-track {
+            background: #2a2a2a;
+            border-radius: 10px;
+        }
+        .episodes-list::-webkit-scrollbar-thumb {
+            background: #e50914;
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
 
-    <!-- ===== الهيدر ===== -->
     <header class="header">
         <h1>🎬 تركيـات مدبلج</h1>
         <span class="badge">محدث يومياً</span>
     </header>
 
-    <!-- ===== شبكة المسلسلات ===== -->
     <div id="series-grid" class="series-grid">
         <div class="loading">⏳ جاري تحميل المسلسلات...</div>
     </div>
 
-    <!-- ===== قسم الحلقات ===== -->
     <div id="episodes-section" class="episodes-section">
         <button class="close-episodes" id="closeEpisodesBtn">✕</button>
         <h2 id="series-title">📺 <span id="series-name"></span></h2>
         <div id="episodes-list" class="episodes-list"></div>
     </div>
 
-    <!-- ===== مشغل الفيديو + شريط التقدم ===== -->
     <div id="video-wrapper" class="video-wrapper">
         <div id="progress-container">
             <div id="progress-bar">
@@ -285,19 +307,15 @@
         <video id="video-player" controls preload="metadata"></video>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- ===== جافا سكريبت ===== -->
     <script>
         // ======================================================================
         // 1. المتغيرات العامة
         // ======================================================================
         let seriesData = [];
         let currentSeriesIndex = -1;
-        let currentEpisodeIndex = -1;
         let isProcessing = false;
         let ffmpeg = null;
 
-        // مراجع عناصر DOM
         const gridEl = document.getElementById('series-grid');
         const episodesSection = document.getElementById('episodes-section');
         const episodesListEl = document.getElementById('episodes-list');
@@ -310,15 +328,15 @@
         const closeEpisodesBtn = document.getElementById('closeEpisodesBtn');
 
         // ======================================================================
-        // 2. تحميل البيانات من data.json
+        // 2. تحميل البيانات
         // ======================================================================
         async function loadSeries() {
             try {
                 const res = await fetch('data.json');
-                if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 seriesData = await res.json();
                 if (!Array.isArray(seriesData) || seriesData.length === 0) {
-                    throw new Error('لا توجد بيانات متاحة حالياً.');
+                    throw new Error('لا توجد بيانات متاحة.');
                 }
                 renderSeries(seriesData);
             } catch (err) {
@@ -332,7 +350,7 @@
         }
 
         // ======================================================================
-        // 3. عرض المسلسلات (شبكة بطاقات)
+        // 3. عرض المسلسلات
         // ======================================================================
         function renderSeries(data) {
             if (!data || data.length === 0) {
@@ -346,14 +364,13 @@
                 const name = series.name || 'مسلسل بدون اسم';
                 html += `
                     <div class="series-card" data-index="${idx}">
-                        <img src="${imgSrc}" alt="${name}" loading="lazy" onerror="this.src='https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Error'">
+                        <img src="${imgSrc}" alt="${name}" loading="lazy" onerror="this.src='https://via.placeholder.com/200x280/1e1e1e/f5c518?text=خطأ'">
                         <div class="card-title">${name}</div>
                     </div>
                 `;
             });
             gridEl.innerHTML = html;
 
-            // إضافة مستمعي النقر على البطاقات
             document.querySelectorAll('.series-card').forEach(card => {
                 card.addEventListener('click', function() {
                     const idx = parseInt(this.dataset.index);
@@ -363,7 +380,7 @@
         }
 
         // ======================================================================
-        // 4. عرض الحلقات عند النقر على مسلسل
+        // 4. عرض الحلقات
         // ======================================================================
         function showEpisodes(index) {
             if (index < 0 || index >= seriesData.length) return;
@@ -385,21 +402,21 @@
                         e.stopPropagation();
                         const epIdx = parseInt(this.dataset.epIndex);
                         playEpisode(index, epIdx);
+                        // تمييز الزر النشط
+                        document.querySelectorAll('.episode-btn').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
                     });
                     episodesListEl.appendChild(btn);
                 });
             }
 
-            // عرض القسم مع تأثير انزلاقي
             episodesSection.style.display = 'block';
             episodesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         // ======================================================================
-        // 5. تشغيل حلقة + ضغط إلى 240p باستخدام FFmpeg.wasm
+        // 5. تشغيل الحلقة + ضغط إلى 240p
         // ======================================================================
-
-        // تحميل FFmpeg (مرة واحدة)
         async function loadFFmpeg() {
             if (ffmpeg) return ffmpeg;
             try {
@@ -441,7 +458,6 @@
                 return;
             }
 
-            // إظهار واجهة الفيديو وشريط التقدم
             videoWrapper.style.display = 'flex';
             progressContainer.style.display = 'block';
             progressFill.style.width = '0%';
@@ -452,9 +468,8 @@
             isProcessing = true;
 
             try {
-                // 5.1 تحميل الفيديو عبر Proxy لتجاوز CORS
                 const rawUrl = episode.url;
-                // استخدام corsproxy.io (قد يتوقف، لكنه حل سريع)
+                // استخدام corsproxy.io لتجاوز CORS
                 const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`;
                 statusText.innerText = '⬇️ جاري تحميل الفيديو من السيرفر...';
                 progressFill.style.width = '25%';
@@ -469,13 +484,9 @@
                 statusText.innerText = `📦 تم التحميل (${(inputData.length / 1024 / 1024).toFixed(2)} ميجابايت)`;
                 progressFill.style.width = '40%';
 
-                // 5.2 تهيئة FFmpeg
                 const ff = await loadFFmpeg();
-
-                // كتابة الملف في الذاكرة الافتراضية
                 await ff.writeFile('input.mp4', inputData);
 
-                // 5.3 أمر الضغط إلى 240p بجودة ممتازة
                 statusText.innerText = '⚙️ بدء عملية الضغط (قد تستغرق دقائق)...';
                 progressFill.style.width = '50%';
 
@@ -491,7 +502,6 @@
                     'output.mp4'
                 ]);
 
-                // 5.4 قراءة الملف الناتج
                 statusText.innerText = '📤 جاري تجهيز الفيديو المعالج...';
                 progressFill.style.width = '90%';
 
@@ -499,7 +509,6 @@
                 const blob = new Blob([outputData.buffer], { type: 'video/mp4' });
                 const url = URL.createObjectURL(blob);
 
-                // 5.5 عرض الفيديو
                 videoPlayer.src = url;
                 videoPlayer.load();
                 await videoPlayer.play();
@@ -507,7 +516,6 @@
                 statusText.innerText = '✅ تم الضغط بنجاح! جودة 240p جاهزة.';
                 progressFill.style.width = '100%';
 
-                // تنظيف الملفات المؤقتة
                 await ff.deleteFile('input.mp4');
                 await ff.deleteFile('output.mp4');
 
@@ -518,12 +526,6 @@
                 alert('حدث خطأ أثناء المعالجة. تأكد من صحة رابط الحلقة وحاول مجدداً.');
             } finally {
                 isProcessing = false;
-                // بعد 6 ثوانٍ نعيد شريط التقدم إلى طبيعته
-                setTimeout(() => {
-                    if (!isProcessing && videoPlayer.src) {
-                        // نترك النص الحالي
-                    }
-                }, 6000);
             }
         }
 
@@ -532,7 +534,6 @@
         // ======================================================================
         closeEpisodesBtn.addEventListener('click', function() {
             episodesSection.style.display = 'none';
-            // إخفاء الفيديو أيضاً
             videoWrapper.style.display = 'none';
             videoPlayer.pause();
             videoPlayer.src = '';
@@ -543,36 +544,11 @@
         // ======================================================================
         loadSeries();
 
-        // مساعدة: إذا انتهى الفيديو، نعيد ضبط شريط التقدم
         videoPlayer.addEventListener('ended', () => {
             statusText.innerText = '✅ انتهى التشغيل. يمكنك اختيار حلقة أخرى.';
         });
 
-        console.log('🎬 تطبيق المسلسلات التركية المدبلجة (نسخة Netflix) جاهز!');
+        console.log('🎬 تطبيق المسلسلات التركية المدبلجة جاهز!');
     </script>
-<script>
-    // === تحسين إضافي: معالجة الصور المعطوبة ===
-    document.addEventListener('DOMContentLoaded', function() {
-        // إعادة تحميل الصور التي فشلت
-        document.querySelectorAll('img').forEach(img => {
-            img.addEventListener('error', function() {
-                this.src = 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=خطأ';
-            });
-        });
-    });
-
-    // === تحسين: عند اختيار مسلسل، عرض الحلقات بشكل أفضل ===
-    const originalShowEpisodes = window.showEpisodes;
-    if (originalShowEpisodes) {
-        window.showEpisodes = function(index) {
-            originalShowEpisodes(index);
-            // إضافة رسالة إذا لم توجد حلقات
-            const list = document.getElementById('episodes-list');
-            if (list && list.children.length === 0) {
-                list.innerHTML = '<p style="color:#888;padding:20px;">⏳ جاري تحميل الحلقات... حاول تحديث الصفحة لاحقاً.</p>';
-            }
-        };
-    }
-</script>
 </body>
 </html>
