@@ -1,36 +1,35 @@
-// scraper.js - يعمل في بيئة Node.js (GitHub Actions)
-const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 
 // =============================================
-// مثال لجلب البيانات من موقع "قصة عشق" (مثال توضيحي)
-// يجب عليك تعديل الـ Selectors حسب الموقع الفعلي الذي تريده
+// دالة جلب المسلسلات باستخدام fetch المدمج
 // =============================================
 async function fetchTurkishSeries() {
     console.log('🔄 جاري جلب بيانات المسلسلات...');
     
-    // مثال: رابط موقع مسلسلات تركية مدبلجة (استخدم رابط الموقع الحقيقي)
+    // ⚠️ استبدل هذا الرابط بالموقع الفعلي للمسلسلات التركية المدبلجة
     const targetUrl = 'https://example-turkish-drama-site.com/'; 
     
     try {
-        const { data } = await axios.get(targetUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        const response = await fetch(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         });
-        const $ = cheerio.load(data);
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        
+        const html = await response.text();
+        const $ = cheerio.load(html);
         const seriesList = [];
 
-        // مثال على استخراج البيانات (عدل المحددات حسب الموقع)
+        // مثال على استخراج البيانات – عدل المحددات حسب الموقع المستهدف
         $('.series-item').each((i, el) => {
             const name = $(el).find('.series-title').text().trim();
             const image = $(el).find('img').attr('src');
             const link = $(el).find('a').attr('href');
             
-            // للحلقات - نفترض أن كل مسلسل له صفحة حلقات
-            // سنقوم بجلب الحلقات من الرابط الداخلي (اختياري)
+            // توليد حلقات وهمية (يمكنك تعديلها لجلب حلقات حقيقية من صفحة المسلسل)
             const episodes = [];
-            // مثال: لو أردنا جلب الحلقات فوراً (قد يكون بطيئاً، الأفضل جلبها عند الطلب)
-            // لكن نتركها فارغة حالياً، أو نملأها بروابط تجريبية
             for (let i = 0; i < 5; i++) {
                 episodes.push({
                     name: `الحلقة ${i+1}`,
@@ -48,7 +47,6 @@ async function fetchTurkishSeries() {
             }
         });
 
-        // إذا لم يتم جلب أي بيانات، نضع بيانات تجريبية لتجربة الواجهة
         if (seriesList.length === 0) {
             console.warn('⚠️ لم يتم العثور على بيانات، سيتم استخدام بيانات تجريبية.');
             return getMockData();
@@ -58,7 +56,7 @@ async function fetchTurkishSeries() {
         return seriesList;
     } catch (error) {
         console.error('❌ خطأ في الجلب:', error.message);
-        return getMockData(); // بيانات تجريبية لضمان عمل الواجهة
+        return getMockData(); // بيانات تجريبية
     }
 }
 
