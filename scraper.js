@@ -2,7 +2,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 
 // ================================================================
-// قائمة احتياطية (في حال فشل الجلب)
+// قائمة احتياطية
 // ================================================================
 const FALLBACK_SERIES = [
     { name: 'قيامة عثمان', image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=قيامة+عثمان' },
@@ -62,7 +62,6 @@ async function fetchPage(url, retries = 3) {
     return null;
 }
 
-/** استخراج الصورة من style أو data-src */
 function extractImage($el) {
     const style = $el.attr('style') || '';
     const match = style.match(/url\(["']?([^"')]+)["']?\)/);
@@ -78,7 +77,6 @@ function extractImage($el) {
     return null;
 }
 
-/** استخراج قائمة المسلسلات من صفحة التصنيف */
 function extractSeriesList(html, config) {
     const $ = cheerio.load(html);
     const results = [];
@@ -102,7 +100,8 @@ function extractSeriesList(html, config) {
 }
 
 /**
- * استخراج الحلقات من صفحة المسلسل فقط، مع استبعاد التصنيفات والقوائم الجانبية
+ * استخراج الحلقات من بيانات TheRequesterData
+ * مع تحويل روابط التصنيفات إلى روابط حلقات فعلية
  */
 async function fetchEpisodes(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
@@ -112,101 +111,101 @@ async function fetchEpisodes(seriesUrl) {
     let episodes = [];
     const seenUrls = new Set();
 
-    // ===== الطريقة 1: البحث داخل منطقة الحلقات في الصفحة =====
-    // نبحث في الـ div المخصص للحلقات
-    const episodeContainers = [
-        '.episodes-list',
-        '.season-episodes',
-        '.episode-items',
-        '.list-episodes',
-        '#AreaNewly .ItemNewly', // خاص بلودي نت
-        '.post-content .episodes'
-    ];
-
-    for (const container of episodeContainers) {
-        const $container = $(container);
-        if ($container.length > 0) {
-            $container.find('a').each((i, el) => {
-                let href = $(el).attr('href');
-                if (!href) return;
-                let name = $(el).text().trim() || `الحلقة ${i+1}`;
-                href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
-                // استبعاد الروابط التي تشير إلى تصنيفات
-                if (!href.includes('/category/') && !href.includes('/tag/') && !href.includes('/series/')) {
-                    if (!seenUrls.has(href)) {
-                        seenUrls.add(href);
-                        episodes.push({ name, url: href });
-                    }
-                }
-            });
-            if (episodes.length > 0) break;
-        }
-    }
-
-    // ===== الطريقة 2: البحث عن روابط تحتوي على "episode" أو "watch" =====
-    if (episodes.length === 0) {
-        $('a[href*="episode"], a[href*="watch"]').each((i, el) => {
-            let href = $(el).attr('href');
-            if (!href) return;
-            let name = $(el).text().trim() || `الحلقة ${i+1}`;
-            href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
-            if (!href.includes('/category/') && !href.includes('/tag/') && !href.includes('/series/')) {
-                if (!seenUrls.has(href)) {
-                    seenUrls.add(href);
-                    episodes.push({ name, url: href });
-                }
-            }
-        });
-    }
-
-    // ===== الطريقة 3: استخدام بيانات JSON المضمنة (TheRequesterData) =====
-    if (episodes.length === 0) {
-        try {
-            const scripts = $('script').toArray();
-            for (const script of scripts) {
-                const content = $(script).html() || '';
-                if (content.includes('TheRequesterData')) {
-                    const match = content.match(/TheRequesterData\s*=\s*({[^;]+});/);
-                    if (match) {
-                        const data = JSON.parse(match[1]);
-                        if (data && data.Items && Array.isArray(data.Items)) {
-                            for (const item of data.Items) {
-                                // نأخذ فقط العناصر التي تبدو كحلقات (تحوي episode أو count)
-                                if (item.episode !== undefined || (item.count && item.count > 0)) {
-                                    if (item.url) {
-                                        const href = item.url.startsWith('http') ? item.url : new URL(item.url, seriesUrl).href;
-                                        if (!href.includes('/category/') && !href.includes('/tag/')) {
-                                            if (!seenUrls.has(href)) {
-                                                seenUrls.add(href);
-                                                const name = item.name || `الحلقة`;
-                                                episodes.push({ name, url: href });
-                                            }
-                                        }
-                                    }
+    // ===== الطريقة الأولى: استخدام TheRequesterData =====
+    try {
+        const scripts = $('script').toArray();
+        for (const script of scripts) {
+            const content = $(script).html() || '';
+            if (content.includes('TheRequesterData')) {
+                const match = content.match(/TheRequesterData\s*=\s*({[^;]+});/);
+                if (match) {
+                    const data = JSON.parse(match[1]);
+                    if (data && data.Items && Array.isArray(data.Items)) {
+                        for (const item of data.Items) {
+                            // نتأكد أن العنصر يحتوي على episode أو count أو ribbon
+                            const isEpisode = item.episode !== undefined || 
+                                             item.count !== undefined || 
+                                             (item.ribbon && item.ribbon.includes('حلقة')) ||
+                                             (item.name && item.name.includes('الحلقة'));
+                            
+                            if (isEpisode && item.url) {
+                                // تحويل الرابط إلى رابط مطلق
+                                const href = item.url.startsWith('http') ? item.url : new URL(item.url, seriesUrl).href;
+                                
+                                // نستبعد روابط التصنيفات، ونبقي فقط روابط الحلقات الفعلية
+                                if (!href.includes('/category/') && 
+                                    !href.includes('/tag/') && 
+                                    !href.includes('/series/') &&
+                                    !seenUrls.has(href)) {
+                                    seenUrls.add(href);
+                                    // تنظيف اسم الحلقة
+                                    let name = item.name || `الحلقة`;
+                                    // إزالة الأرقام الزائدة والمسافات
+                                    name = name.replace(/\s+/g, ' ').trim();
+                                    episodes.push({ name, url: href });
                                 }
                             }
                         }
                     }
                 }
             }
-        } catch (e) {
-            // تجاهل أخطاء JSON
+        }
+    } catch (e) {
+        console.warn(`  ⚠️ فشل استخراج JSON: ${e.message}`);
+    }
+
+    // ===== الطريقة الثانية: البحث المباشر عن روابط الحلقات =====
+    if (episodes.length === 0) {
+        // نبحث في #AreaNewly عن روابط الحلقات الفعلية
+        const area = $('#AreaNewly');
+        if (area.length) {
+            area.find('.ItemNewly a').each((i, el) => {
+                let href = $(el).attr('href');
+                if (!href) return;
+                let name = $(el).find('.NewlyTitle').text().trim() || $(el).text().trim() || `الحلقة ${i+1}`;
+                href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
+                // نتأكد أن الرابط يحتوي على "الحلقة" أو "episode" وليس تصنيفاً
+                if (!href.includes('/category/') && 
+                    !href.includes('/tag/') && 
+                    !href.includes('/series/') &&
+                    (href.includes('الحلقة') || href.includes('episode') || name.includes('الحلقة')) &&
+                    !seenUrls.has(href)) {
+                    seenUrls.add(href);
+                    episodes.push({ name, url: href });
+                }
+            });
         }
     }
 
-    // تصفية الحلقات: استبعاد التي لا تحتوي على كلمات مفتاحية
-    const filtered = episodes.filter(ep => {
-        const name = ep.name.toLowerCase();
-        const url = ep.url.toLowerCase();
-        const keywords = ['حلقة', 'episode', 'الحلقة', 'ep', 'جزء', 'season', 'الموسم'];
-        return keywords.some(k => name.includes(k) || url.includes(k));
-    });
-
-    if (filtered.length > 0) {
-        return filtered.slice(0, 50);
+    // ===== الطريقة الثالثة: البحث العام عن روابط تحتوي على "الحلقة" =====
+    if (episodes.length === 0) {
+        $('a[href*="الحلقة"], a[href*="episode"]').each((i, el) => {
+            let href = $(el).attr('href');
+            if (!href) return;
+            let name = $(el).text().trim() || `الحلقة ${i+1}`;
+            href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
+            if (!href.includes('/category/') && 
+                !href.includes('/tag/') && 
+                !href.includes('/series/') &&
+                !seenUrls.has(href)) {
+                seenUrls.add(href);
+                episodes.push({ name, url: href });
+            }
+        });
     }
 
-    return null;
+    // نرتب الحلقات حسب رقم الحلقة إن أمكن
+    episodes.sort((a, b) => {
+        const numA = parseInt(a.name.match(/\d+/)?.[0] || 0);
+        const numB = parseInt(b.name.match(/\d+/)?.[0] || 0);
+        return numA - numB;
+    });
+
+    // نأخذ أول 50 حلقة
+    if (episodes.length > 50) episodes.length = 50;
+
+    // إذا لم نجد حلقات، نعيد null
+    return episodes.length > 0 ? episodes : null;
 }
 
 // ================================================================
@@ -243,7 +242,7 @@ async function fetchTurkishSeries() {
                 console.warn(`    ⚠️ فشل جلب الحلقات: ${e.message}`);
             }
 
-            if (!episodes) {
+            if (!episodes || episodes.length === 0) {
                 episodes = [
                     { name: 'الحلقة 1 (تجريبي)', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
                     { name: 'الحلقة 2 (تجريبي)', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
@@ -283,7 +282,6 @@ async function fetchTurkishSeries() {
         }));
     }
 
-    // إزالة التكرارات حسب الاسم
     const unique = new Map();
     allSeries.forEach(s => {
         const key = s.name.trim().toLowerCase();
