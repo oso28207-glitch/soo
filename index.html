@@ -550,6 +550,29 @@
 
         console.log('🎬 تطبيق المسلسلات التركية المدبلجة (نسخة Netflix) جاهز!');
     </script>
+<script>
+    // === تحسين إضافي: معالجة الصور المعطوبة ===
+    document.addEventListener('DOMContentLoaded', function() {
+        // إعادة تحميل الصور التي فشلت
+        document.querySelectorAll('img').forEach(img => {
+            img.addEventListener('error', function() {
+                this.src = 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=خطأ';
+            });
+        });
+    });
 
+    // === تحسين: عند اختيار مسلسل، عرض الحلقات بشكل أفضل ===
+    const originalShowEpisodes = window.showEpisodes;
+    if (originalShowEpisodes) {
+        window.showEpisodes = function(index) {
+            originalShowEpisodes(index);
+            // إضافة رسالة إذا لم توجد حلقات
+            const list = document.getElementById('episodes-list');
+            if (list && list.children.length === 0) {
+                list.innerHTML = '<p style="color:#888;padding:20px;">⏳ جاري تحميل الحلقات... حاول تحديث الصفحة لاحقاً.</p>';
+            }
+        };
+    }
+</script>
 </body>
 </html>
