@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install cheerio puppeteer
+      - run: npm install cheerio
       - run: node scraper.js
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
