@@ -1,0 +1,28 @@
+[
+  {
+    "name": "مسلسل تركي 1 (تجريبي)",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series+1",
+    "link": "#",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      },
+      {
+        "name": "الحلقة 2",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  },
+  {
+    "name": "مسلسل تركي 2 (تجريبي)",
+    "image": "https://via.placeholder.com/200x280/1e1e1e/f5c518?text=Series+2",
+    "link": "#",
+    "episodes": [
+      {
+        "name": "الحلقة 1",
+        "url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      }
+    ]
+  }
+]
