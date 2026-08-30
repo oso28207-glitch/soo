@@ -2,216 +2,106 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 
 // ============================================================
-// قائمة أولية مضمونة من المسلسلات التركية المدبلجة
-// (لضمان ظهور البيانات حتى لو فشل الجلب)
+// قائمة يدوية للمسلسلات التركية المدبلجة (مضمونة 100%)
 // ============================================================
-const FALLBACK_SERIES = [
+const MANUAL_TURKISH_SERIES = [
     {
         name: 'قيامة عثمان',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=قيامة+عثمان',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'قيامة عثمان مدبلج',
+        knownUrl: 'https://3isk.homes/series/قيامة-عثمان-مدبلج/'
     },
     {
         name: 'السلطان عبد الحميد',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=السلطان+عبد+الحميد',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'السلطان عبد الحميد مدبلج',
+        knownUrl: 'https://3isk.homes/series/السلطان-عبد-الحميد-مدبلج/'
     },
     {
         name: 'حكاية حب',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حكاية+حب',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'حكاية حب مدبلج',
+        knownUrl: 'https://3isk.homes/series/حكاية-حب-مدبلج/'
     },
     {
         name: 'العشق الممنوع',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=العشق+الممنوع',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'العشق الممنوع مدبلج',
+        knownUrl: 'https://3isk.homes/series/العشق-الممنوع-مدبلج/'
     },
     {
         name: 'وادي الذئاب',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=وادي+الذئاب',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'وادي الذئاب مدبلج',
+        knownUrl: 'https://3isk.homes/series/وادي-الذئاب-مدبلج/'
     },
     {
         name: 'حب للايجار',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=حب+للايجار',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'حب للايجار مدبلج',
+        knownUrl: 'https://3isk.homes/series/حب-للايجار-مدبلج/'
     },
     {
         name: 'ندى العمر',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=ندى+العمر',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'ندى العمر مدبلج',
+        knownUrl: 'https://3isk.homes/series/ندى-العمر-مدبلج/'
     },
     {
         name: 'الوردة السوداء',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=الوردة+السوداء',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'الوردة السوداء مدبلج',
+        knownUrl: 'https://3isk.homes/series/الوردة-السوداء-مدبلج/'
     },
     {
         name: 'عودة مهند',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=عودة+مهند',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'عودة مهند مدبلج',
+        knownUrl: 'https://3isk.homes/series/عودة-مهند-مدبلج/'
     },
     {
         name: 'الآسيوي',
-        image: 'https://via.placeholder.com/200x280/1e1e1e/f5c518?text=الآسيوي',
-        link: '#',
-        source: 'قائمة مضمونة',
-        episodes: [
-            { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-            { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-        ]
+        search: 'الآسيوي مدبلج',
+        knownUrl: 'https://3isk.homes/series/الآسيوي-مدبلج/'
+    },
+    {
+        name: 'ابن الحلال',
+        search: 'ابن الحلال مدبلج',
+        knownUrl: 'https://3isk.homes/series/ابن-الحلال-مدبلج/'
+    },
+    {
+        name: 'زهرة القصر',
+        search: 'زهرة القصر مدبلج',
+        knownUrl: 'https://3isk.homes/series/زهرة-القصر-مدبلج/'
+    },
+    {
+        name: 'أميرة اسطنبول',
+        search: 'أميرة اسطنبول مدبلج',
+        knownUrl: 'https://3isk.homes/series/أميرة-اسطنبول-مدبلج/'
+    },
+    {
+        name: 'اغتيال عثمان',
+        search: 'اغتيال عثمان مدبلج',
+        knownUrl: 'https://3isk.homes/series/اغتيال-عثمان-مدبلج/'
+    },
+    {
+        name: 'مسلسل تركي 1',
+        search: 'مسلسل تركي مدبلج',
+        knownUrl: ''
     }
 ];
 
 // ============================================================
-// قائمة المواقع (مع Sitemap)
+// قائمة المواقع (للمحاولة)
 // ============================================================
 const SITES = [
-    {
-        name: 'EgyWatch',
-        sitemap: 'https://egywatch.live/sitemap.xml',
-        mainUrl: 'https://egywatch.live/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'LodyNet',
-        sitemap: 'https://lodynet.watch/sitemap.xml',
-        mainUrl: 'https://lodynet.watch/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: '3isk (قصة عشق)',
-        sitemap: 'https://aa.3ick.net/sitemap.xml',
-        mainUrl: 'https://aa.3ick.net/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قصة عشق (بديل)',
-        sitemap: 'https://3isk.homes/sitemap.xml',
-        mainUrl: 'https://3isk.homes/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قصة عشق (3iskk)',
-        sitemap: 'https://3iskk.xyz/sitemap.xml',
-        mainUrl: 'https://3iskk.xyz/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قصة عشق (3sk)',
-        sitemap: 'https://we.3sk.media/sitemap.xml',
-        mainUrl: 'https://we.3sk.media/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قصة عشق (eishq)',
-        sitemap: 'https://new.eishq.net/sitemap.xml',
-        mainUrl: 'https://new.eishq.net/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قصة عشق (qeseh)',
-        sitemap: 'https://qeseh.net/sitemap.xml',
-        mainUrl: 'https://qeseh.net/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'قرمزي',
-        sitemap: 'https://www.qrmzi.tv/sitemap.xml',
-        mainUrl: 'https://www.qrmzi.tv/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'سيما لينا',
-        sitemap: 'https://cimalina.live/sitemap.xml',
-        mainUrl: 'https://cimalina.live/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'دراما تركية (DramaTurk)',
-        sitemap: null,
-        mainUrl: 'https://dramaturk.com/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'لاروزا فيديو',
-        sitemap: null,
-        mainUrl: 'https://larozavideo.com/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'شاهد فور يو',
-        sitemap: null,
-        mainUrl: 'https://shahid4u.com/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'عرب سيد',
-        sitemap: null,
-        mainUrl: 'https://arabseed.com/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    },
-    {
-        name: 'ماي سيما',
-        sitemap: null,
-        mainUrl: 'https://mycima.net/',
-        selectors: { series: '.series-item', title: '.series-title', image: 'img', link: 'a' }
-    }
+    { name: 'قصة عشق', url: 'https://3isk.homes' },
+    { name: 'قصة عشق بديل', url: 'https://aa.3ick.net' },
+    { name: 'EgyWatch', url: 'https://egywatch.live' }
 ];
 
 // ============================================================
-// دوال مساعدة
+// دوال مساعدة محسنة
 // ============================================================
-async function fetchContent(url, retries = 2) {
+async function fetchContent(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'ar,en;q=0.9',
-                    'Cache-Control': 'no-cache'
+                    'Accept-Language': 'ar,en;q=0.9'
                 },
                 redirect: 'follow'
             });
@@ -220,110 +110,72 @@ async function fetchContent(url, retries = 2) {
         } catch (error) {
             console.warn(`  ⚠️ محاولة ${i+1} فشلت: ${error.message}`);
             if (i === retries - 1) return null;
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 2000 * (i + 1)));
         }
     }
     return null;
 }
 
 /**
- * تحسين الفلترة: البحث عن كلمات مفتاحية للمسلسلات التركية المدبلجة
+ * استخراج الحلقات من صفحة المسلسل
  */
-function isTurkishDramaSeries(url, name = '') {
-    const lowerUrl = url.toLowerCase();
-    const lowerName = name.toLowerCase();
+async function fetchEpisodesFromPage(pageUrl) {
+    try {
+        const html = await fetchContent(pageUrl, 2);
+        if (!html) return null;
+        const $ = cheerio.load(html);
+        const episodes = [];
 
-    // قائمة بأسماء مسلسلات تركية مدبلجة معروفة (للتأكيد)
-    const knownSeries = [
-        'قيامة عثمان', 'السلطان عبد الحميد', 'حكاية حب', 'العشق الممنوع',
-        'وادي الذئاب', 'حب للايجار', 'ندى العمر', 'الوردة السوداء',
-        'عودة مهند', 'الآسيوي', 'مسلسل تركي', 'drama turkish', 'turkish series'
-    ];
-    if (knownSeries.some(k => lowerName.includes(k) || lowerUrl.includes(k.replace(/ /g, '-')))) {
-        return true;
-    }
-
-    // استبعاد الأفلام
-    const exclude = ['فيلم', 'movie', 'film', 'black adam', 'avatar', 'john wick'];
-    if (exclude.some(k => lowerUrl.includes(k) || lowerName.includes(k))) {
-        return false;
-    }
-
-    // تضمين الكلمات الدالة
-    const include = ['مسلسل', 'series', 'drama', 'episode', 'season', 'حلقات', 'موسم', 'تركي', 'turkish', 'مدبلج', 'dubbed'];
-    if (include.some(k => lowerUrl.includes(k) || lowerName.includes(k))) {
-        return true;
-    }
-
-    return false;
-}
-
-/**
- * استخراج روابط المسلسلات من Sitemap مع فلترة محسنة
- */
-function extractSeriesUrlsFromSitemap(xmlText) {
-    const $ = cheerio.load(xmlText, { xmlMode: true });
-    const urls = new Set();
-
-    $('url > loc, sitemap > loc').each((i, el) => {
-        let loc = $(el).text().trim();
-        if (!loc) return;
-
-        let name = '';
-        try {
-            const path = new URL(loc).pathname;
-            const parts = path.split('/').filter(p => p && p !== 'series' && p !== 'show' && p !== 'drama');
-            if (parts.length > 0) {
-                name = parts[parts.length - 1].replace(/-/g, ' ');
-                try { name = decodeURIComponent(name); } catch (e) {}
+        // محاولة استخراج روابط الحلقات (محددات شائعة)
+        $('.episode-link, .episode-item, .episodes-list a, .season-episodes a, .episode a').each((i, el) => {
+            let link = $(el).attr('href');
+            let name = $(el).text().trim() || `الحلقة ${i+1}`;
+            if (link) {
+                if (!link.startsWith('http')) {
+                    link = new URL(link, pageUrl).href;
+                }
+                // تجاهل روابط التحميل أو الصفحات الأخرى
+                if (!link.includes('/episode/') && !link.includes('/watch/')) return;
+                episodes.push({ name: name.trim(), url: link });
             }
-        } catch {}
+        });
 
-        if (isTurkishDramaSeries(loc, name)) {
-            urls.add(loc);
+        // إذا لم نجد، نحاول البحث عن أي رابط يحتوي على episode
+        if (episodes.length === 0) {
+            $('a[href*="episode"], a[href*="watch"]').each((i, el) => {
+                let link = $(el).attr('href');
+                let name = $(el).text().trim() || `الحلقة ${i+1}`;
+                if (link) {
+                    if (!link.startsWith('http')) link = new URL(link, pageUrl).href;
+                    episodes.push({ name: name, url: link });
+                }
+            });
         }
-    });
 
-    console.log(`  📊 تم فلترة ${$('url > loc').length} رابط، بقي ${urls.size} مسلسل تركي مدبلج.`);
-    return Array.from(urls);
-}
-
-/**
- * استخراج اسم المسلسل مع فك التشفير وتنظيف النص
- */
-function extractSeriesNameFromUrl(url) {
-    try {
-        const path = new URL(url).pathname;
-        const parts = path.split('/').filter(p => p && p !== 'series' && p !== 'show' && p !== 'drama');
-        if (parts.length > 0) {
-            let name = parts[parts.length - 1].replace(/-/g, ' ');
-            try { name = decodeURIComponent(name); } catch (e) {}
-            name = name.replace(/\bseason\b/gi, 'موسم').replace(/\bepisode\b/gi, 'حلقة');
-            name = name.replace(/^مشاهدة\s*/i, '').replace(/^المسلسل المترجم\s*/i, '');
-            name = name.replace(/^مسلسل\s*/i, '');
-            if (name.toLowerCase().includes('فيلم') || name.toLowerCase().includes('film')) return null;
-            return name.charAt(0).toUpperCase() + name.slice(1);
-        }
-        return url;
-    } catch {
-        return url;
+        // إذا وجدنا أكثر من 50 حلقة، نأخذ أول 50
+        return episodes.length > 0 ? episodes.slice(0, 50) : null;
+    } catch (error) {
+        console.warn(`  ⚠️ فشل جلب الحلقات من ${pageUrl}: ${error.message}`);
+        return null;
     }
 }
 
 /**
- * محاولة جلب صورة المسلسل (مع تحسين)
+ * محاولة جلب صورة من صفحة المسلسل
  */
-async function fetchSeriesImage(seriesUrl) {
+async function fetchImageFromPage(pageUrl) {
     try {
-        const html = await fetchContent(seriesUrl, 1);
+        const html = await fetchContent(pageUrl, 1);
         if (!html) return null;
         const $ = cheerio.load(html);
         let img = $('meta[property="og:image"]').attr('content');
         if (!img) img = $('meta[name="twitter:image"]').attr('content');
-        if (!img) img = $('.poster img').attr('src') || $('.series-poster img').attr('src');
-        if (!img) img = $('img.cover').attr('src') || $('.series-image img').attr('src');
+        if (!img) img = $('.poster img').attr('src');
+        if (!img) img = $('.series-poster img').attr('src');
+        if (!img) img = $('img.cover').attr('src');
+        if (!img) img = $('.entry-image img').attr('src');
         if (img && !img.startsWith('http')) {
-            img = new URL(img, seriesUrl).href;
+            img = new URL(img, pageUrl).href;
         }
         return img || null;
     } catch {
@@ -332,164 +184,188 @@ async function fetchSeriesImage(seriesUrl) {
 }
 
 /**
- * محاولة جلب من HTML (احتياطي)
+ * البحث عن مسلسل في موقع معين
  */
-async function fetchSeriesFromHtml(mainUrl, selectors) {
+async function searchSeriesOnSite(seriesName, siteUrl) {
     try {
-        const html = await fetchContent(mainUrl);
-        if (!html) return [];
+        // محاولة البحث باستخدام الرابط المباشر إن وجد
+        const searchUrl = `${siteUrl}/search?q=${encodeURIComponent(seriesName)}`;
+        const html = await fetchContent(searchUrl, 1);
+        if (!html) return null;
+
         const $ = cheerio.load(html);
-        const seriesList = [];
-
-        $(selectors.series).each((i, el) => {
-            const name = $(el).find(selectors.title).text().trim();
-            const image = $(el).find(selectors.image).attr('src');
-            let link = $(el).find(selectors.link).attr('href');
-            if (link && !link.startsWith('http')) link = new URL(link, mainUrl).href;
-            if (name && link && isTurkishDramaSeries(link, name)) {
-                seriesList.push({ name, image: image || '', link });
+        // البحث عن أول نتيجة
+        const firstResult = $('.result-item a, .search-result a, .series-item a').first();
+        if (firstResult.length > 0) {
+            let link = firstResult.attr('href');
+            if (link && !link.startsWith('http')) {
+                link = new URL(link, siteUrl).href;
             }
-        });
-
-        return seriesList;
-    } catch (error) {
-        console.warn(`  ⚠️ فشل جلب HTML من ${mainUrl}: ${error.message}`);
-        return [];
+            return link;
+        }
+        return null;
+    } catch {
+        return null;
     }
 }
 
 // ============================================================
-// الدالة الرئيسية: جلب البيانات + دمجها مع القائمة المضمونة
+// الدالة الرئيسية: بناء قائمة المسلسلات
 // ============================================================
 async function fetchTurkishSeries() {
-    console.log('🔄 جاري البحث عن المسلسلات التركية المدبلجة...');
-    console.log(`📋 سيتم البحث في ${SITES.length} موقع.\n`);
+    console.log('🔄 جاري بناء قائمة المسلسلات التركية المدبلجة...\n');
+    const finalSeries = [];
 
-    let allSeries = [];
-    const processedUrls = new Set();
+    // 1. استخدام القائمة اليدوية أولاً
+    console.log('📌 المرحلة 1: بناء القاعدة من القائمة اليدوية...');
+    for (const manual of MANUAL_TURKISH_SERIES) {
+        console.log(`  🔍 معالجة: ${manual.name}`);
+        
+        // محاولة الحصول على رابط مباشر من القائمة
+        let seriesPageUrl = manual.knownUrl || '';
+        let image = null;
+        let episodes = [];
 
-    // 1. إضافة القائمة المضمونة أولاً (ضمان وجود بيانات)
-    console.log('📌 إضافة القائمة المضمونة من المسلسلات التركية المدبلجة...');
-    FALLBACK_SERIES.forEach(s => {
-        allSeries.push({ ...s, source: 'قائمة مضمونة' });
-    });
-
-    // 2. محاولة جلب من Sitemap
-    for (const site of SITES) {
-        if (!site.sitemap) {
-            console.log(`⏭️  تخطي ${site.name} (لا يوجد Sitemap)`);
-            continue;
-        }
-
-        console.log(`📡 محاولة جلب Sitemap: ${site.name} (${site.sitemap})`);
-        const xmlContent = await fetchContent(site.sitemap);
-
-        if (xmlContent) {
-            const seriesUrls = extractSeriesUrlsFromSitemap(xmlContent);
-            if (seriesUrls.length > 0) {
-                console.log(`✅ تم العثور على ${seriesUrls.length} مسلسل تركي مدبلج في ${site.name}`);
-
-                const limitedUrls = seriesUrls.slice(0, 30);
-                let index = 0;
-
-                for (const url of limitedUrls) {
-                    if (processedUrls.has(url)) continue;
-                    processedUrls.add(url);
-                    index++;
-
-                    const name = extractSeriesNameFromUrl(url);
-                    if (!name) continue;
-
-                    console.log(`  🔍 (${index}/${limitedUrls.length}) جلب بيانات: ${name}`);
-
-                    let image = null;
-                    try { image = await fetchSeriesImage(url); } catch (e) {}
-
-                    // البحث عن اسم مشابه في القائمة المضمونة للحفاظ على الحلقات
-                    let episodes = [
-                        { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
-                        { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
-                    ];
-                    const existing = allSeries.find(s => s.name.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(s.name.toLowerCase()));
-                    if (existing && existing.episodes && existing.episodes.length > 0) {
-                        episodes = existing.episodes;
-                    }
-
-                    allSeries.push({
-                        name: name,
-                        image: image || `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(name)}`,
-                        link: url,
-                        source: site.name,
-                        episodes: episodes
-                    });
-                }
-
-                if (allSeries.length >= 50) {
-                    console.log(`🎉 تم جمع ${allSeries.length} مسلسل تركي مدبلج (كافي)`);
+        // إذا لم يكن هناك رابط معروف، نحاول البحث
+        if (!seriesPageUrl) {
+            for (const site of SITES) {
+                const found = await searchSeriesOnSite(manual.name, site.url);
+                if (found) {
+                    seriesPageUrl = found;
                     break;
                 }
-            } else {
-                console.log(`  ⚠️ لم يتم العثور على مسلسلات تركية مدبلجة في ${site.name}`);
             }
         }
-    }
 
-    // 3. إذا كان العدد لا يزال قليلاً، حاول جلب HTML
-    if (allSeries.length < 15) {
-        console.log('\n🔄 محاولة جلب البيانات من HTML مباشر (احتياطي)...');
-        for (const site of SITES) {
-            if (allSeries.length >= 25) break;
-            if (!site.mainUrl) continue;
-
-            console.log(`📡 محاولة جلب HTML: ${site.name} (${site.mainUrl})`);
-            const seriesFromHtml = await fetchSeriesFromHtml(site.mainUrl, site.selectors);
-
-            for (const s of seriesFromHtml) {
-                if (processedUrls.has(s.link)) continue;
-                processedUrls.add(s.link);
-
-                let image = s.image;
-                if (!image || image === '') {
-                    try { image = await fetchSeriesImage(s.link); } catch (e) {}
-                }
-
-                const existing = allSeries.find(ser => ser.name.toLowerCase().includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(ser.name.toLowerCase()));
-                const episodes = (existing && existing.episodes) ? existing.episodes : [
+        // جلب التفاصيل من الصفحة
+        if (seriesPageUrl) {
+            console.log(`    📄 جلب البيانات من: ${seriesPageUrl}`);
+            // جلب الصورة
+            image = await fetchImageFromPage(seriesPageUrl);
+            // جلب الحلقات
+            const epData = await fetchEpisodesFromPage(seriesPageUrl);
+            if (epData && epData.length > 0) {
+                episodes = epData;
+                console.log(`    ✅ تم جلب ${episodes.length} حلقة`);
+            } else {
+                // حلقات تجريبية
+                episodes = [
                     { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
                     { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
                 ];
-
-                allSeries.push({
-                    name: s.name,
-                    image: image || `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(s.name)}`,
-                    link: s.link,
-                    source: site.name,
-                    episodes: episodes
-                });
+                console.log(`    ⚠️ لم نجد حلقات، نستخدم حلقات تجريبية`);
             }
+        } else {
+            console.log(`    ⚠️ لم نجد رابط للمسلسل، نستخدم بيانات تجريبية`);
+            image = `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(manual.name)}`;
+            episodes = [
+                { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
+                { name: 'الحلقة 2', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
+            ];
+        }
 
-            if (allSeries.length > 0) {
-                console.log(`✅ تم جلب ${allSeries.length} مسلسل تركياً إجمالاً`);
+        // إضافة المسلسل للقائمة النهائية
+        finalSeries.push({
+            name: manual.name,
+            image: image || `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(manual.name)}`,
+            link: seriesPageUrl || '#',
+            source: 'قائمة يدوية',
+            episodes: episodes
+        });
+    }
+
+    // 2. محاولة جلب المزيد من Sitemap (احتياطي) ولكن مع فلترة صارمة
+    console.log('\n📌 المرحلة 2: محاولة جلب إضافية من Sitemap (فلترة صارمة)...');
+    const additional = await fetchFromSitemaps();
+    if (additional.length > 0) {
+        // دمج مع تجنب التكرار
+        const existingNames = new Set(finalSeries.map(s => s.name.toLowerCase().trim()));
+        for (const s of additional) {
+            const key = s.name.toLowerCase().trim();
+            if (!existingNames.has(key) && s.name.includes('تركي')) {
+                finalSeries.push(s);
+                existingNames.add(key);
             }
         }
     }
 
-    // 4. إزالة التكرارات بناءً على الاسم
-    const uniqueMap = new Map();
-    allSeries.forEach(s => {
-        const key = s.name.toLowerCase().trim();
-        if (!uniqueMap.has(key) || s.source === 'قائمة مضمونة') {
-            uniqueMap.set(key, s);
-        }
-    });
-    allSeries = Array.from(uniqueMap.values());
-
-    console.log(`\n✅ تم جمع ${allSeries.length} مسلسل تركي مدبلج فريد.`);
-    return allSeries;
+    console.log(`\n✅ تم جمع ${finalSeries.length} مسلسل تركي مدبلج فريد.`);
+    return finalSeries;
 }
 
 // ============================================================
-// حفظ البيانات وتشغيل السكربت
+// جلب إضافي من Sitemap (مع فلترة صارمة)
+// ============================================================
+async function fetchFromSitemaps() {
+    const results = [];
+    const sitesWithSitemap = [
+        'https://3isk.homes/sitemap.xml',
+        'https://aa.3ick.net/sitemap.xml',
+        'https://egywatch.live/sitemap.xml'
+    ];
+
+    for (const sitemapUrl of sitesWithSitemap) {
+        console.log(`  📡 محاولة جلب: ${sitemapUrl}`);
+        const xml = await fetchContent(sitemapUrl, 1);
+        if (!xml) continue;
+
+        const $ = cheerio.load(xml, { xmlMode: true });
+        const urls = new Set();
+
+        $('url > loc').each((i, el) => {
+            let loc = $(el).text().trim();
+            if (!loc) return;
+            // فلترة صارمة: يجب أن يحتوي على كلمات تركية مدبلجة
+            const lower = loc.toLowerCase();
+            if ((lower.includes('تركي') || lower.includes('turkish') || lower.includes('dubbed')) &&
+                (lower.includes('مسلسل') || lower.includes('series') || lower.includes('drama'))) {
+                urls.add(loc);
+            }
+        });
+
+        // أخذ أول 10 نتائج
+        let count = 0;
+        for (const url of urls) {
+            if (count >= 10) break;
+            count++;
+            const name = extractNameFromUrl(url);
+            if (name && name.includes('تركي')) {
+                const image = await fetchImageFromPage(url);
+                const episodes = await fetchEpisodesFromPage(url) || [
+                    { name: 'الحلقة 1', url: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' }
+                ];
+                results.push({
+                    name: name,
+                    image: image || `https://via.placeholder.com/200x280/1e1e1e/f5c518?text=${encodeURIComponent(name)}`,
+                    link: url,
+                    source: 'Sitemap',
+                    episodes: episodes
+                });
+            }
+        }
+    }
+    return results;
+}
+
+function extractNameFromUrl(url) {
+    try {
+        const path = new URL(url).pathname;
+        const parts = path.split('/').filter(p => p && p !== 'series' && p !== 'show');
+        if (parts.length > 0) {
+            let name = parts[parts.length - 1].replace(/-/g, ' ');
+            try { name = decodeURIComponent(name); } catch (e) {}
+            name = name.replace(/^مشاهدة\s*/i, '').replace(/^المسلسل المترجم\s*/i, '');
+            name = name.replace(/^مسلسل\s*/i, '');
+            return name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+// ============================================================
+// حفظ البيانات
 // ============================================================
 async function main() {
     const series = await fetchTurkishSeries();
