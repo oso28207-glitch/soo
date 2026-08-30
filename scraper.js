@@ -91,7 +91,7 @@ function extractSeriesList(html, config) {
 }
 
 /**
- * استخراج PostData من صفحة الحلقة باستخدام regex مشابه للسكربت Python
+ * استخراج PostData من صفحة الحلقة
  */
 function extractPostData(html) {
     const startMatch = html.match(/PostData\s*=\s*\{/);
@@ -136,26 +136,20 @@ function extractPostData(html) {
     if (postDataStr.endsWith(';')) postDataStr = postDataStr.slice(0, -1);
 
     try {
-        // استخدام Function بدلاً من eval لتقييم JSON مع تعليقات (نعم، قد يحتوي على تعليقات)
-        // لكننا سنستخدم محاولة بسيطة: نقوم بتحويل إلى JSON صحيح عن طريق إزالة التعليقات
-        // لكن الأسهل: استخدام json5 لو كان مثبتاً، وإلا نستخدم JSON.parse بعد تنظيف بسيط.
-        // سنستخدم JSON.parse بعد إزالة التعليقات (بدون استخدام مكتبة خارجية)
         const cleaned = postDataStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
         return JSON.parse(cleaned);
     } catch (e) {
-        // محاولة مع Function constructor (آخر حل)
         try {
             const fn = new Function(`return ${postDataStr}`);
             return fn();
         } catch (err) {
-            console.warn(`  ⚠️ فشل تحليل PostData: ${e.message}`);
             return null;
         }
     }
 }
 
 /**
- * استخراج روابط السيرفرات من PostData مع فك التشفير base64
+ * استخراج روابط السيرفرات من PostData
  */
 function extractServerUrls(postData) {
     const servers = postData.ServersWatch || [];
@@ -168,16 +162,14 @@ function extractServerUrls(postData) {
                 if (decoded.startsWith('http')) {
                     urls.push({ name: server.Name, embed: decoded });
                 }
-            } catch (e) {
-                // تجاهل
-            }
+            } catch (e) {}
         }
     }
     return urls;
 }
 
 /**
- * جلب الحلقات من صفحة المسلسل مع استخراج PostData من كل حلقة
+ * جلب الحلقات من صفحة المسلسل - باستخدام #AreaNewly
  */
 async function fetchEpisodesWithServers(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
@@ -187,21 +179,21 @@ async function fetchEpisodesWithServers(seriesUrl) {
     const episodes = [];
     const seenUrls = new Set();
 
-    // 1. استخراج روابط الحلقات من #AreaEpisodes (خاص بلودي نت)
-    const areaEpisodes = $('#AreaEpisodes');
-    if (areaEpisodes.length) {
-        areaEpisodes.find('a.ItemEpisode, a.CurrentEpisode').each((i, el) => {
+    // 🔍 البحث في #AreaNewly عن الحلقات
+    const areaNewly = $('#AreaNewly');
+    if (areaNewly.length) {
+        areaNewly.find('.ItemNewly a').each((i, el) => {
             let href = $(el).attr('href');
             if (!href) return;
-            let name = $(el).text().trim() || `الحلقة ${i+1}`;
+            let name = $(el).find('.NewlyTitle').text().trim() || $(el).text().trim() || `الحلقة ${i+1}`;
             href = href.startsWith('http') ? href : new URL(href, seriesUrl).href;
-            if (!seenUrls.has(href)) {
+            if (!seenUrls.has(href) && !href.includes('/category/') && !href.includes('/tag/')) {
                 seenUrls.add(href);
                 episodes.push({ name, url: href });
             }
         });
     } else {
-        // 2. محاولة البحث العام عن روابط تحتوي على "الحلقة"
+        // محاولة البحث العام
         $('a[href*="الحلقة"], a[href*="episode"]').each((i, el) => {
             let href = $(el).attr('href');
             if (!href) return;
@@ -214,9 +206,9 @@ async function fetchEpisodesWithServers(seriesUrl) {
         });
     }
 
-    // 3. لكل حلقة، نجلب صفحتها لاستخراج PostData
+    // لكل حلقة، نجلب PostData
     for (let ep of episodes) {
-        console.log(`    🔍 جلب سيرفرات الحلقة: ${ep.name}`);
+        console.log(`    🔍 جلب سيرفرات: ${ep.name}`);
         const epHtml = await fetchPage(ep.url, 2);
         if (epHtml) {
             const postData = extractPostData(epHtml);
@@ -224,14 +216,13 @@ async function fetchEpisodesWithServers(seriesUrl) {
                 const serverUrls = extractServerUrls(postData);
                 if (serverUrls.length > 0) {
                     ep.servers = serverUrls;
-                    // نأخذ أول سيرفر كمصدر رئيسي
                     ep.embed = serverUrls[0].embed;
-                    console.log(`      ✅ تم العثور على ${serverUrls.length} سيرفر`);
+                    console.log(`      ✅ ${serverUrls.length} سيرفر`);
                 } else {
-                    console.log(`      ⚠️ لا توجد سيرفرات في PostData`);
+                    console.log(`      ⚠️ لا توجد سيرفرات`);
                 }
             } else {
-                console.log(`      ⚠️ لم نجد PostData في صفحة الحلقة`);
+                console.log(`      ⚠️ لا يوجد PostData`);
             }
         }
     }
@@ -273,11 +264,10 @@ async function fetchTurkishSeries() {
             }
 
             if (!episodes || episodes.length === 0) {
-                // لا نضع حلقات تجريبية، نتركها فارغة
                 episodes = [];
-                console.log(`    ⚠️ لم نجد أي حلقة حقيقية.`);
+                console.log(`    ⚠️ لم نجد أي حلقة.`);
             } else {
-                console.log(`    ✅ جلب ${episodes.length} حلقة مع سيرفراتها.`);
+                console.log(`    ✅ جلب ${episodes.length} حلقة مع سيرفرات.`);
                 const sample = episodes.slice(0, 2).map(e => e.name).join(' | ');
                 console.log(`    📝 مثال: ${sample}`);
             }
@@ -302,7 +292,6 @@ async function fetchTurkishSeries() {
         return [];
     }
 
-    // إزالة التكرارات حسب الاسم
     const unique = new Map();
     allSeries.forEach(s => {
         const key = s.name.trim().toLowerCase();
