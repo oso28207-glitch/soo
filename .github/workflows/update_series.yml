@@ -2,8 +2,8 @@ name: تحديث المسلسلات التركية
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # يومياً الساعة 6 صباحاً بتوقيت UTC
-  workflow_dispatch:      # تشغيل يدوي
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 jobs:
   update-data:
