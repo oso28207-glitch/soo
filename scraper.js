@@ -90,9 +90,6 @@ function extractSeriesList(html, config) {
     return results;
 }
 
-/**
- * استخراج PostData من صفحة الحلقة
- */
 function extractPostData(html) {
     const startMatch = html.match(/PostData\s*=\s*\{/);
     if (!startMatch) return null;
@@ -105,26 +102,14 @@ function extractPostData(html) {
 
     for (let i = startIndex; i < html.length; i++) {
         const char = html[i];
-        if (escape) {
-            escape = false;
-            continue;
-        }
-        if (char === '\\' && inString) {
-            escape = true;
-            continue;
-        }
-        if (char === '"' && !escape) {
-            inString = !inString;
-            continue;
-        }
+        if (escape) { escape = false; continue; }
+        if (char === '\\' && inString) { escape = true; continue; }
+        if (char === '"' && !escape) { inString = !inString; continue; }
         if (!inString) {
             if (char === '{') braceCount++;
             else if (char === '}') {
                 braceCount--;
-                if (braceCount === 0) {
-                    endIndex = i + 1;
-                    break;
-                }
+                if (braceCount === 0) { endIndex = i + 1; break; }
             }
         }
     }
@@ -142,15 +127,10 @@ function extractPostData(html) {
         try {
             const fn = new Function(`return ${postDataStr}`);
             return fn();
-        } catch (err) {
-            return null;
-        }
+        } catch (err) { return null; }
     }
 }
 
-/**
- * استخراج روابط السيرفرات من PostData
- */
 function extractServerUrls(postData) {
     const servers = postData.ServersWatch || [];
     const urls = [];
@@ -169,7 +149,54 @@ function extractServerUrls(postData) {
 }
 
 /**
- * جلب الحلقات من صفحة المسلسل - باستخدام #AreaNewly
+ * محاولة استخراج رابط فيديو مباشر من صفحة السيرفر (embed)
+ */
+async function extractDirectVideoFromEmbed(embedUrl) {
+    try {
+        const html = await fetchPage(embedUrl, 2);
+        if (!html) return null;
+
+        const $ = cheerio.load(html);
+        let videoUrl = null;
+
+        // 1. البحث عن video source
+        $('video source').each((i, el) => {
+            const src = $(el).attr('src');
+            if (src && src.startsWith('http')) videoUrl = src;
+        });
+        if (videoUrl) return videoUrl;
+
+        // 2. البحث عن iframe متداخل
+        const iframeSrc = $('iframe').attr('src');
+        if (iframeSrc && iframeSrc.startsWith('http')) {
+            const nestedHtml = await fetchPage(iframeSrc, 1);
+            if (nestedHtml) {
+                const nested$ = cheerio.load(nestedHtml);
+                nested$('video source').each((i, el) => {
+                    const src = nested$(el).attr('src');
+                    if (src && src.startsWith('http')) videoUrl = src;
+                });
+                if (videoUrl) return videoUrl;
+            }
+        }
+
+        // 3. البحث عن روابط .mp4 في النص
+        const text = html;
+        const mp4Match = text.match(/https?:\/\/[^\s"']+\.mp4/);
+        if (mp4Match) return mp4Match[0];
+
+        // 4. البحث عن .m3u8
+        const m3u8Match = text.match(/https?:\/\/[^\s"']+\.m3u8/);
+        if (m3u8Match) return m3u8Match[0];
+
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * جلب الحلقات مع السيرفرات ومحاولة استخراج روابط مباشرة
  */
 async function fetchEpisodesWithServers(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
@@ -179,7 +206,7 @@ async function fetchEpisodesWithServers(seriesUrl) {
     const episodes = [];
     const seenUrls = new Set();
 
-    // 🔍 البحث في #AreaNewly عن الحلقات
+    // استخراج من #AreaNewly
     const areaNewly = $('#AreaNewly');
     if (areaNewly.length) {
         areaNewly.find('.ItemNewly a').each((i, el) => {
@@ -193,7 +220,7 @@ async function fetchEpisodesWithServers(seriesUrl) {
             }
         });
     } else {
-        // محاولة البحث العام
+        // محاولة عامة
         $('a[href*="الحلقة"], a[href*="episode"]').each((i, el) => {
             let href = $(el).attr('href');
             if (!href) return;
@@ -206,9 +233,9 @@ async function fetchEpisodesWithServers(seriesUrl) {
         });
     }
 
-    // لكل حلقة، نجلب PostData
+    // لكل حلقة، جلب PostData واستخراج الروابط المباشرة
     for (let ep of episodes) {
-        console.log(`    🔍 جلب سيرفرات: ${ep.name}`);
+        console.log(`    🔍 جلب بيانات: ${ep.name}`);
         const epHtml = await fetchPage(ep.url, 2);
         if (epHtml) {
             const postData = extractPostData(epHtml);
@@ -217,7 +244,15 @@ async function fetchEpisodesWithServers(seriesUrl) {
                 if (serverUrls.length > 0) {
                     ep.servers = serverUrls;
                     ep.embed = serverUrls[0].embed;
-                    console.log(`      ✅ ${serverUrls.length} سيرفر`);
+                    // محاولة استخراج رابط مباشر من أول سيرفر
+                    console.log(`      🔍 محاولة استخراج رابط مباشر من ${serverUrls[0].name}...`);
+                    const direct = await extractDirectVideoFromEmbed(serverUrls[0].embed);
+                    if (direct) {
+                        ep.directVideo = direct;
+                        console.log(`      ✅ رابط مباشر: ${direct.substring(0, 60)}...`);
+                    } else {
+                        console.log(`      ⚠️ لم نستطع استخراج رابط مباشر.`);
+                    }
                 } else {
                     console.log(`      ⚠️ لا توجد سيرفرات`);
                 }
