@@ -7,241 +7,42 @@
     <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js">
     </script>
     <style>
-        /* ===== إعادة تعيين أساسية ===== */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        body {
-            background: #141414;
-            color: #fff;
-            padding: 0 20px 40px;
-            min-height: 100vh;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 20px 0 10px;
-            border-bottom: 1px solid #333;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }
-        .header h1 {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #e50914, #f5c518);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .header .badge {
-            background: #e50914;
-            padding: 6px 16px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #fff;
-        }
-        .series-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 25px 15px;
-            margin-top: 10px;
-        }
-        .series-card {
-            background: #1f1f1f;
-            border-radius: 12px;
-            overflow: hidden;
-            cursor: pointer;
-            transition: transform 0.25s ease, box-shadow 0.25s ease;
-            border: 2px solid transparent;
-        }
-        .series-card:hover {
-            transform: scale(1.04);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
-            border-color: #e50914;
-        }
-        .series-card img {
-            width: 100%;
-            aspect-ratio: 2 / 3;
-            object-fit: cover;
-            display: block;
-            background: #2a2a2a;
-        }
-        .series-card .card-title {
-            padding: 12px 10px 14px;
-            text-align: center;
-            font-size: 15px;
-            font-weight: 500;
-            background: #1a1a1a;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .episodes-section {
-            margin: 30px 0 20px;
-            padding: 20px 15px;
-            background: #1a1a1a;
-            border-radius: 16px;
-            border: 1px solid #333;
-            display: none;
-        }
-        .episodes-section h2 {
-            font-size: 22px;
-            margin-bottom: 18px;
-            color: #f5c518;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .episodes-section h2 span {
-            background: #e50914;
-            font-size: 14px;
-            padding: 2px 12px;
-            border-radius: 30px;
-            color: #fff;
-        }
-        .episodes-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            max-height: 400px;
-            overflow-y: auto;
-            padding: 5px;
-        }
-        .episodes-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        .episodes-list::-webkit-scrollbar-track {
-            background: #2a2a2a;
-            border-radius: 10px;
-        }
-        .episodes-list::-webkit-scrollbar-thumb {
-            background: #e50914;
-            border-radius: 10px;
-        }
-        .episode-btn {
-            background: #2a2a2a;
-            border: none;
-            color: #fff;
-            padding: 10px 22px;
-            border-radius: 30px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: 0.2s;
-            border: 1px solid #444;
-            font-weight: 500;
-            flex-shrink: 0;
-        }
-        .episode-btn:hover {
-            background: #e50914;
-            border-color: #e50914;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 14px rgba(229, 9, 20, 0.4);
-        }
-        .episode-btn.active {
-            background: #e50914;
-            border-color: #e50914;
-        }
-        .episode-btn .status {
-            display: inline-block;
-            font-size: 11px;
-            margin-right: 5px;
-            color: #aaa;
-        }
-        .video-wrapper {
-            margin-top: 30px;
-            background: #000;
-            border-radius: 16px;
-            padding: 20px 20px 25px;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            border: 1px solid #333;
-        }
-        .video-wrapper video {
-            width: 100%;
-            max-width: 780px;
-            border-radius: 12px;
-            background: #0a0a0a;
-        }
-        #progress-container {
-            width: 100%;
-            max-width: 780px;
-            margin: 18px 0 8px;
-            display: none;
-        }
-        #progress-bar {
-            width: 100%;
-            height: 10px;
-            background: #333;
-            border-radius: 20px;
-            overflow: hidden;
-        }
-        #progress-fill {
-            width: 0%;
-            height: 100%;
-            background: linear-gradient(90deg, #f5c518, #e50914);
-            transition: width 0.2s ease;
-            border-radius: 20px;
-        }
-        #status-text {
-            color: #aaa;
-            font-size: 14px;
-            margin-top: 6px;
-            text-align: center;
-            min-height: 22px;
-        }
-        .loading {
-            text-align: center;
-            padding: 60px 20px;
-            font-size: 20px;
-            color: #f5c518;
-            grid-column: 1 / -1;
-        }
-        .error-msg {
-            background: #2a0a0a;
-            color: #ff6b6b;
-            padding: 16px 24px;
-            border-radius: 12px;
-            border-right: 6px solid #e50914;
-            margin: 20px 0;
-            grid-column: 1 / -1;
-        }
-        .close-episodes {
-            background: none;
-            border: none;
-            color: #aaa;
-            font-size: 24px;
-            cursor: pointer;
-            float: left;
-            transition: 0.2s;
-        }
-        .close-episodes:hover {
-            color: #fff;
-            transform: rotate(90deg);
-        }
-        .fallback-iframe {
-            width: 100%;
-            max-width: 780px;
-            height: 440px;
-            border: none;
-            border-radius: 12px;
-            background: #000;
-        }
-        @media (max-width: 600px) {
-            .series-grid {
-                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-                gap: 15px;
-            }
-            .header h1 { font-size: 22px; }
-            .episode-btn { padding: 8px 16px; font-size: 13px; }
-            .video-wrapper { padding: 12px; }
-            .fallback-iframe { height: 250px; }
-        }
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
+        body { background:#141414; color:#fff; padding:0 20px 40px; min-height:100vh; }
+        .header { display:flex; justify-content:space-between; align-items:center; padding:20px 0 10px; border-bottom:1px solid #333; margin-bottom:30px; flex-wrap:wrap; }
+        .header h1 { font-size:28px; font-weight:700; background:linear-gradient(135deg,#e50914,#f5c518); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+        .header .badge { background:#e50914; padding:6px 16px; border-radius:30px; font-size:14px; font-weight:600; color:#fff; }
+        .series-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:25px 15px; margin-top:10px; }
+        .series-card { background:#1f1f1f; border-radius:12px; overflow:hidden; cursor:pointer; transition:transform .25s ease,box-shadow .25s ease; border:2px solid transparent; }
+        .series-card:hover { transform:scale(1.04); box-shadow:0 10px 30px rgba(0,0,0,.8); border-color:#e50914; }
+        .series-card img { width:100%; aspect-ratio:2/3; object-fit:cover; display:block; background:#2a2a2a; }
+        .series-card .card-title { padding:12px 10px 14px; text-align:center; font-size:15px; font-weight:500; background:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .episodes-section { margin:30px 0 20px; padding:20px 15px; background:#1a1a1a; border-radius:16px; border:1px solid #333; display:none; }
+        .episodes-section h2 { font-size:22px; margin-bottom:18px; color:#f5c518; display:flex; align-items:center; gap:10px; }
+        .episodes-section h2 span { background:#e50914; font-size:14px; padding:2px 12px; border-radius:30px; color:#fff; }
+        .episodes-list { display:flex; flex-wrap:wrap; gap:12px; max-height:400px; overflow-y:auto; padding:5px; }
+        .episodes-list::-webkit-scrollbar { width:6px; }
+        .episodes-list::-webkit-scrollbar-track { background:#2a2a2a; border-radius:10px; }
+        .episodes-list::-webkit-scrollbar-thumb { background:#e50914; border-radius:10px; }
+        .episode-btn { background:#2a2a2a; border:none; color:#fff; padding:10px 22px; border-radius:30px; font-size:14px; cursor:pointer; transition:.2s; border:1px solid #444; font-weight:500; flex-shrink:0; }
+        .episode-btn:hover { background:#e50914; border-color:#e50914; transform:translateY(-2px); box-shadow:0 6px 14px rgba(229,9,20,.4); }
+        .episode-btn.active { background:#e50914; border-color:#e50914; }
+        .episode-btn .status { display:inline-block; font-size:11px; margin-right:5px; color:#aaa; }
+        .video-wrapper { margin-top:30px; background:#000; border-radius:16px; padding:20px 20px 25px; display:none; flex-direction:column; align-items:center; border:1px solid #333; }
+        .video-wrapper video { width:100%; max-width:780px; border-radius:12px; background:#0a0a0a; }
+        #progress-container { width:100%; max-width:780px; margin:18px 0 8px; display:none; }
+        #progress-bar { width:100%; height:10px; background:#333; border-radius:20px; overflow:hidden; }
+        #progress-fill { width:0%; height:100%; background:linear-gradient(90deg,#f5c518,#e50914); transition:width .2s ease; border-radius:20px; }
+        #status-text { color:#aaa; font-size:14px; margin-top:6px; text-align:center; min-height:22px; }
+        .loading { text-align:center; padding:60px 20px; font-size:20px; color:#f5c518; grid-column:1/-1; }
+        .error-msg { background:#2a0a0a; color:#ff6b6b; padding:16px 24px; border-radius:12px; border-right:6px solid #e50914; margin:20px 0; grid-column:1/-1; }
+        .close-episodes { background:none; border:none; color:#aaa; font-size:24px; cursor:pointer; float:left; transition:.2s; }
+        .close-episodes:hover { color:#fff; transform:rotate(90deg); }
+        .fallback-iframe { width:100%; max-width:780px; height:440px; border:none; border-radius:12px; background:#000; }
+        .compress-btn { background:#e50914; border:none; color:#fff; padding:8px 20px; border-radius:30px; font-size:14px; cursor:pointer; margin-top:10px; transition:.2s; }
+        .compress-btn:hover { background:#f5c518; color:#000; }
+        .compress-btn:disabled { opacity:0.5; cursor:not-allowed; }
+        @media (max-width:600px) { .series-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:15px; } .header h1 { font-size:22px; } .episode-btn { padding:8px 16px; font-size:13px; } .video-wrapper { padding:12px; } .fallback-iframe { height:250px; } }
     </style>
 </head>
 <body>
@@ -269,6 +70,7 @@
             <div id="status-text">⏳ جاري التهيئة...</div>
         </div>
         <div id="player-container" style="width:100%; max-width:780px;"></div>
+        <button class="compress-btn" id="compressBtn" style="display:none;">⬇️ تحميل وضغط إلى 240p</button>
     </div>
 
     <script>
@@ -291,6 +93,7 @@
         const progressFill = document.getElementById('progress-fill');
         const statusText = document.getElementById('status-text');
         const closeEpisodesBtn = document.getElementById('closeEpisodesBtn');
+        const compressBtn = document.getElementById('compressBtn');
 
         // ======================================================================
         // 2. تحميل البيانات
@@ -345,7 +148,7 @@
         }
 
         // ======================================================================
-        // 4. عرض الحلقات (بدون أزرار سيرفرات)
+        // 4. عرض الحلقات
         // ======================================================================
         function showEpisodes(index) {
             if (index < 0 || index >= seriesData.length) return;
@@ -361,12 +164,10 @@
                 episodes.forEach((ep, i) => {
                     const btn = document.createElement('button');
                     btn.className = 'episode-btn';
-                    // عرض اسم الحلقة فقط
                     btn.textContent = ep.name || `الحلقة ${i+1}`;
                     btn.dataset.epIndex = i;
-                    // إضافة أيقونة صغيرة لتعبر عن وجود رابط مباشر
                     if (ep.directVideo) {
-                        btn.title = '🔗 رابط مباشر متوفر (ضغط 240p)';
+                        btn.title = '🔗 رابط مباشر متوفر (يمكن ضغطه)';
                     } else if (ep.embed) {
                         btn.title = '📺 سيتم العرض عبر iframe (بدون ضغط)';
                     } else {
@@ -388,7 +189,7 @@
         }
 
         // ======================================================================
-        // 5. تشغيل الحلقة (محاولة تحميل وضغط، أو iframe احتياطي)
+        // 5. تشغيل الحلقة
         // ======================================================================
         async function loadFFmpeg() {
             if (ffmpeg) return ffmpeg;
@@ -437,10 +238,17 @@
             playerContainer.innerHTML = '';
             progressContainer.style.display = 'none';
             statusText.innerText = '⏳ جاري التجهيز...';
+            compressBtn.style.display = 'none';
 
-            // 1. إذا كان هناك رابط مباشر -> نحاول تحميله وضغطه
+            // 1. إذا كان هناك رابط مباشر -> نعرض زر الضغط
             if (episode.directVideo) {
-                await processDirectVideo(episode.directVideo);
+                compressBtn.style.display = 'inline-block';
+                compressBtn.textContent = '⬇️ تحميل وضغط إلى 240p';
+                compressBtn.disabled = false;
+                compressBtn.onclick = () => processDirectVideo(episode.directVideo);
+                statusText.innerText = '🔗 يوجد رابط مباشر. اضغط زر الضغط لبدء التحميل.';
+                // نعرض رسالة انتظار
+                playerContainer.innerHTML = '<p style="color:#f5c518;">🔗 رابط مباشر متوفر. اضغط زر "تحميل وضغط إلى 240p" لبدء العملية.</p>';
                 return;
             }
 
@@ -456,10 +264,14 @@
         }
 
         async function processDirectVideo(videoUrl) {
+            if (isProcessing) return;
             isProcessing = true;
+            compressBtn.disabled = true;
+            compressBtn.textContent = '⏳ جاري المعالجة...';
             statusText.innerText = '⬇️ جاري تحميل الفيديو...';
             progressContainer.style.display = 'block';
             progressFill.style.width = '0%';
+            playerContainer.innerHTML = '';
 
             try {
                 // تحميل الفيديو عبر Proxy
@@ -513,6 +325,7 @@
 
                 statusText.innerText = '✅ تم الضغط بنجاح! جودة 240p جاهزة.';
                 progressFill.style.width = '100%';
+                compressBtn.style.display = 'none';
 
                 await ff.deleteFile('input.mp4');
                 await ff.deleteFile('output.mp4');
@@ -521,18 +334,21 @@
                 console.error(err);
                 statusText.innerText = `❌ خطأ: ${err.message}`;
                 progressFill.style.width = '0%';
-                alert('حدث خطأ أثناء الضغط. حاول مرة أخرى أو استخدم العرض الاحتياطي.');
-                // محاولة عرض iframe كحل احتياطي
+                alert('حدث خطأ أثناء الضغط. حاول مرة أخرى.');
+                // العودة إلى العرض عبر iframe إن أمكن
                 if (currentEpisodeData && currentEpisodeData.embed) {
                     showIframe(currentEpisodeData.embed);
                 }
             } finally {
                 isProcessing = false;
+                compressBtn.disabled = false;
+                compressBtn.textContent = '⬇️ تحميل وضغط إلى 240p';
             }
         }
 
         function showIframe(embedUrl) {
             playerContainer.innerHTML = '';
+            compressBtn.style.display = 'none';
             const iframe = document.createElement('iframe');
             iframe.src = embedUrl;
             iframe.className = 'fallback-iframe';
@@ -552,6 +368,7 @@
             videoWrapper.style.display = 'none';
             playerContainer.innerHTML = '';
             progressContainer.style.display = 'none';
+            compressBtn.style.display = 'none';
         });
 
         // ======================================================================
