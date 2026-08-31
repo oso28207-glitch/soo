@@ -150,53 +150,63 @@ function extractServerUrls(postData) {
 
 /**
  * محاولة استخراج رابط فيديو مباشر من صفحة السيرفر (embed)
+ * مع تجربة عدة سيرفرات وليس فقط الأول
  */
-async function extractDirectVideoFromEmbed(embedUrl) {
-    try {
-        const html = await fetchPage(embedUrl, 2);
-        if (!html) return null;
+async function extractDirectVideoFromEmbed(embedUrl, retries = 2) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+            const html = await fetchPage(embedUrl, 2);
+            if (!html) continue;
 
-        const $ = cheerio.load(html);
-        let videoUrl = null;
+            const $ = cheerio.load(html);
+            let videoUrl = null;
 
-        // 1. البحث عن video source
-        $('video source').each((i, el) => {
-            const src = $(el).attr('src');
-            if (src && src.startsWith('http')) videoUrl = src;
-        });
-        if (videoUrl) return videoUrl;
+            // 1. البحث عن video source
+            $('video source').each((i, el) => {
+                const src = $(el).attr('src');
+                if (src && src.startsWith('http')) videoUrl = src;
+            });
+            if (videoUrl) return videoUrl;
 
-        // 2. البحث عن iframe متداخل
-        const iframeSrc = $('iframe').attr('src');
-        if (iframeSrc && iframeSrc.startsWith('http')) {
-            const nestedHtml = await fetchPage(iframeSrc, 1);
-            if (nestedHtml) {
-                const nested$ = cheerio.load(nestedHtml);
-                nested$('video source').each((i, el) => {
-                    const src = nested$(el).attr('src');
-                    if (src && src.startsWith('http')) videoUrl = src;
-                });
-                if (videoUrl) return videoUrl;
+            // 2. البحث عن iframe متداخل
+            const iframeSrc = $('iframe').attr('src');
+            if (iframeSrc && iframeSrc.startsWith('http')) {
+                const nestedHtml = await fetchPage(iframeSrc, 1);
+                if (nestedHtml) {
+                    const nested$ = cheerio.load(nestedHtml);
+                    nested$('video source').each((i, el) => {
+                        const src = nested$(el).attr('src');
+                        if (src && src.startsWith('http')) videoUrl = src;
+                    });
+                    if (videoUrl) return videoUrl;
+                }
             }
+
+            // 3. البحث عن روابط .mp4 في النص
+            const text = html;
+            const mp4Match = text.match(/https?:\/\/[^\s"']+\.mp4/);
+            if (mp4Match) return mp4Match[0];
+
+            // 4. البحث عن .m3u8
+            const m3u8Match = text.match(/https?:\/\/[^\s"']+\.m3u8/);
+            if (m3u8Match) return m3u8Match[0];
+
+            // 5. البحث عن روابط في عناصر <a>
+            $('a[href*=".mp4"], a[href*=".m3u8"]').each((i, el) => {
+                const href = $(el).attr('href');
+                if (href && href.startsWith('http')) videoUrl = href;
+            });
+            if (videoUrl) return videoUrl;
+
+        } catch (e) {
+            // تجاهل الأخطاء واستمر
         }
-
-        // 3. البحث عن روابط .mp4 في النص
-        const text = html;
-        const mp4Match = text.match(/https?:\/\/[^\s"']+\.mp4/);
-        if (mp4Match) return mp4Match[0];
-
-        // 4. البحث عن .m3u8
-        const m3u8Match = text.match(/https?:\/\/[^\s"']+\.m3u8/);
-        if (m3u8Match) return m3u8Match[0];
-
-        return null;
-    } catch (e) {
-        return null;
     }
+    return null;
 }
 
 /**
- * جلب الحلقات مع السيرفرات ومحاولة استخراج روابط مباشرة
+ * جلب الحلقات مع السيرفرات ومحاولة استخراج روابط مباشرة من عدة سيرفرات
  */
 async function fetchEpisodesWithServers(seriesUrl) {
     const html = await fetchPage(seriesUrl, 2);
@@ -244,14 +254,22 @@ async function fetchEpisodesWithServers(seriesUrl) {
                 if (serverUrls.length > 0) {
                     ep.servers = serverUrls;
                     ep.embed = serverUrls[0].embed;
-                    // محاولة استخراج رابط مباشر من أول سيرفر
-                    console.log(`      🔍 محاولة استخراج رابط مباشر من ${serverUrls[0].name}...`);
-                    const direct = await extractDirectVideoFromEmbed(serverUrls[0].embed);
-                    if (direct) {
-                        ep.directVideo = direct;
-                        console.log(`      ✅ رابط مباشر: ${direct.substring(0, 60)}...`);
-                    } else {
-                        console.log(`      ⚠️ لم نستطع استخراج رابط مباشر.`);
+                    // محاولة استخراج رابط مباشر من عدة سيرفرات
+                    let directFound = false;
+                    for (const server of serverUrls) {
+                        console.log(`      🔍 محاولة استخراج رابط مباشر من ${server.name}...`);
+                        const direct = await extractDirectVideoFromEmbed(server.embed);
+                        if (direct) {
+                            ep.directVideo = direct;
+                            console.log(`      ✅ رابط مباشر من ${server.name}: ${direct.substring(0, 60)}...`);
+                            directFound = true;
+                            break;
+                        } else {
+                            console.log(`      ⚠️ لم نستطع استخراج رابط مباشر من ${server.name}.`);
+                        }
+                    }
+                    if (!directFound) {
+                        console.log(`      ⚠️ لم نستطع استخراج رابط مباشر من أي سيرفر.`);
                     }
                 } else {
                     console.log(`      ⚠️ لا توجد سيرفرات`);
