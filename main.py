@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium
-مع دعم تجربة جميع السيرفرات المتاحة عبر النقر على أزرارها
+مع دعم تجربة جميع السيرفرات عبر النقر على أزرارها وانتظار تغيير iframe
 """
 
 import os
@@ -277,6 +277,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     معالجة حلقة واحدة باستخدام Selenium:
     - فتح صفحة المشاهدة
     - النقر على أزرار السيرفرات واحداً تلو الآخر
+    - انتظار تغير src الخاص بـ iframe
     - استخراج الفيديو من أول سيرفر يعمل
     """
     base_url = f"https://o.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}"
@@ -338,6 +339,13 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         server_names = [btn.text.strip() for btn in server_buttons]
         print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
         
+        # الحصول على عنصر iframe داخل .watch (الموجود مسبقاً)
+        try:
+            iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+        except NoSuchElementException:
+            driver.quit()
+            return False, "لم يتم العثور على iframe في الصفحة"
+        
         # متغير لحفظ رابط الفيديو النهائي
         video_url = None
         selected_iframe = None
@@ -345,43 +353,57 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         # تجربة كل سيرفر
         for idx in range(len(server_buttons)):
             try:
-                # إعادة الحصول على العنصر في كل مرة لتجنب StaleElement
+                # إعادة الحصول على العنصر في كل مرة
                 btn = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")[idx]
                 server_name = btn.text.strip()
                 print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
                 
-                # النقر على الزر (مع محاولة إعادة المحاولة في حال فشل النقر)
-                try:
-                    btn.click()
-                except StaleElementReferenceException:
-                    # إذا أصبح العنصر قديماً، نعيد الحصول عليه
-                    btn = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")[idx]
-                    btn.click()
-                time.sleep(3)  # انتظار تحميل iframe
+                # تسجيل src الحالي للـ iframe
+                old_src = iframe_element.get_attribute("src")
+                print(f"   القديم: {old_src}")
                 
-                # البحث عن iframe داخل div.getEmbed أو div.watch
+                # النقر على الزر (باستخدام JavaScript لتجنب أي مشاكل)
                 try:
-                    iframe_element = WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, ".getEmbed iframe, .watch iframe"))
+                    driver.execute_script("arguments[0].click();", btn)
+                except Exception as e:
+                    print(f"⚠️ فشل النقر بالـ JS، نحاول بالطريقة العادية: {e}")
+                    btn.click()
+                
+                # انتظار تغير src الخاص بـ iframe
+                try:
+                    WebDriverWait(driver, 20).until(
+                        lambda d: d.find_element(By.CSS_SELECTOR, ".watch iframe").get_attribute("src") != old_src
                     )
-                    iframe_url = iframe_element.get_attribute("src")
-                    if not iframe_url:
-                        print(f"⚠️ السيرفر {server_name} لم يقدم iframe")
-                        continue
-                    
-                    print(f"📦 تم العثور على iframe: {iframe_url}")
-                    
-                    # استخراج الفيديو من هذا iframe باستخدام نفس driver
-                    video_url = extract_video_from_iframe_with_selenium(driver, iframe_url)
-                    if video_url:
-                        selected_iframe = iframe_url
-                        print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
-                        break
-                    else:
-                        print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
+                    print("✅ تم تغيير iframe بنجاح.")
                 except TimeoutException:
-                    print(f"⏱️ لم يتم تحميل iframe للسيرفر {server_name} خلال المهلة")
+                    print("⏱️ لم يتغير src خلال المهلة، ربما السيرفر لا يعمل.")
                     continue
+                
+                # الحصول على src الجديد
+                iframe_url = iframe_element.get_attribute("src")
+                print(f"📦 iframe الجديد: {iframe_url}")
+                
+                if not iframe_url or iframe_url == old_src:
+                    print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
+                    continue
+                
+                # استخراج الفيديو من هذا iframe باستخدام نفس driver
+                video_url = extract_video_from_iframe_with_selenium(driver, iframe_url)
+                if video_url:
+                    selected_iframe = iframe_url
+                    print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
+                    break
+                else:
+                    print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
+                    
+            except StaleElementReferenceException:
+                print("⚠️ عنصر قديم، نعيد الحصول عليه...")
+                # إعادة الحصول على iframe
+                try:
+                    iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+                except:
+                    pass
+                continue
             except Exception as e:
                 print(f"⚠️ خطأ أثناء محاولة السيرفر {server_name}: {e}")
                 continue
