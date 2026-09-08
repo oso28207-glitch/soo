@@ -343,7 +343,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     """
     معالجة حلقة واحدة باستخدام Selenium بالكامل
     """
-    base_url = f"https://o.3seq.cam/video/modablaj-{series_name}-episode-s{season_num:02d}e{episode_num:02d}"
+    base_url = f"https://o.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}"
     
     print(f"\n🎬 Episode {episode_num:02d}")
     print(f"🔗 Base URL: {base_url}")
