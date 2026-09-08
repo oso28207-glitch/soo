@@ -71,7 +71,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 
 app = None
@@ -270,7 +270,7 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-# ===== الدالة الأساسية المعاد كتابتها =====
+# ===== الدالة الأساسية المعدلة =====
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     """
@@ -315,19 +315,26 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
         driver.get(watch_url)
         
-        # انتظار تحميل قائمة السيرفرات
+        # انتظار إضافي لتشغيل السكربتات
+        time.sleep(3)
+        
+        # البحث عن قائمة السيرفرات بانتظار أطول
         try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "ul.serversList li"))
+            WebDriverWait(driver, 30).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "ul.serversList"))
             )
-            time.sleep(2)
-        except:
-            print("⚠️ لم يتم العثور على قائمة السيرفرات، قد تكون الصفحة مختلفة.")
+            print("✅ تم العثور على قائمة السيرفرات.")
+        except TimeoutException:
+            print("⚠️ لم يتم العثور على قائمة السيرفرات خلال 30 ثانية.")
             driver.quit()
             return False, "لم يتم العثور على أزرار السيرفرات"
         
         # الحصول على جميع أزرار السيرفرات
         server_buttons = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")
+        if not server_buttons:
+            driver.quit()
+            return False, "لا توجد أزرار سيرفرات في القائمة"
+        
         server_names = [btn.text.strip() for btn in server_buttons]
         print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
         
@@ -336,20 +343,25 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         selected_iframe = None
         
         # تجربة كل سيرفر
-        for idx, btn in enumerate(server_buttons):
+        for idx in range(len(server_buttons)):
             try:
-                # إعادة العثور على العنصر لتجنب StaleElementReferenceException
+                # إعادة الحصول على العنصر في كل مرة لتجنب StaleElement
                 btn = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")[idx]
                 server_name = btn.text.strip()
                 print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
                 
-                # النقر على الزر
-                btn.click()
-                time.sleep(2)  # انتظار تحميل iframe
+                # النقر على الزر (مع محاولة إعادة المحاولة في حال فشل النقر)
+                try:
+                    btn.click()
+                except StaleElementReferenceException:
+                    # إذا أصبح العنصر قديماً، نعيد الحصول عليه
+                    btn = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")[idx]
+                    btn.click()
+                time.sleep(3)  # انتظار تحميل iframe
                 
                 # البحث عن iframe داخل div.getEmbed أو div.watch
                 try:
-                    iframe_element = WebDriverWait(driver, 10).until(
+                    iframe_element = WebDriverWait(driver, 15).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, ".getEmbed iframe, .watch iframe"))
                     )
                     iframe_url = iframe_element.get_attribute("src")
@@ -410,7 +422,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         driver.quit()
         return False, f"خطأ غير متوقع: {e}"
 
-# ===== الدالة الرئيسية (نفسها) =====
+# ===== الدالة الرئيسية =====
 
 async def main():
     print("="*50)
