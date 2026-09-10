@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Telegram Video Downloader & Uploader - معالج متكامل باستخدام Selenium
-مع دعم تجربة جميع السيرفرات عبر النقر على أزرارها وانتظار تغيير iframe
+Telegram Video Downloader & Uploader - معالج متكامل لموقع u.3seq.cam
+معدّل ليعمل على GitHub Actions مع حماية من الحظر
 """
 
 import os
@@ -50,6 +50,7 @@ def install_requirements():
         "yt-dlp>=2024.4.9",
         "curl_cffi>=0.5.10",
         "selenium>=4.15.0",
+        "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0"
     ]
     for req in reqs:
@@ -65,43 +66,34 @@ install_requirements()
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 import yt_dlp
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from seleniumbase import Driver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 
 app = None
 
-# ===== إعداد Selenium =====
+# ===== إعداد Selenium مع SeleniumBase UC Mode =====
 def setup_selenium():
-    """إعداد متصفح Chrome في وضع headless مع خيارات لمنع اكتشاف adblock"""
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
-    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.add_argument('--disable-extensions')
-    chrome_options.add_argument('--disable-notifications')
-    chrome_options.add_argument('--ignore-certificate-errors')
-    
-    chromedriver_path = shutil.which('chromedriver')
-    if not chromedriver_path:
-        print("❌ لم يتم العثور على chromedriver. تأكد من تثبيته.")
-        return None
-    
+    """
+    إعداد متصفح Chrome باستخدام SeleniumBase UC Mode
+    لتجاوز أنظمة كشف البوتات على GitHub Actions
+    """
     try:
-        service = Service(executable_path=chromedriver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver = Driver(
+            uc=True,
+            headless=True,
+            incognito=True,
+            agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            xvfb=True,  # مهم جداً على GitHub Actions
+            no_sandbox=True,
+            disable_dev_shm_usage=True,
+            window_size="1920,1080"
+        )
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        print("✅ تم إعداد Selenium مع UC Mode بنجاح")
         return driver
     except Exception as e:
         print(f"❌ فشل إعداد Selenium: {e}")
@@ -128,7 +120,7 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-def extract_video_from_iframe_with_selenium(driver, iframe_url):
+def extract_video_from_iframe(driver, iframe_url):
     """
     استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو الحقيقي (.m3u8)
     """
@@ -136,7 +128,7 @@ def extract_video_from_iframe_with_selenium(driver, iframe_url):
         print(f"🔄 فتح iframe: {iframe_url}")
         driver.get(iframe_url)
         
-        # انتظار تحميل عنصر الفيديو (لمدة أقصاها 20 ثانية)
+        # انتظار تحميل عنصر الفيديو
         try:
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.TAG_NAME, "video"))
@@ -270,11 +262,11 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-# ===== الدالة الأساسية المعدلة =====
+# ===== الدالة الأساسية =====
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     """
-    معالجة حلقة واحدة باستخدام Selenium:
+    معالجة حلقة واحدة:
     - فتح صفحة المشاهدة
     - النقر على أزرار السيرفرات واحداً تلو الآخر
     - انتظار تغير src الخاص بـ iframe
@@ -289,7 +281,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # 1. تشغيل Selenium والذهاب إلى الرابط النهائي + ?do=watch
+    # 1. تشغيل Selenium
     driver = setup_selenium()
     if not driver:
         return False, "فشل تشغيل Selenium"
@@ -319,7 +311,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         # انتظار إضافي لتشغيل السكربتات
         time.sleep(3)
         
-        # البحث عن قائمة السيرفرات بانتظار أطول
+        # البحث عن قائمة السيرفرات
         try:
             WebDriverWait(driver, 30).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, "ul.serversList"))
@@ -339,7 +331,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         server_names = [btn.text.strip() for btn in server_buttons]
         print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
         
-        # الحصول على عنصر iframe داخل .watch (الموجود مسبقاً)
+        # الحصول على عنصر iframe داخل .watch
         try:
             iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
         except NoSuchElementException:
@@ -362,7 +354,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
                 old_src = iframe_element.get_attribute("src")
                 print(f"   القديم: {old_src}")
                 
-                # النقر على الزر (باستخدام JavaScript لتجنب أي مشاكل)
+                # النقر على الزر باستخدام JavaScript
                 try:
                     driver.execute_script("arguments[0].click();", btn)
                 except Exception as e:
@@ -387,8 +379,8 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
                     print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
                     continue
                 
-                # استخراج الفيديو من هذا iframe باستخدام نفس driver
-                video_url = extract_video_from_iframe_with_selenium(driver, iframe_url)
+                # استخراج الفيديو من هذا iframe
+                video_url = extract_video_from_iframe(driver, iframe_url)
                 if video_url:
                     selected_iframe = iframe_url
                     print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
@@ -398,24 +390,23 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
                     
             except StaleElementReferenceException:
                 print("⚠️ عنصر قديم، نعيد الحصول عليه...")
-                # إعادة الحصول على iframe
                 try:
                     iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
                 except:
                     pass
                 continue
             except Exception as e:
-                print(f"⚠️ خطأ أثناء محاولة السيرفر {server_name}: {e}")
+                print(f"⚠️ خطأ أثناء محاولة السيرفر: {e}")
                 continue
         
-        driver.quit()  # نغلق المتصفح بعد الانتهاء
+        driver.quit()
         
         if not video_url:
             return False, "فشل استخراج رابط الفيديو من جميع السيرفرات"
         
         print(f"🎥 Video URL: {video_url}")
         
-        # 4. تنزيل الفيديو باستخدام yt-dlp مع referer مناسب
+        # 4. تنزيل الفيديو
         if not download_video(video_url, temp_file, referer=selected_iframe):
             return False, "فشل التنزيل"
         
@@ -457,11 +448,6 @@ async def main():
         print("✅ ffmpeg موجود")
     except:
         print("❌ ffmpeg غير موجود")
-        return
-
-    # التحقق من توفر chromedriver
-    if not shutil.which('chromedriver'):
-        print("❌ chromedriver غير موجود. تأكد من تثبيته.")
         return
 
     # الاتصال بتليغرام
@@ -506,8 +492,8 @@ async def main():
             failed.append(ep)
             print(f"❌ الحلقة {ep}: {msg}")
 
-        # انتظار عشوائي
-        wait_time = random.randint(30, 45)
+        # انتظار عشوائي لتجنب الحظر
+        wait_time = random.randint(45, 90)
         print(f"⏳ انتظار {wait_time} ثانية...")
         await asyncio.sleep(wait_time)
 
@@ -517,7 +503,7 @@ async def main():
 
     # تنظيف
     try:
-        os.rmdir(download_dir)
+        shutil.rmtree(download_dir)
     except:
         pass
 
