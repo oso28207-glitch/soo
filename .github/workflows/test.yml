@@ -38,7 +38,7 @@ jobs:
             "series_name": "muhtemel-ask",
             "series_name_arabic": "احتمال حب",
             "season_num": 1,
-            "start_episode": 60,
+            "start_episode": 1,
             "end_episode": 60
           }
           EOF
@@ -49,4 +49,4 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: python script.py   # استبدل script.py باسم ملفك
+        run: python main.py   # استبدل script.py باسم ملفك
