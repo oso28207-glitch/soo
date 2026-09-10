@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-- الجلسة 1: جمع روابط iframe (بالنقر)
-- الجلسة 2: استخراج m3u8 عبر SeleniumBase CDP Mode
-- ضغط الفيديو إلى 144p عبر ffmpeg
-- رفع الفيديو إلى قناة تليغرام
-- TEST_MODE متوفر
+- جلسة 1: جمع روابط iframe
+- جلسة 2: استخراج m3u8 (yt-dlp مُتحقَّق منه + CDP Mode)
+- التنزيل داخل الحلقة → fallthrough تلقائي عند الفشل
+- ضغط 144p + رفع إلى تليغرام
 """
 
 import os
@@ -19,9 +18,7 @@ import random
 import re
 import tempfile
 from datetime import datetime
-from urllib.parse import urlparse
 
-# ===== التهيئة =====
 TELEGRAM_API_ID = os.environ.get("API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
 TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
@@ -39,10 +36,12 @@ SKIP_DOWNLOAD = os.environ.get("SKIP_DOWNLOAD", "false").lower() in ("true", "1"
 SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "false").lower() in ("true", "1", "yes")
 SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1", "yes")
 
+MIN_VALID_SIZE = 100 * 1024  # 100 KB
+
 
 def validate_env():
     if TEST_MODE:
-        print("🧪 TEST_MODE مفعّل")
+        print("🧪 TEST_MODE")
         return True
     errors = []
     if not TELEGRAM_API_ID: errors.append("❌ API_ID is missing")
@@ -66,7 +65,7 @@ def install_requirements():
         "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0",
     ]
-    if not TEST_MODE or not SKIP_UPLOAD:
+    if not (TEST_MODE and SKIP_UPLOAD):
         reqs += ["pyrogram>=2.0.0", "tgcrypto>=1.2.0"]
     for req in reqs:
         try:
@@ -78,15 +77,12 @@ def install_requirements():
 
 install_requirements()
 
-# ===== الاستيراد بعد التثبيت =====
 import yt_dlp
 from seleniumbase import SB
 from bs4 import BeautifulSoup
 
 app = None
-Client = None
-FloodWait = None
-if not TEST_MODE or not SKIP_UPLOAD:
+if not (TEST_MODE and SKIP_UPLOAD):
     from pyrogram import Client
     from pyrogram.errors import FloodWait
 
@@ -97,9 +93,8 @@ if not TEST_MODE or not SKIP_UPLOAD:
 async def setup_telegram():
     global app
     if TEST_MODE and SKIP_UPLOAD:
-        print("🧪 TEST_MODE + SKIP_UPLOAD: تخطي تليغرام")
+        print("🧪 SKIP_UPLOAD: تخطي تليغرام")
         return True
-
     print("\n🔐 Connecting to Telegram...")
     try:
         app = Client(
@@ -111,7 +106,7 @@ async def setup_telegram():
         )
         await app.start()
         me = await app.get_me()
-        print(f"✅ Connected as {me.first_name} (@{me.username or 'no-username'})")
+        print(f"✅ Connected as {me.first_name}")
         return True
     except Exception as e:
         print(f"❌ Telegram failed: {e}")
@@ -119,7 +114,7 @@ async def setup_telegram():
 
 
 # ============================================================
-#  استخراج السيرفرات من HTML
+#  استخراج السيرفرات
 # ============================================================
 def extract_servers_from_html(html):
     servers = []
@@ -148,16 +143,22 @@ def extract_servers_from_html(html):
     return servers
 
 
-def extract_post_id_from_html(html):
-    for pat in [
-        r'vo_postID\s*=\s*["\']?(\d+)',
-        r'wp-json/wp/v2/posts/(\d+)',
-        r'shortlink[\'"]\s*href=[\'"][^\'"]*\?p=(\d+)',
-    ]:
-        m = re.search(pat, html)
-        if m:
-            return m.group(1)
-    return None
+# ============================================================
+#  تحقق صارم من صلاحية رابط الفيديو
+# ============================================================
+def is_valid_video_url(url, source_url=None):
+    """
+    يتحقق أن الرابط يشبه رابط فيديو وليس صفحة ويب.
+    """
+    if not url or not url.startswith("http"):
+        return False
+    # ارفض إن كان الرابط نفسه رابط الصفحة
+    if source_url and url.rstrip("/") == source_url.rstrip("/"):
+        return False
+    ul = url.lower()
+    # يجب أن يحتوي على مؤشر فيديو
+    indicators = [".m3u8", ".mp4", ".ts", "/hls/", "/video/", "/stream/", "/master", "/playlist"]
+    return any(ind in ul for ind in indicators)
 
 
 # ============================================================
@@ -170,7 +171,7 @@ def extract_m3u8_with_cdp(iframe_url):
     with open(log_file, "w", encoding="utf-8") as f:
         f.write("")
 
-    def _log_to_file(url):
+    def _log(url):
         try:
             with open(log_file, "a", encoding="utf-8") as fh:
                 fh.write(url + "\n")
@@ -184,14 +185,13 @@ def extract_m3u8_with_cdp(iframe_url):
                 page_load_strategy="eager", locale_code="en") as sb:
             try:
                 sb.activate_cdp_mode()
-
                 try:
                     import mycdp
 
                     async def on_request(event):
                         try:
                             url = event.request.url
-                            _log_to_file(url)
+                            _log(url)
                             if ".m3u8" in url:
                                 print(f"      ✅ m3u8 (Req): {url[:130]}", flush=True)
                         except Exception:
@@ -200,7 +200,7 @@ def extract_m3u8_with_cdp(iframe_url):
                     async def on_response(event):
                         try:
                             url = event.response.url
-                            _log_to_file(url)
+                            _log(url)
                             if ".m3u8" in url:
                                 print(f"      ✅ m3u8 (Res): {url[:130]}", flush=True)
                         except Exception:
@@ -219,12 +219,10 @@ def extract_m3u8_with_cdp(iframe_url):
                 for _ in range(3):
                     try:
                         sb.cdp.click_if_visible("video")
-                        print("      🖱️ نقر على: video", flush=True)
                     except Exception:
                         pass
                     try:
                         sb.cdp.click_if_visible("button.vjs-big-play-button")
-                        print("      🖱️ نقر على: vjs-big-play-button", flush=True)
                     except Exception:
                         pass
                     sb.cdp.sleep(2)
@@ -240,7 +238,7 @@ def extract_m3u8_with_cdp(iframe_url):
                     """)
                     if dom_m3u8:
                         print(f"      ✅ m3u8 (DOM): {dom_m3u8[:130]}", flush=True)
-                        _log_to_file(dom_m3u8)
+                        _log(dom_m3u8)
                 except Exception:
                     pass
 
@@ -265,7 +263,6 @@ def extract_m3u8_with_cdp(iframe_url):
     print(f"      📊 عدد الروابط الملتقطة: {len(urls)}", flush=True)
 
     if not urls:
-        print("      ❌ لم يتم اعتراض أي طلب.", flush=True)
         return None
 
     master_url = None
@@ -287,20 +284,19 @@ def extract_m3u8_with_cdp(iframe_url):
 
     result = master_url or best_index or any_m3u8
     if result:
-        print(f"      🎯 m3u8 نهائي: {result[:150]}", flush=True)
+        print(f"      🎯 m3u8: {result[:150]}", flush=True)
         return result
 
     for url in urls:
         if ".mp4" in url:
-            print(f"      🎯 mp4 نهائي: {url[:150]}", flush=True)
+            print(f"      🎯 mp4: {url[:150]}", flush=True)
             return url
 
-    print("      ❌ لم يتم العثور على m3u8/mp4.", flush=True)
     return None
 
 
 # ============================================================
-#  yt-dlp كخيار احتياطي
+#  yt-dlp مع تحقق صارم
 # ============================================================
 def try_ytdlp_extract(iframe_url):
     try:
@@ -315,12 +311,20 @@ def try_ytdlp_extract(iframe_url):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(iframe_url, download=False)
             if info:
+                candidate = None
                 if info.get('url'):
-                    return info['url']
-                if info.get('formats'):
+                    candidate = info['url']
+                elif info.get('formats'):
                     best = sorted(info['formats'], key=lambda f: f.get('height') or 0)[-1]
                     if best.get('url'):
-                        return best['url']
+                        candidate = best['url']
+
+                if candidate:
+                    # ✅ التحقق الصارم من الرابط
+                    if not is_valid_video_url(candidate, source_url=iframe_url):
+                        print(f"   ⚠️ yt-dlp أعاد رابطاً غير صالح (صفحة ويب؟): {candidate[:100]}")
+                        return None
+                    return candidate
     except Exception as e:
         print(f"   ⚠️ yt-dlp: {str(e)[:120]}")
     return None
@@ -333,19 +337,15 @@ def collect_iframe_urls(episode_num, series_name):
     base_url = f"https://u.3seq.com/video/modablaj-{series_name}-episode-{episode_num:02d}"
     iframe_urls = []
 
-    with SB(
-        uc=True, xvfb=True, headless=False, incognito=True,
-        ad_block_on=False, disable_csp=True,
-        page_load_strategy="eager", locale_code="en",
-    ) as sb:
+    with SB(uc=True, xvfb=True, headless=False, incognito=True,
+            ad_block_on=False, disable_csp=True,
+            page_load_strategy="eager", locale_code="en") as sb:
         try:
             print(f"🖥️ [الجلسة 1] فتح {base_url}")
             sb.open(base_url)
             time.sleep(6)
 
             final_url = sb.get_current_url()
-            print(f"🌐 النهائي: {final_url}")
-
             if not final_url.endswith('/'):
                 final_url += '/'
             watch_url = final_url + '?do=watch'
@@ -363,36 +363,29 @@ def collect_iframe_urls(episode_num, series_name):
             page_src = sb.get_page_source()
             servers = extract_servers_from_html(page_src)
             if not servers:
-                print("❌ لم نجد سيرفرات")
                 return iframe_urls
 
             print(f"📦 عدد السيرفرات: {len(servers)}")
-            for s in servers:
-                print(f"   - {s['id']} | {s['name']}")
 
             for i, srv in enumerate(servers):
                 print(f"\n🔄 [{i+1}/{len(servers)}] النقر على {srv['name']}")
-
                 try:
                     old_src = None
                     try:
                         old_src = sb.find_element(".watch iframe").get_attribute("src")
                     except Exception:
                         pass
-                    print(f"   src القديم: {old_src}")
 
                     clicked = False
                     for method in ["uc_click", "js_click", "click"]:
                         try:
                             getattr(sb, method)(f"#{srv['id']}")
                             clicked = True
-                            print(f"   ✅ {method}")
                             break
                         except Exception:
                             pass
 
                     if not clicked:
-                        print(f"   ❌ فشل النقر")
                         continue
 
                     new_src = None
@@ -410,10 +403,7 @@ def collect_iframe_urls(episode_num, series_name):
                         continue
 
                     print(f"   ✅ iframe: {new_src}")
-                    iframe_urls.append({
-                        "server": srv["name"],
-                        "url": new_src,
-                    })
+                    iframe_urls.append({"server": srv["name"], "url": new_src})
 
                 except Exception as e:
                     print(f"   ❌ {str(e)[:120]}")
@@ -426,7 +416,7 @@ def collect_iframe_urls(episode_num, series_name):
 
 
 # ============================================================
-#  ✅ تنزيل + ضغط + Thumbnail + رفع
+#  تنزيل + ضغط + رفع
 # ============================================================
 def download_video(video_url, output_path, referer):
     try:
@@ -447,97 +437,60 @@ def download_video(video_url, output_path, referer):
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
-            return True
-        print(f"   ⚠️ الملف صغير جداً أو غير موجود: {output_path}")
-        return False
+
+        if not os.path.exists(output_path):
+            return False, "الملف غير موجود"
+        size = os.path.getsize(output_path)
+        if size < MIN_VALID_SIZE:
+            return False, f"الملف صغير جداً ({size} bytes)"
+        return True, size
     except Exception as e:
-        print(f"❌ Download error: {e}")
-        return False
+        return False, str(e)[:200]
 
 
 def compress_to_144p(input_path, output_path):
-    """ضغط الفيديو إلى 144p مع تسجيل تفصيلي."""
     if not os.path.exists(input_path):
-        print("   ❌ الملف المصدر غير موجود")
         return False
-
-    input_size_mb = os.path.getsize(input_path) / (1024 * 1024)
-    print(f"   🗜️ بدء الضغط إلى 144p (المصدر: {input_size_mb:.2f} MB)...")
+    input_mb = os.path.getsize(input_path) / (1024 * 1024)
+    print(f"   🗜️ ضغط {input_mb:.2f} MB → 144p...")
 
     cmd = [
-        'ffmpeg',
-        '-i', input_path,
+        'ffmpeg', '-i', input_path,
         '-vf', 'scale=-2:144',
-        '-c:v', 'libx264',
-        '-crf', '28',
-        '-preset', 'veryfast',
-        '-c:a', 'aac',
-        '-b:a', '64k',
+        '-c:v', 'libx264', '-crf', '28', '-preset', 'veryfast',
+        '-c:a', 'aac', '-b:a', '64k',
         '-movflags', '+faststart',
         '-y', output_path,
     ]
-
     try:
         start = time.time()
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=3600,  # ساعة كحد أقصى
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         elapsed = time.time() - start
 
-        if result.returncode != 0:
-            print(f"   ❌ فشل ffmpeg (code {result.returncode})")
-            print(f"   📄 stderr: {result.stderr[-500:]}")
+        if result.returncode != 0 or not os.path.exists(output_path):
+            print(f"   ❌ فشل ffmpeg: {result.stderr[-300:]}")
             return False
 
-        if not os.path.exists(output_path):
-            print("   ❌ الملف الناتج غير موجود")
-            return False
-
-        output_size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        ratio = (1 - output_size_mb / input_size_mb) * 100
-        print(f"   ✅ تم الضغط في {elapsed:.1f}s")
-        print(f"   📊 {input_size_mb:.2f} MB → {output_size_mb:.2f} MB (توفير {ratio:.1f}%)")
+        out_mb = os.path.getsize(output_path) / (1024 * 1024)
+        print(f"   ✅ {input_mb:.2f} MB → {out_mb:.2f} MB في {elapsed:.1f}s")
         return True
-
-    except subprocess.TimeoutExpired:
-        print("   ❌ انتهت مهلة ffmpeg (ساعة)")
-        return False
     except Exception as e:
-        print(f"   ❌ خطأ في الضغط: {e}")
+        print(f"   ❌ {e}")
         return False
 
 
 def create_thumbnail(video_path, thumb_path):
-    """إنشاء صورة مصغرة من الفيديو."""
-    if not os.path.exists(video_path):
-        return False
-
-    cmd = [
-        'ffmpeg',
-        '-ss', '00:00:05',
-        '-i', video_path,
-        '-vframes', '1',
-        '-vf', 'scale=320:180',
-        '-f', 'image2',
-        '-y', thumb_path,
-    ]
+    cmd = ['ffmpeg', '-ss', '00:00:05', '-i', video_path,
+           '-vframes', '1', '-vf', 'scale=320:180',
+           '-f', 'image2', '-y', thumb_path]
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=60)
-        if result.returncode == 0 and os.path.exists(thumb_path):
-            print(f"   ✅ تم إنشاء Thumbnail: {os.path.getsize(thumb_path)} bytes")
-            return True
-        return False
-    except Exception as e:
-        print(f"   ⚠️ خطأ في Thumbnail: {e}")
+        r = subprocess.run(cmd, capture_output=True, timeout=60)
+        return r.returncode == 0 and os.path.exists(thumb_path)
+    except Exception:
         return False
 
 
 def get_video_metadata(video_path):
-    """استخراج العرض والارتفاع والمدة."""
     width, height, duration = 1280, 720, 0
     try:
         probe = subprocess.run(
@@ -558,41 +511,26 @@ def get_video_metadata(video_path):
                     duration = int(float(parts[2]))
                 except ValueError:
                     pass
-    except Exception as e:
-        print(f"   ⚠️ ffprobe: {e}")
+    except Exception:
+        pass
     return width, height, duration
 
 
 async def upload_video(file_path, caption, thumb_path=None):
-    """رفع الفيديو إلى تليغرام."""
     if TEST_MODE and SKIP_UPLOAD:
-        size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        print(f"🧪 SKIP_UPLOAD: {file_path} ({size_mb:.2f} MB)")
+        print(f"🧪 SKIP_UPLOAD: {file_path} ({os.path.getsize(file_path)/(1024*1024):.2f} MB)")
         return True
 
-    if app is None:
-        print("   ❌ لا يوجد اتصال بتليغرام")
+    if app is None or not os.path.exists(file_path):
         return False
 
-    if not os.path.exists(file_path):
-        print(f"   ❌ الملف غير موجود: {file_path}")
-        return False
+    file_mb = os.path.getsize(file_path) / (1024 * 1024)
+    print(f"   📤 رفع {file_mb:.2f} MB...")
 
-    file_size = os.path.getsize(file_path)
-    file_size_mb = file_size / (1024 * 1024)
-    print(f"   📤 بدء الرفع إلى تليغرام ({file_size_mb:.2f} MB)...")
-
-    # استخراج الميتاداتا
     width, height, duration = get_video_metadata(file_path)
-    print(f"   📐 الأبعاد: {width}x{height} | المدة: {duration}s")
+    print(f"   📐 {width}x{height} | {duration}s")
 
-    # التحقق من Thumbnail
-    thumb = None
-    if thumb_path and os.path.exists(thumb_path):
-        thumb = thumb_path
-        print(f"   🖼️ Thumbnail: {thumb_path}")
-    else:
-        print(f"   ⚠️ لا يوجد Thumbnail")
+    thumb = thumb_path if thumb_path and os.path.exists(thumb_path) else None
 
     try:
         start = time.time()
@@ -606,22 +544,19 @@ async def upload_video(file_path, caption, thumb_path=None):
             duration=duration,
             thumb=thumb,
         )
-        elapsed = time.time() - start
-        print(f"   ✅ تم الرفع بنجاح في {elapsed:.1f}s")
+        print(f"   ✅ تم الرفع في {time.time() - start:.1f}s")
         return True
-
     except FloodWait as e:
-        print(f"   ⏳ FloodWait: انتظار {e.value}s...")
+        print(f"   ⏳ FloodWait {e.value}s...")
         await asyncio.sleep(e.value)
         return await upload_video(file_path, caption, thumb_path)
-
     except Exception as e:
-        print(f"   ❌ خطأ في الرفع: {str(e)[:200]}")
+        print(f"   ❌ {str(e)[:200]}")
         return False
 
 
 # ============================================================
-#  معالجة حلقة
+#  ✅ معالجة حلقة (مع التنزيل داخل حلقة السيرفرات)
 # ============================================================
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     print(f"\n🎬 Episode {episode_num:02d}")
@@ -631,104 +566,97 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
     try:
-        # ===== جلسة 1: جمع روابط iframe =====
+        # ===== جلسة 1 =====
         print(f"\n{'='*60}")
         print("📡 الجلسة 1: جمع روابط iframe")
         print(f"{'='*60}")
 
-        iframe_urls = await asyncio.to_thread(
-            collect_iframe_urls, episode_num, series_name
-        )
-
+        iframe_urls = await asyncio.to_thread(collect_iframe_urls, episode_num, series_name)
         if not iframe_urls:
-            return False, "لم نتمكن من جمع أي رابط iframe"
+            return False, "لا توجد روابط iframe"
 
-        print(f"\n📋 تم جمع {len(iframe_urls)} رابط iframe")
+        print(f"\n📋 {len(iframe_urls)} رابط iframe")
 
-        # ===== جلسة 2: استخراج m3u8 =====
-        video_url = None
-        selected_iframe = None
+        # ===== حلقة السيرفرات: استخراج + تنزيل =====
+        downloaded_size = 0
+        successful_iframe = None
 
         for i, item in enumerate(iframe_urls):
             print(f"\n{'='*60}")
-            print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}: {item['url'][:100]}")
+            print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}")
+            print(f"🔗 {item['url'][:100]}")
             print(f"{'='*60}")
 
-            # ----- المحاولة 1: yt-dlp -----
+            candidate_url = None
+
+            # --- yt-dlp ---
             print(f"   [1/2] yt-dlp...")
-            v_url = await asyncio.to_thread(try_ytdlp_extract, item["url"])
-            if v_url:
-                if ".m3u8" in v_url or ".mp4" in v_url or v_url.startswith("http"):
-                    video_url = v_url
-                    selected_iframe = item["url"]
-                    print(f"   ✅ نجح yt-dlp")
-                    break
-                else:
-                    print(f"   ⚠️ رابط غير صالح، نتجاهله")
+            v = await asyncio.to_thread(try_ytdlp_extract, item["url"])
+            if v:
+                print(f"   ✅ yt-dlp: {v[:100]}")
+                candidate_url = v
+            else:
+                # --- CDP Mode ---
+                print(f"   [2/2] CDP Mode...")
+                v = await asyncio.to_thread(extract_m3u8_with_cdp, item["url"])
+                if v:
+                    candidate_url = v
 
-            # ----- المحاولة 2: CDP Mode -----
-            print(f"   [2/2] SeleniumBase CDP Mode...")
-            v_url = await asyncio.to_thread(extract_m3u8_with_cdp, item["url"])
-            if v_url:
-                video_url = v_url
-                selected_iframe = item["url"]
-                print(f"   ✅ نجح CDP Mode")
+            if not candidate_url:
+                print(f"   ❌ لا رابط فيديو من هذا السيرفر")
+                continue
+
+            # --- محاولة التنزيل ---
+            print(f"   ⬇️ محاولة التنزيل...")
+            ok, info = await asyncio.to_thread(
+                download_video, candidate_url, temp_file, item["url"]
+            )
+
+            if ok:
+                downloaded_size = info
+                successful_iframe = item["url"]
+                print(f"   ✅ تم التنزيل: {info / (1024*1024):.2f} MB")
                 break
+            else:
+                print(f"   ❌ فشل التنزيل: {info}")
+                # نظّف الملف الفاشل
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
+                continue
 
-        if not video_url:
-            return False, "فشل استخراج m3u8"
+        if not successful_iframe:
+            return False, "فشل التنزيل من جميع السيرفرات"
 
         print(f"\n{'='*60}")
-        print(f"🎥 نجح الاستخراج!")
-        print(f"🔗 {video_url[:150]}")
-        print(f"📎 Referer: {selected_iframe}")
+        print(f"🎥 نجح التنزيل من: {successful_iframe}")
+        print(f"📊 الحجم: {downloaded_size/(1024*1024):.2f} MB")
         print(f"{'='*60}")
-
-        if SKIP_DOWNLOAD:
-            print("🧪 SKIP_DOWNLOAD: تخطي التنزيل")
-            return True, "استخراج فقط"
-
-        # ===== تنزيل =====
-        print(f"\n{'='*60}")
-        print("⬇️ مرحلة التنزيل")
-        print(f"{'='*60}")
-
-        if not download_video(video_url, temp_file, referer=selected_iframe):
-            return False, "فشل التنزيل"
-
-        temp_size_mb = os.path.getsize(temp_file) / (1024 * 1024)
-        print(f"✅ تم التنزيل: {temp_size_mb:.2f} MB")
 
         # ===== ضغط =====
         print(f"\n{'='*60}")
-        print("🗜️ مرحلة الضغط إلى 144p")
+        print("🗜️ مرحلة الضغط")
         print(f"{'='*60}")
 
         if SKIP_COMPRESS:
-            print("🧪 SKIP_COMPRESS: تخطي الضغط")
             shutil.copy2(temp_file, final_file)
-            print(f"   📋 تم نسخ الملف الأصلي: {final_file}")
         else:
             if not compress_to_144p(temp_file, final_file):
-                print("   ⚠️ فشل الضغط — سيتم استخدام الملف الأصلي")
+                print("   ⚠️ فشل الضغط — استخدام الملف الأصلي")
                 shutil.copy2(temp_file, final_file)
-                print(f"   📋 تم نسخ الملف الأصلي: {final_file}")
 
         if not os.path.exists(final_file):
-            return False, "الملف النهائي غير موجود بعد الضغط"
-
-        final_size_mb = os.path.getsize(final_file) / (1024 * 1024)
-        print(f"   📊 حجم الملف النهائي: {final_size_mb:.2f} MB")
+            return False, "الملف النهائي غير موجود"
 
         # ===== Thumbnail =====
-        print(f"\n{'='*60}")
-        print("🖼️ مرحلة إنشاء Thumbnail")
-        print(f"{'='*60}")
+        print(f"\n🖼️ Thumbnail...")
         create_thumbnail(final_file, thumb_file)
 
         # ===== رفع =====
         print(f"\n{'='*60}")
-        print("📤 مرحلة الرفع إلى تليغرام")
+        print("📤 مرحلة الرفع")
         print(f"{'='*60}")
 
         caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
@@ -738,22 +666,17 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         )
 
         # ===== تنظيف =====
-        print(f"\n{'='*60}")
-        print("🧹 مرحلة التنظيف")
-        print(f"{'='*60}")
-
-        if TEST_MODE and KEEP_VIDEO:
-            print(f"🧪 KEEP_VIDEO: الاحتفاظ بـ {final_file}")
-        else:
+        if not (TEST_MODE and KEEP_VIDEO):
             for f in [temp_file, final_file, thumb_file]:
                 try:
                     if os.path.exists(f):
                         os.remove(f)
-                        print(f"   🗑️ حذف: {os.path.basename(f)}")
-                except Exception as e:
-                    print(f"   ⚠️ فشل حذف {f}: {e}")
+                except Exception:
+                    pass
+        else:
+            print(f"🧪 KEEP_VIDEO: {final_file}")
 
-        return success, "تم بنجاح" if success else "فشل الرفع"
+        return success, "تم" if success else "فشل الرفع"
 
     except Exception as e:
         import traceback
@@ -762,17 +685,16 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
 
 
 # ============================================================
-#  الإعدادات
+#  الإعدادات + main
 # ============================================================
 def load_config():
     config = {"series_name": "", "series_name_arabic": "", "season_num": 1, "start_episode": 1, "end_episode": 1}
-    config_file = "series_config.json"
-    if os.path.exists(config_file):
+    if os.path.exists("series_config.json"):
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open("series_config.json", 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
             config.update({k: v for k, v in file_config.items() if v not in (None, "")})
-            print(f"📄 تم تحميل الإعدادات")
+            print("📄 تم تحميل الإعدادات")
         except Exception as e:
             print(f"⚠️ {e}")
 
@@ -784,9 +706,6 @@ def load_config():
     return config
 
 
-# ============================================================
-#  main
-# ============================================================
 async def main():
     print("=" * 60)
     print("🎬 معالج الفيديو - u.3seq.com/.cam")
@@ -799,7 +718,7 @@ async def main():
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
         print("✅ ffmpeg موجود")
     except Exception:
-        print("❌ ffmpeg غير موجود — قد يفشل الضغط")
+        print("❌ ffmpeg غير موجود")
 
     config = load_config()
     series_name = str(config.get("series_name", "")).strip().replace(' ', '-')
@@ -811,13 +730,12 @@ async def main():
     if not series_name:
         print("❌ اسم المسلسل مطلوب")
         return
-
     if end_ep - start_ep + 1 > 25:
         end_ep = start_ep + 24
 
     print(f"📺 {series_name} / {series_name_arabic}")
     print(f"🗂️ الموسم: {season_num}")
-    print(f"🎬 الحلقات: {start_ep} إلى {end_ep}")
+    print(f"🎬 الحلقات: {start_ep} → {end_ep}")
 
     if not await setup_telegram():
         return
@@ -839,14 +757,13 @@ async def main():
             print(f"❌ الحلقة {ep}: {msg}")
 
         if ep < end_ep:
-            wait_time = random.randint(10, 20) if TEST_MODE else random.randint(45, 90)
-            print(f"⏳ انتظار {wait_time}s...")
-            await asyncio.sleep(wait_time)
+            wait = random.randint(10, 20) if TEST_MODE else random.randint(45, 90)
+            print(f"⏳ انتظار {wait}s...")
+            await asyncio.sleep(wait)
 
     print(f"\n{'='*60}")
     print(f"✅ الناجحة: {successful}/{total}")
-    if failed:
-        print(f"❌ الفاشلة: {failed}")
+    if failed: print(f"❌ الفاشلة: {failed}")
     print("=" * 60)
 
     if TEST_MODE and KEEP_VIDEO:
@@ -859,7 +776,6 @@ async def main():
 
     if app:
         await app.stop()
-        print("🔌 تم قطع الاتصال بتليغرام")
 
 
 if __name__ == "__main__":
