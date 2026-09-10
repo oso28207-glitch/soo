@@ -1,9 +1,8 @@
-name: Telegram Video Downloader
+name: test
 
 on:
-  workflow_dispatch:  # السماح بالتشغيل اليدوي
+  workflow_dispatch:
   schedule:
-    # يعمل كل 6 ساعات (يمكنك تعديله)
     - cron: '0 */6 * * *'
 
 permissions:
@@ -12,7 +11,7 @@ permissions:
 jobs:
   download-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 ساعات كحد أقصى
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -23,21 +22,23 @@ jobs:
         with:
           python-version: '3.11'
 
+      # ✅ الطريقة الصحيحة: إعداد Chrome + chromedriver بشكل متوافق
+      - name: Setup Chrome and chromedriver
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+
+      - name: Verify Chrome and chromedriver
+        run: |
+          google-chrome --version
+          chromedriver --version || echo "chromedriver not in PATH, checking..."
+          which chromedriver || true
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg xvfb
-          # تثبيت Chrome
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          # تثبيت chromedriver
-          CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
-          wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
-          unzip -q chromedriver-linux64.zip
-          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
-          sudo chmod +x /usr/local/bin/chromedriver
+          sudo apt-get install -y ffmpeg xvfb fonts-liberation libnss3 libatk-bridge2.0-0 libgtk-3-0
 
       - name: Install Python dependencies
         run: |
