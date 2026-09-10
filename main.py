@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-يستخدم curl_cffi لاستدعاء AJAX بدون execute_async_script
-يدعم TEST_MODE
+- AJAX عبر sb.open (بدون CDP crash)
+- استخراج m3u8 عبر JS من iframe sites
+- TEST_MODE للاختبار بدون تليغرام
 """
 
 import os
@@ -36,7 +37,7 @@ SKIP_DOWNLOAD = os.environ.get("SKIP_DOWNLOAD", "false").lower() in ("true", "1"
 
 def validate_env():
     if TEST_MODE:
-        print("🧪 TEST_MODE مفعّل — لن يتم الاتصال بتليغرام")
+        print("🧪 TEST_MODE مفعّل")
         return True
     errors = []
     if not TELEGRAM_API_ID:
@@ -82,7 +83,6 @@ install_requirements()
 import yt_dlp
 from seleniumbase import SB
 from bs4 import BeautifulSoup
-from curl_cffi import requests as cffi_requests
 
 app = None
 if not TEST_MODE:
@@ -99,7 +99,7 @@ else:
 async def setup_telegram():
     global app
     if TEST_MODE:
-        print("🧪 TEST_MODE: تخطي الاتصال بتليغرام")
+        print("🧪 TEST_MODE: تخطي تليغرام")
         return True
 
     print("\n🔐 Connecting to Telegram...")
@@ -126,40 +126,23 @@ async def setup_telegram():
 def extract_servers_from_html(html):
     servers = []
 
-    pattern1 = re.compile(
-        r'<li[^>]*id=["\'](s_\d+)["\'][^>]*on[Cc]lick=["\']getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)',
-        re.IGNORECASE
-    )
-    for m in pattern1.finditer(html):
-        servers.append({
-            "id": m.group(1),
-            "name": m.group(1),
-            "video": m.group(2),
-            "serverId": m.group(3),
-        })
-
-    if not servers:
-        pattern2 = re.compile(
-            r'on[Cc]lick=["\']getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)[^>]*id=["\'](s_\d+)["\']',
-            re.IGNORECASE
-        )
-        for m in pattern2.finditer(html):
-            servers.append({
-                "id": m.group(3),
-                "name": m.group(3),
-                "video": m.group(1),
-                "serverId": m.group(2),
-            })
+    for pattern in [
+        re.compile(r'<li[^>]*id=["\'](s_\d+)["\'][^>]*on[Cc]lick=["\']getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)', re.IGNORECASE),
+        re.compile(r'on[Cc]lick=["\']getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)[^>]*id=["\'](s_\d+)["\']', re.IGNORECASE),
+    ]:
+        for m in pattern.finditer(html):
+            groups = m.groups()
+            if pattern.pattern.startswith('<li'):
+                servers.append({"id": groups[0], "name": groups[0], "video": groups[1], "serverId": groups[2]})
+            else:
+                servers.append({"id": groups[2], "name": groups[2], "video": groups[0], "serverId": groups[1]})
+        if servers:
+            break
 
     if not servers:
         pattern3 = re.compile(r'getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)')
         for i, (video, sid) in enumerate(pattern3.findall(html)):
-            servers.append({
-                "id": f"s_{i}",
-                "name": f"server_{i}",
-                "video": video,
-                "serverId": sid,
-            })
+            servers.append({"id": f"s_{i}", "name": f"server_{i}", "video": video, "serverId": sid})
 
     for srv in servers:
         m = re.search(rf'id=["\']{re.escape(srv["id"])}["\'][^>]*>([^<]*)<', html)
@@ -184,25 +167,30 @@ def extract_post_id_from_html(html):
 
 
 def extract_video_urls_from_html(html, base_url):
+    """استخراج m3u8/mp4/iframe من HTML"""
     m3u8_list = list(set(re.findall(r'(https?://[^"\'\s<>]+\.m3u8[^"\'\s<>]*)', html)))
     mp4_list = list(set(re.findall(r'(https?://[^"\'\s<>]+\.mp4[^"\'\s<>]*)', html)))
 
-    # فك تشفير m3u8 داخل سكربتات
+    # m3u8 داخل سكربتات مشفرة
     m3u8_esc = re.findall(r'(https?:\\?/\\?/[^"\'\s<>]+\.m3u8[^"\'\s<>]*)', html)
     for m in m3u8_esc:
         cleaned = m.replace("\\/", "/")
         if cleaned not in m3u8_list:
             m3u8_list.append(cleaned)
 
+    # mp4 داخل سكربتات
+    mp4_esc = re.findall(r'(https?:\\?/\\?/[^"\'\s<>]+\.mp4[^"\'\s<>]*)', html)
+    for m in mp4_esc:
+        cleaned = m.replace("\\/", "/")
+        if cleaned not in mp4_list:
+            mp4_list.append(cleaned)
+
     iframe_list = []
     try:
         soup = BeautifulSoup(html, "html.parser")
         for iframe in soup.find_all("iframe"):
             src = iframe.get("src")
-            if src:
-                # تجاهل javascript:false و about:blank
-                if src.startswith("javascript:") or src.startswith("about:"):
-                    continue
+            if src and not src.startswith("javascript:") and not src.startswith("about:"):
                 if src.startswith("//"):
                     src = "https:" + src
                 elif src.startswith("/"):
@@ -215,129 +203,225 @@ def extract_video_urls_from_html(html, base_url):
 
 
 # ============================================================
-#  استدعاء AJAX عبر curl_cffi (الأهم)
+#  AJAX عبر sb.open (لا يستخدم CDP)
 # ============================================================
-def fetch_iframe2_ajax(sb, post_id, video, server_id, base_url):
+def fetch_iframe2_via_open(sb, post_id, video, server_id, base_url, original_url):
     """
-    استدعاء iframe2.php عبر curl_cffi مع:
-    - cookies مستخرجة من جلسة Selenium
-    - نفس User-Agent
-    - impersonate="chrome120" (يتجاوز Cloudflare TLS fingerprinting)
+    نفتح AJAX URL مباشرة في المتصفح.
+    المتصفح يجلب الاستجابة مع كوكيز CF تلقائياً.
     """
     ajax_url = f"{base_url}/wp-content/themes/vo2025/temp/ajax/iframe2.php"
-    params = {"id": post_id, "video": video, "serverId": server_id}
-    print(f"   📡 AJAX: {ajax_url}?{urlencode(params)}")
+    full_url = f"{ajax_url}?{urlencode({'id': post_id, 'video': video, 'serverId': server_id})}"
+    print(f"   📡 AJAX: {full_url}")
 
     try:
-        # 1. استخراج الكوكيز من Selenium
-        try:
-            selenium_cookies = sb.driver.get_cookies()
-            cookie_dict = {c["name"]: c["value"] for c in selenium_cookies}
-            print(f"   🍪 عدد الكوكيز: {len(cookie_dict)}")
-        except Exception as e:
-            print(f"   ⚠️ فشل استخراج الكوكيز: {e}")
-            cookie_dict = {}
+        sb.open(full_url)
+        time.sleep(3)
 
-        # 2. استخراج User-Agent الحالي
-        try:
-            ua = sb.driver.execute_script("return navigator.userAgent;")
-        except Exception:
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        html = sb.get_page_source()
 
-        # 3. بناء الـ headers
-        current_url = sb.get_current_url()
-        headers = {
-            "User-Agent": ua,
-            "Referer": current_url,
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "text/html, */*; q=0.01",
-            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-        }
+        # فحص CF
+        if "Just a moment" in html or "cf-chl" in html or "challenge-platform" in html:
+            print("   ⚠️ CF challenge، انتظار 10 ثوان...")
+            time.sleep(10)
+            html = sb.get_page_source()
 
-        # 4. الطلب عبر curl_cffi
-        response = cffi_requests.get(
-            ajax_url,
-            params=params,
-            cookies=cookie_dict,
-            headers=headers,
-            impersonate="chrome120",
-            timeout=30,
-        )
-
-        print(f"   📊 HTTP: {response.status_code}")
-        html = response.text
         print(f"   📄 حجم الاستجابة: {len(html)} حرف")
 
         if len(html) < 50:
-            print(f"   ⚠️ الاستجابة قصيرة جداً: {html}")
+            print(f"   ⚠️ استجابة قصيرة")
+            sb.open(original_url)
+            time.sleep(1)
             return None, None
 
-        preview = html[:300].replace("\n", " ")
+        preview = html[:250].replace("\n", " ")
         print(f"   🔍 معاينة: {preview}")
 
-        m3u8_list, mp4_list, iframe_list = extract_video_urls_from_html(html, base_url)
+        m3u8, mp4, iframes = extract_video_urls_from_html(html, base_url)
+        print(f"   📊 m3u8={len(m3u8)} mp4={len(mp4)} iframes={len(iframes)}")
 
-        print(f"   📊 m3u8={len(m3u8_list)} mp4={len(mp4_list)} iframes={len(iframe_list)}")
+        # العودة
+        sb.open(original_url)
+        time.sleep(2)
 
-        if m3u8_list:
-            return m3u8_list[0], None
-        if mp4_list:
-            return mp4_list[0], None
-        if iframe_list:
-            return None, iframe_list[0]
+        if m3u8:
+            return m3u8[0], None
+        if mp4:
+            return mp4[0], None
+        if iframes:
+            return None, iframes[0]
 
         return None, None
 
     except Exception as e:
-        print(f"   ❌ خطأ في fetch: {e}")
+        print(f"   ❌ {e}")
+        try:
+            sb.open(original_url)
+            time.sleep(1)
+        except Exception:
+            pass
         return None, None
 
 
 # ============================================================
-#  استخراج من iframe
+#  استخراج من iframe عبر JavaScript
 # ============================================================
-def extract_from_iframe(sb, iframe_url, base_url):
+JS_EXTRACT_VIDEO = r"""
+(function() {
+    // 1. <video> مباشرة
+    var v = document.querySelector('video');
+    if (v) {
+        if (v.src && v.src.startsWith('http')) return v.src;
+        if (v.currentSrc && v.currentSrc.startsWith('http')) return v.currentSrc;
+    }
+
+    // 2. <source>
+    var sources = document.querySelectorAll('source');
+    for (var i = 0; i < sources.length; i++) {
+        if (sources[i].src && sources[i].src.startsWith('http')) return sources[i].src;
+    }
+
+    // 3. jwplayer
+    try {
+        if (typeof jwplayer !== 'undefined') {
+            var p = jwplayer();
+            if (p && p.getPlaylistItem) {
+                var item = p.getPlaylistItem();
+                if (item && item.file) return item.file;
+                if (item && item.sources) {
+                    for (var j = 0; j < item.sources.length; j++) {
+                        if (item.sources[j].file) return item.sources[j].file;
+                    }
+                }
+            }
+        }
+    } catch(e) {}
+
+    // 4. videojs
+    try {
+        if (typeof videojs !== 'undefined') {
+            var players = videojs.getPlayers();
+            for (var key in players) {
+                try {
+                    var src = players[key].currentSrc();
+                    if (src) return src;
+                } catch(e) {}
+            }
+        }
+    } catch(e) {}
+
+    // 5. متغيرات JS عامة
+    var globals = ['sources', 'videoUrl', 'video_url', 'file', 'hls', 'hlsUrl', 'm3u8'];
+    for (var g of globals) {
+        try {
+            var val = window[g];
+            if (typeof val === 'string' && val.startsWith('http')) return val;
+            if (Array.isArray(val) && val[0]) {
+                if (typeof val[0] === 'string') return val[0];
+                if (val[0].file) return val[0].file;
+                if (val[0].src) return val[0].src;
+            }
+        } catch(e) {}
+    }
+
+    // 6. window.config
+    try {
+        if (window.config) {
+            if (window.config.sources && window.config.sources[0]) {
+                var s = window.config.sources[0];
+                if (typeof s === 'string') return s;
+                if (s.file) return s.file;
+                if (s.src) return s.src;
+            }
+            if (window.config.file) return window.config.file;
+        }
+    } catch(e) {}
+
+    // 7. البحث في جميع السكربتات
+    var scripts = document.querySelectorAll('script');
+    for (var s of scripts) {
+        var txt = s.textContent || '';
+        var m = txt.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/);
+        if (m) return m[0];
+        m = txt.match(/https?:\/\/[^"'\s]+\.mp4[^"'\s]*/);
+        if (m) return m[0];
+    }
+
+    return null;
+})();
+"""
+
+
+def extract_from_iframe(sb, iframe_url, original_url):
+    """يفتح iframe ويستخرج m3u8 عبر JS + تحليل HTML"""
     print(f"   🔍 فتح iframe: {iframe_url[:100]}")
     try:
-        original_url = sb.get_current_url()
         sb.open(iframe_url)
-        time.sleep(5)
+        time.sleep(8)  # انتظار أطول لتحميل المشغل
 
-        page_src = sb.get_page_source()
-        m3u8_list, mp4_list, iframes = extract_video_urls_from_html(page_src, iframe_url)
+        # محاولة JS
+        for attempt in range(3):
+            try:
+                video_src = sb.driver.execute_script(JS_EXTRACT_VIDEO)
+                if video_src:
+                    print(f"   ✅ JS: {video_src[:120]}")
+                    sb.open(original_url)
+                    time.sleep(2)
+                    return video_src
+            except Exception as e:
+                print(f"   ⚠️ JS attempt {attempt+1}: {str(e)[:80]}")
+            time.sleep(3)
 
-        if m3u8_list:
-            print(f"   ✅ m3u8: {m3u8_list[0][:120]}")
+        # Fallback: تحليل HTML
+        html = sb.get_page_source()
+        m3u8, mp4, iframes = extract_video_urls_from_html(html, iframe_url)
+
+        if m3u8:
+            print(f"   ✅ HTML m3u8: {m3u8[0][:120]}")
             sb.open(original_url)
             time.sleep(2)
-            return m3u8_list[0]
-        if mp4_list:
-            print(f"   ✅ mp4: {mp4_list[0][:120]}")
+            return m3u8[0]
+        if mp4:
+            print(f"   ✅ HTML mp4: {mp4[0][:120]}")
             sb.open(original_url)
             time.sleep(2)
-            return mp4_list[0]
+            return mp4[0]
 
-        # iframe متداخل (تجاهل javascript:false)
+        # iframe متداخل
         iframes = [i for i in iframes if not i.startswith("javascript:")]
         if iframes:
             print(f"   🔗 iframe متداخل: {iframes[0][:100]}")
             sb.open(iframes[0])
-            time.sleep(5)
-            page_src = sb.get_page_source()
-            m3u8_list, mp4_list, _ = extract_video_urls_from_html(page_src, iframes[0])
+            time.sleep(8)
+            try:
+                video_src = sb.driver.execute_script(JS_EXTRACT_VIDEO)
+                if video_src:
+                    print(f"   ✅ JS nested: {video_src[:120]}")
+                    sb.open(original_url)
+                    time.sleep(2)
+                    return video_src
+            except Exception:
+                pass
+            html = sb.get_page_source()
+            m3u8, mp4, _ = extract_video_urls_from_html(html, iframes[0])
             sb.open(original_url)
             time.sleep(2)
-            if m3u8_list:
-                return m3u8_list[0]
-            if mp4_list:
-                return mp4_list[0]
+            if m3u8:
+                return m3u8[0]
+            if mp4:
+                return mp4[0]
 
+        print(f"   ❌ لم يُعثر على فيديو")
         sb.open(original_url)
         time.sleep(2)
         return None
 
     except Exception as e:
-        print(f"   ⚠️ فشل فتح iframe: {e}")
+        print(f"   ⚠️ {e}")
+        try:
+            sb.open(original_url)
+        except Exception:
+            pass
         return None
 
 
@@ -348,7 +432,6 @@ def _sync_selenium_work(episode_num, series_name):
     base_url = f"https://u.3seq.com/video/modablaj-{series_name}-episode-{episode_num:02d}"
     video_url = None
     selected_iframe = None
-    actual_base_url = "https://u.3seq.com"  # يتحدث بعد إعادة التوجيه
 
     with SB(
         uc=True,
@@ -363,12 +446,11 @@ def _sync_selenium_work(episode_num, series_name):
         try:
             print(f"🖥️ فتح {base_url}")
             sb.open(base_url)
-            time.sleep(5)
+            time.sleep(6)
 
             final_url = sb.get_current_url()
             print(f"🌐 الرابط النهائي: {final_url}")
 
-            # ✅ استخدام النطاق الفعلي
             parsed = urlparse(final_url)
             actual_base_url = f"{parsed.scheme}://{parsed.netloc}"
             print(f"🔗 النطاق الفعلي: {actual_base_url}")
@@ -378,13 +460,14 @@ def _sync_selenium_work(episode_num, series_name):
             watch_url = final_url + '?do=watch'
             print(f"📺 تحميل صفحة المشاهدة: {watch_url}")
             sb.open(watch_url)
-            time.sleep(5)
+            time.sleep(6)
 
+            # انتظار السيرفرات
             try:
                 sb.wait_for_element("ul.serversList", timeout=30)
-                print("✅ تم العثور على قائمة السيرفرات.")
+                print("✅ قائمة السيرفرات موجودة.")
             except Exception:
-                print("⚠️ لم يتم العثور على قائمة السيرفرات.")
+                print("⚠️ لم يتم العثور على السيرفرات.")
                 return None, None
 
             page_src = sb.get_page_source()
@@ -397,7 +480,6 @@ def _sync_selenium_work(episode_num, series_name):
             print(f"🔑 post_id = {post_id}")
 
             servers = extract_servers_from_html(page_src)
-
             if not servers:
                 print("❌ لم نجد سيرفرات")
                 return None, None
@@ -406,78 +488,89 @@ def _sync_selenium_work(episode_num, series_name):
             for s in servers:
                 print(f"   - {s['id']} | {s['name']} | video={s['video']} serverId={s['serverId']}")
 
-            for i, srv in enumerate(servers):
-                print(f"\n🔄 محاولة السيرفر {i+1}/{len(servers)}: {srv['name']} (#{srv['id']})")
+            # ===== المرحلة 1: AJAX مباشر لكل سيرفر =====
+            print(f"\n{'='*60}")
+            print("📡 المرحلة 1: AJAX عبر sb.open (بدون CDP)")
+            print(f"{'='*60}")
 
-                # ----- الطريقة 1: AJAX عبر curl_cffi -----
-                print(f"   [1/3] AJAX عبر curl_cffi...")
-                v_url, iframe_src = fetch_iframe2_ajax(
-                    sb, post_id, srv["video"], srv["serverId"], actual_base_url
+            for i, srv in enumerate(servers):
+                print(f"\n🔄 [{i+1}/{len(servers)}] AJAX لـ {srv['name']}")
+
+                v_url, iframe_src = fetch_iframe2_via_open(
+                    sb, post_id, srv["video"], srv["serverId"],
+                    actual_base_url, watch_url
                 )
 
                 if v_url:
                     video_url = v_url
-                    selected_iframe = iframe_src or watch_url
-                    print(f"   ✅ نجحت الطريقة 1")
+                    selected_iframe = watch_url
+                    print(f"   ✅ نجح AJAX + m3u8")
                     break
 
-                # ----- الطريقة 2: فتح iframe من AJAX -----
                 if iframe_src:
-                    print(f"   [2/3] فتح iframe من AJAX...")
-                    v_url = extract_from_iframe(sb, iframe_src, actual_base_url)
+                    print(f"   🔗 AJAX أعاد iframe: {iframe_src[:100]}")
+                    v_url = extract_from_iframe(sb, iframe_src, watch_url)
                     if v_url:
                         video_url = v_url
                         selected_iframe = iframe_src
-                        print(f"   ✅ نجحت الطريقة 2")
+                        print(f"   ✅ نجح AJAX + iframe")
                         break
 
-                # ----- الطريقة 3: النقر على الزر -----
-                print(f"   [3/3] النقر على الزر...")
-                try:
-                    old_src = None
+            # ===== المرحلة 2: النقر إذا فشلت المرحلة 1 =====
+            if not video_url:
+                print(f"\n{'='*60}")
+                print("🖱️ المرحلة 2: النقر على الأزرار")
+                print(f"{'='*60}")
+
+                for i, srv in enumerate(servers):
+                    print(f"\n🔄 [{i+1}/{len(servers)}] النقر على {srv['name']}")
+
                     try:
-                        old_src = sb.find_element(".watch iframe").get_attribute("src")
-                    except Exception:
-                        pass
-
-                    clicked = False
-                    for method in ["uc_click", "js_click", "click"]:
+                        old_src = None
                         try:
-                            getattr(sb, method)(f"#{srv['id']}")
-                            clicked = True
-                            print(f"      ✅ {method}")
-                            break
+                            old_src = sb.find_element(".watch iframe").get_attribute("src")
                         except Exception:
                             pass
 
-                    if not clicked:
-                        print(f"      ❌ كل طرق النقر فشلت")
-                        continue
-
-                    new_src = None
-                    for _ in range(20):
-                        time.sleep(1)
-                        try:
-                            new_src = sb.find_element(".watch iframe").get_attribute("src")
-                            if new_src and new_src != old_src:
+                        clicked = False
+                        for method in ["uc_click", "js_click", "click"]:
+                            try:
+                                getattr(sb, method)(f"#{srv['id']}")
+                                clicked = True
+                                print(f"      ✅ {method}")
                                 break
-                        except Exception:
-                            pass
+                            except Exception:
+                                pass
 
-                    if not new_src or new_src == old_src:
-                        print(f"      ⏱️ src لم يتغير")
-                        continue
+                        if not clicked:
+                            print(f"      ❌ فشل النقر")
+                            continue
 
-                    print(f"      ✅ iframe جديد: {new_src[:100]}")
-                    v_url = extract_from_iframe(sb, new_src, actual_base_url)
-                    if v_url:
-                        video_url = v_url
-                        selected_iframe = new_src
-                        print(f"   ✅ نجحت الطريقة 3")
-                        break
+                        # انتظار تغير src
+                        new_src = None
+                        for _ in range(15):
+                            time.sleep(1)
+                            try:
+                                new_src = sb.find_element(".watch iframe").get_attribute("src")
+                                if new_src and new_src != old_src:
+                                    break
+                            except Exception:
+                                pass
 
-                except Exception as e:
-                    print(f"      ❌ خطأ: {e}")
+                        if not new_src or new_src == old_src:
+                            print(f"      ⏱️ src لم يتغير")
+                            continue
+
+                        print(f"      ✅ iframe: {new_src[:100]}")
+                        v_url = extract_from_iframe(sb, new_src, watch_url)
+                        if v_url:
+                            video_url = v_url
+                            selected_iframe = new_src
+                            print(f"   ✅ نجح")
+                            break
+
+                    except Exception as e:
+                        print(f"      ❌ {str(e)[:100]}")
 
             return video_url, selected_iframe
 
@@ -545,7 +638,7 @@ def create_thumbnail(video_path, thumb_path):
 
 async def upload_video(file_path, caption, thumb_path=None):
     if TEST_MODE:
-        print(f"🧪 TEST_MODE: تخطي الرفع — الفيديو في: {file_path}")
+        print(f"🧪 TEST_MODE: الفيديو في: {file_path}")
         size_mb = os.path.getsize(file_path) / (1024 * 1024)
         print(f"   📊 الحجم: {size_mb:.2f} MB")
         return True
@@ -606,17 +699,17 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         )
 
         if not video_url:
-            return False, "فشل استخراج رابط الفيديو"
+            return False, "فشل الاستخراج"
 
         print(f"\n{'='*60}")
         print(f"🎥 نجح الاستخراج!")
-        print(f"🔗 {video_url}")
+        print(f"🔗 {video_url[:150]}")
         print(f"📎 Referer: {selected_iframe}")
         print(f"{'='*60}")
 
         if SKIP_DOWNLOAD:
-            print("🧪 SKIP_DOWNLOAD: تخطي التنزيل")
-            return True, "تم استخراج الرابط فقط"
+            print("🧪 SKIP_DOWNLOAD")
+            return True, "استخراج فقط"
 
         if not download_video(video_url, temp_file, referer=selected_iframe):
             return False, "فشل التنزيل"
@@ -635,7 +728,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         )
 
         if TEST_MODE and KEEP_VIDEO:
-            print(f"🧪 KEEP_VIDEO: الفيديو في {final_file}")
+            print(f"🧪 KEEP_VIDEO: {final_file}")
         else:
             for f in [temp_file, final_file, thumb_file]:
                 try:
@@ -647,7 +740,7 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
         return success, "تم بنجاح" if success else "فشل الرفع"
 
     except Exception as e:
-        return False, f"خطأ غير متوقع: {e}"
+        return False, f"خطأ: {e}"
 
 
 # ============================================================
@@ -668,9 +761,9 @@ def load_config():
             with open(config_file, 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
             config.update({k: v for k, v in file_config.items() if v not in (None, "")})
-            print(f"📄 تم تحميل الإعدادات من {config_file}")
+            print(f"📄 تم تحميل الإعدادات")
         except Exception as e:
-            print(f"⚠️ فشل قراءة {config_file}: {e}")
+            print(f"⚠️ {e}")
 
     if INPUT_SERIES_NAME:
         config["series_name"] = INPUT_SERIES_NAME
@@ -711,11 +804,10 @@ async def main():
     end_ep = int(config.get("end_episode", 1))
 
     if not series_name:
-        print("❌ اسم المسلسل بالإنجليزية مطلوب")
+        print("❌ اسم المسلسل مطلوب")
         return
 
     if end_ep - start_ep + 1 > 25:
-        print("⚠️ عدد الحلقات كبير، سيتم معالجة 25 فقط.")
         end_ep = start_ep + 24
 
     print(f"📺 {series_name} / {series_name_arabic}")
@@ -743,7 +835,7 @@ async def main():
 
         if ep < end_ep:
             wait_time = random.randint(10, 20) if TEST_MODE else random.randint(45, 90)
-            print(f"⏳ انتظار {wait_time} ثانية...")
+            print(f"⏳ انتظار {wait_time}s...")
             await asyncio.sleep(wait_time)
 
     print(f"\n{'='*60}")
@@ -762,7 +854,6 @@ async def main():
 
     if app:
         await app.stop()
-        print("🔌 تم قطع الاتصال")
 
 
 if __name__ == "__main__":
