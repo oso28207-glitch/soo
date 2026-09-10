@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.cam
-معالج محسّن مع SeleniumBase UC Mode + استخراج من iframe بدون مغادرة الصفحة
+الحل النهائي: استدعاء iframe2.php مباشرة + تحليل الاستجابة لاستخراج m3u8
 """
 
 import os
@@ -14,6 +14,7 @@ import asyncio
 import random
 import re
 from datetime import datetime
+from urllib.parse import urlencode, urljoin
 
 # ===== التهيئة =====
 TELEGRAM_API_ID = os.environ.get("API_ID", "")
@@ -50,7 +51,6 @@ if not validate_env():
 TELEGRAM_API_ID = int(TELEGRAM_API_ID)
 
 
-# ===== تثبيت الحزم =====
 def install_requirements():
     print("📦 Installing requirements...")
     reqs = [
@@ -60,6 +60,7 @@ def install_requirements():
         "curl_cffi>=0.5.10",
         "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0",
+        "requests>=2.31.0",
     ]
     for req in reqs:
         try:
@@ -71,25 +72,16 @@ def install_requirements():
 
 install_requirements()
 
-# ===== الاستيراد بعد التثبيت =====
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 import yt_dlp
 from seleniumbase import SB
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    TimeoutException,
-    NoSuchElementException,
-    StaleElementReferenceException,
-    WebDriverException,
-)
+from bs4 import BeautifulSoup
 
 app = None
 
 
-# ===== دوال مساعدة =====
+# ===== Telegram =====
 async def setup_telegram():
     global app
     print("\n🔐 Connecting to Telegram...")
@@ -110,124 +102,119 @@ async def setup_telegram():
         return False
 
 
-def browser_alive(sb):
-    """فحص إن كان المتصفح حياً."""
-    try:
-        _ = sb.get_current_url()
-        return True
-    except Exception:
-        return False
-
-
-def extract_video_from_current_context(sb):
+# ===== استخراج رابط الفيديو من HTML =====
+def extract_video_url_from_html(html, base_url="https://u.3seq.cam"):
     """
-    البحث عن مصدر الفيديو في السياق الحالي.
-    يعيد (video_url, iframe_src) أو (None, None).
+    يحلل HTML للبحث عن رابط الفيديو الحقيقي:
+    1. m3u8 مباشر
+    2. mp4 مباشر
+    3. iframe src للفتح لاحقاً
+    يعيد (video_url, iframe_src)
     """
-    video_url = None
+    if not html:
+        return None, None
 
-    # 1. عنصر video مباشر
+    # 1. m3u8 مباشر في HTML
+    m3u8 = re.findall(r'(https?://[^"\'\s<>]+\.m3u8[^"\'\s<>]*)', html)
+    if m3u8:
+        return m3u8[0], None
+
+    # 2. mp4 مباشر
+    mp4 = re.findall(r'(https?://[^"\'\s<>]+\.mp4[^"\'\s<>]*)', html)
+    if mp4:
+        return mp4[0], None
+
+    # 3. iframe src داخل HTML
     try:
-        videos = sb.find_elements("video")
-        for v in videos:
-            src = v.get_attribute("src")
-            if src:
-                video_url = src
-                break
+        soup = BeautifulSoup(html, "html.parser")
+        iframe = soup.find("iframe")
+        if iframe and iframe.get("src"):
+            iframe_src = iframe["src"]
+            if iframe_src.startswith("//"):
+                iframe_src = "https:" + iframe_src
+            elif iframe_src.startswith("/"):
+                iframe_src = urljoin(base_url, iframe_src)
+            return None, iframe_src
     except Exception:
         pass
 
-    # 2. عناصر source
-    if not video_url:
-        try:
-            sources = sb.find_elements("source")
-            for s in sources:
-                src = s.get_attribute("src")
-                if src:
-                    video_url = src
-                    break
-        except Exception:
-            pass
+    # 4. روابط m3u8 داخل سكربتات (JSON escape)
+    m3u8_esc = re.findall(r'(https?:\\?/\\?/[^"\'\s<>]+\.m3u8[^"\'\s<>]*)', html)
+    if m3u8_esc:
+        cleaned = m3u8_esc[0].replace("\\/", "/")
+        return cleaned, None
 
-    # 3. روابط m3u8 داخل HTML
-    if not video_url:
-        try:
-            page_src = sb.get_page_source()
-            matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_src)
-            if matches:
-                video_url = matches[0]
-        except Exception:
-            pass
-
-    # 4. روابط mp4 داخل HTML
-    if not video_url:
-        try:
-            page_src = sb.get_page_source()
-            matches = re.findall(r'(https?://[^"\']+\.mp4[^"\']*)', page_src)
-            if matches:
-                video_url = matches[0]
-        except Exception:
-            pass
-
-    return video_url
+    return None, None
 
 
-def try_extract_from_iframe_context(sb, iframe_src):
+def fetch_video_from_server(sb, post_id, video, server_id, base_url="https://u.3seq.cam"):
     """
-    الدخول داخل iframe والبحث عن الفيديو ثم الخروج.
+    استدعاء iframe2.php مباشرة عبر جلسة المتصفح (بنفس الكوكيز والـ headers).
+    يعيد (video_url, iframe_src).
     """
-    print(f"   🔍 الدخول داخل iframe...")
+    ajax_url = f"{base_url}/wp-content/themes/vo2025/temp/ajax/iframe2.php"
+    params = {
+        "id": post_id,
+        "video": video,
+        "serverId": server_id,
+    }
+    full_url = f"{ajax_url}?{urlencode(params)}"
+    print(f"   📡 استدعاء AJAX: {full_url}")
+
     try:
-        # نحاول الدخول للـ iframe عن طريق selector أو index
-        try:
-            sb.switch_to_frame(".watch iframe")
-        except Exception:
-            sb.switch_to_frame(0)
-        time.sleep(3)
-        url = extract_video_from_current_context(sb)
-        sb.switch_to_default_content()
-        return url
+        # نستخدم fetch من داخل الصفحة للحفاظ على الكوكيز والـ session
+        fetch_script = f"""
+        var callback = arguments[arguments.length - 1];
+        fetch("{full_url}", {{
+            method: "GET",
+            credentials: "include",
+            headers: {{
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": "{base_url}/video/modablaj-episode-01/?do=watch"
+            }}
+        }})
+        .then(r => r.text())
+        .then(t => callback({{ok: true, html: t}}))
+        .catch(e => callback({{ok: false, error: e.toString()}}));
+        """
+        sb.driver.set_script_timeout(30)
+        result = sb.driver.execute_async_script(fetch_script)
+
+        if not result or not result.get("ok"):
+            err = result.get("error") if result else "no result"
+            print(f"   ⚠️ فشل fetch: {err}")
+            return None, None
+
+        html = result.get("html", "")
+        print(f"   📄 حجم الاستجابة: {len(html)} حرف")
+
+        # نحفظ أول 500 حرف للتشخيص
+        preview = html[:500].replace("\n", " ")
+        print(f"   🔍 معاينة: {preview}")
+
+        video_url, iframe_src = extract_video_url_from_html(html, base_url)
+
+        # إذا وجدنا iframe، نحاول فتحه لاستخراج m3u8
+        if not video_url and iframe_src:
+            print(f"   🔗 iframe داخل AJAX: {iframe_src}")
+            # نحاول فتح الـ iframe في نفس التبويب
+            try:
+                sb.open(iframe_src)
+                time.sleep(4)
+                page_src = sb.get_page_source()
+                video_url, _ = extract_video_url_from_html(page_src, iframe_src)
+            except Exception as e:
+                print(f"   ⚠️ فشل فتح iframe: {e}")
+
+        return video_url, iframe_src
+
     except Exception as e:
-        print(f"   ⚠️ فشل الدخول للـ iframe: {e}")
-        try:
-            sb.switch_to_default_content()
-        except Exception:
-            pass
-        return None
+        print(f"   ❌ خطأ في fetch: {e}")
+        return None, None
 
 
-def try_extract_via_new_tab(sb, iframe_src, handle_before):
-    """
-    فتح رابط الـ iframe في تبويب جديد واستخراج الفيديو منه.
-    """
-    print(f"   🔍 فتح iframe في تبويب جديد...")
-    try:
-        sb.open_new_window()
-        # ننتقل للتبويب الأخير
-        handles = sb.driver.window_handles
-        new_handle = handles[-1]
-        sb.driver.switch_to.window(new_handle)
-        sb.open(iframe_src)
-        time.sleep(4)
-        url = extract_video_from_current_context(sb)
-        # إغلاق التبويب
-        sb.driver.close()
-        sb.driver.switch_to.window(handle_before)
-        return url
-    except Exception as e:
-        print(f"   ⚠️ فشل فتح التبويب: {e}")
-        try:
-            handles = sb.driver.window_handles
-            if len(handles) > 1:
-                sb.driver.close()
-            sb.driver.switch_to.window(handle_before)
-        except Exception:
-            pass
-        return None
-
-
+# ===== تنزيل + ضغط + رفع =====
 def download_video(video_url, output_path, referer):
-    """تنزيل الفيديو باستخدام yt-dlp"""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -239,7 +226,7 @@ def download_video(video_url, output_path, referer):
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': referer,
+                'Referer': referer or 'https://u.3seq.cam/',
             },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -321,12 +308,13 @@ async def upload_video(file_path, caption, thumb_path=None):
         return False
 
 
-# ===== كود Selenium (يعمل في thread منفصل) =====
-
+# ===== Selenium Work (thread منفصل) =====
 def _sync_selenium_work(episode_num, series_name):
     """
-    كل عمليات Selenium في thread منفصل.
-    نستخدم sb.uc_click للنقر، و sb.switch_to_frame للاستخراج بدون مغادرة الصفحة.
+    1. يفتح صفحة المشاهدة
+    2. يقرأ onclick من كل زر سيرفر
+    3. يستدعي iframe2.php مباشرة لكل سيرفر
+    4. يحلل الاستجابة ويستخرج m3u8
     """
     base_url = f"https://u.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}"
     video_url = None
@@ -337,25 +325,18 @@ def _sync_selenium_work(episode_num, series_name):
         xvfb=True,
         headless=False,
         incognito=True,
-        ad_block_on=True,     # ✅ يمنع الإعلانات الثقيلة التي تُسقط المتصفح
-        disable_csp=True,     # ✅ يتجنب قيود CSP عند الدخول للـ iframe
+        ad_block_on=True,
+        disable_csp=True,
         page_load_strategy="eager",
         locale_code="en",
     ) as sb:
         try:
-            # ===== فتح الصفحة والانتقال لصفحة المشاهدة =====
+            # ===== فتح صفحة المشاهدة =====
             print(f"🖥️ فتح {base_url}")
             sb.open(base_url)
-
-            start_time = time.time()
-            current_url = sb.get_current_url()
-            while current_url == base_url and time.time() - start_time < 15:
-                time.sleep(1)
-                current_url = sb.get_current_url()
+            time.sleep(4)
 
             final_url = sb.get_current_url()
-            print(f"🌐 الرابط النهائي: {final_url}")
-
             if not final_url.endswith('/'):
                 final_url += '/'
             watch_url = final_url + '?do=watch'
@@ -367,131 +348,84 @@ def _sync_selenium_work(episode_num, series_name):
             try:
                 sb.wait_for_element("ul.serversList", timeout=30)
                 print("✅ تم العثور على قائمة السيرفرات.")
-            except TimeoutException:
+            except Exception:
                 print("⚠️ لم يتم العثور على قائمة السيرفرات.")
                 return None, None
 
-            # ===== استخراج معرّفات السيرفرات =====
+            # ===== استخراج post_id من الصفحة =====
+            post_id = None
+            try:
+                # vo_postID موجود في سكربت داخل الصفحة
+                page_src = sb.get_page_source()
+                m = re.search(r'vo_postID\s*=\s*["\']?(\d+)', page_src)
+                if m:
+                    post_id = m.group(1)
+                    print(f"🔑 post_id = {post_id}")
+            except Exception:
+                pass
+
+            if not post_id:
+                # Fallback: من canonical link
+                m = re.search(r'p=(\d+)', sb.get_page_source())
+                if m:
+                    post_id = m.group(1)
+                    print(f"🔑 post_id (fallback) = {post_id}")
+
+            if not post_id:
+                print("❌ لم نجد post_id")
+                return None, None
+
+            # ===== قراءة جميع السيرفرات =====
             server_items = sb.find_elements("ul.serversList li")
             servers = []
             for item in server_items:
                 sid = item.get_attribute("id")
                 sname = (item.text or "").strip()
                 onclick = item.get_attribute("onclick") or ""
-                m = re.search(r'getServer2\([^,]+,\s*(\d+),\s*(\d+)\)', onclick)
-                idx_num = (m.group(1), m.group(2)) if m else (None, None)
-                servers.append({"id": sid, "name": sname, "idx": idx_num[0], "num": idx_num[1]})
-
-            print(f"📦 عدد السيرفرات: {len(servers)}")
-            for s in servers:
-                print(f"   - {s['id']} | {s['name']} | idx={s['idx']} num={s['num']}")
+                # onclick="getServer2('s_0',0,108956);"
+                m = re.search(
+                    r"getServer2\(\s*['\"]?([^'\",]+)['\"]?\s*,\s*(\d+)\s*,\s*(\d+)\s*\)",
+                    onclick,
+                )
+                if m:
+                    video_param = m.group(2)
+                    server_id_param = m.group(3)
+                    servers.append({
+                        "id": sid,
+                        "name": sname,
+                        "video": video_param,
+                        "serverId": server_id_param,
+                    })
+                    print(f"   - {sid} | {sname} | video={video_param} serverId={server_id_param}")
+                else:
+                    print(f"   ⚠️ فشل تحليل onclick: {onclick}")
 
             if not servers:
+                print("❌ لا توجد سيرفرات قابلة للتحليل")
                 return None, None
 
-            # ===== نجرب كل سيرفر =====
+            # ===== تجربة كل سيرفر =====
             for i, srv in enumerate(servers):
-                if not browser_alive(sb):
-                    print(f"❌ المتصفح سقط قبل السيرفر {i+1}")
-                    return None, None
+                print(f"\n🔄 محاولة السيرفر {i+1}/{len(servers)}: {srv['name']} (#{srv['id']})")
 
-                sid = srv["id"]
-                sname = srv["name"]
-                print(f"\n🔄 محاولة السيرفر {i+1}/{len(servers)}: {sname} (#{sid})")
-
-                # src الحالي
                 try:
-                    old_src = sb.find_element(".watch iframe").get_attribute("src")
-                except Exception:
-                    old_src = None
-                print(f"   القديم: {old_src}")
-
-                # ===== النقر على الزر =====
-                clicked = False
-                click_errors = []
-
-                # 1. uc_click — الأفضل لأنه يستخدم PyAutoGUI (لا JS)
-                if not clicked:
-                    try:
-                        sb.uc_click(f"#{sid}", timeout=15)
-                        clicked = True
-                        print("   ✅ uc_click نجح")
-                    except Exception as e:
-                        click_errors.append(f"uc_click: {str(e)[:80]}")
-
-                # 2. js_click — SeleniumBase native
-                if not clicked and browser_alive(sb):
-                    try:
-                        sb.js_click(f"#{sid}")
-                        clicked = True
-                        print("   ✅ js_click نجح")
-                    except Exception as e:
-                        click_errors.append(f"js_click: {str(e)[:80]}")
-
-                # 3. click عادي
-                if not clicked and browser_alive(sb):
-                    try:
-                        sb.click(f"#{sid}")
-                        clicked = True
-                        print("   ✅ click نجح")
-                    except Exception as e:
-                        click_errors.append(f"click: {str(e)[:80]}")
-
-                # 4. Fallback: استدعاء getServer2 مباشرة عبر JS
-                if not clicked and browser_alive(sb) and srv["idx"] and srv["num"]:
-                    try:
-                        script = (
-                            f"var el = document.getElementById('{sid}');"
-                            f"if (el && el.onclick) {{ el.onclick(); }}"
-                        )
-                        sb.execute_script(script)
-                        clicked = True
-                        print("   ✅ onclick() نجح")
-                    except Exception as e:
-                        click_errors.append(f"onclick: {str(e)[:80]}")
-
-                if not clicked:
-                    print(f"   ❌ كل طرق النقر فشلت: {click_errors}")
+                    video_url, iframe_src = fetch_video_from_server(
+                        sb, post_id, srv["video"], srv["serverId"]
+                    )
+                except Exception as e:
+                    print(f"   ❌ استثناء: {e}")
                     continue
-
-                # ===== انتظار تغير src =====
-                new_src = None
-                for _ in range(20):
-                    time.sleep(1)
-                    if not browser_alive(sb):
-                        print("   ❌ المتصفح سقط أثناء الانتظار")
-                        return None, None
-                    try:
-                        new_src = sb.find_element(".watch iframe").get_attribute("src")
-                        if new_src and new_src != old_src:
-                            break
-                    except Exception:
-                        pass
-
-                if not new_src or new_src == old_src:
-                    print("   ⏱️ src لم يتغير، نكمل")
-                    continue
-
-                print(f"   ✅ iframe جديد: {new_src}")
-
-                # ===== استخراج الفيديو =====
-                # المحاولة 1: الدخول داخل iframe (بدون مغادرة الصفحة)
-                video_url = try_extract_from_iframe_context(sb, new_src)
-
-                # المحاولة 2: فتح iframe في تبويب جديد
-                if not video_url:
-                    try:
-                        handle_before = sb.driver.current_window_handle
-                        video_url = try_extract_via_new_tab(sb, new_src, handle_before)
-                    except Exception as e:
-                        print(f"   ⚠️ فشل التبويب الجديد: {e}")
 
                 if video_url:
-                    selected_iframe = new_src
+                    selected_iframe = iframe_src or watch_url
                     print(f"   ✅ تم استخراج الفيديو: {video_url[:120]}")
                     break
+                elif iframe_src:
+                    # احتفظ بالـ iframe كـ referer على الأقل
+                    selected_iframe = iframe_src
+                    print(f"   ⚠️ لم نجد m3u8، لكن وجدنا iframe: {iframe_src}")
                 else:
-                    print(f"   ❌ لم يُستخرج فيديو من {sname}")
+                    print(f"   ❌ لا فيديو ولا iframe من {srv['name']}")
 
             return video_url, selected_iframe
 
@@ -510,7 +444,6 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
     try:
-        # تشغيل Selenium في thread منفصل (لأن SB() يدير event loop خاص به)
         video_url, selected_iframe = await asyncio.to_thread(
             _sync_selenium_work, episode_num, series_name
         )
