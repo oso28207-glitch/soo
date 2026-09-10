@@ -1,9 +1,33 @@
-name: test
+name: Telegram Video Downloader
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'
+    inputs:
+      series_name:
+        description: 'اسم المسلسل بالإنجليزية (كما في رابط الموقع، مثال: muhtemel-ask)'
+        required: true
+        type: string
+      series_name_arabic:
+        description: 'اسم المسلسل بالعربية (للتسمية على تليغرام، مثال: احتمال حب)'
+        required: true
+        type: string
+      season_num:
+        description: 'رقم الموسم'
+        required: true
+        default: '1'
+        type: string
+      start_episode:
+        description: 'رقم الحلقة الأولى'
+        required: true
+        default: '1'
+        type: string
+      end_episode:
+        description: 'رقم الحلقة الأخيرة'
+        required: true
+        default: '1'
+        type: string
+
+
 
 permissions:
   contents: read
@@ -22,7 +46,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ✅ الطريقة الصحيحة: إعداد Chrome + chromedriver بشكل متوافق
       - name: Setup Chrome and chromedriver
         uses: browser-actions/setup-chrome@v1
         with:
@@ -32,7 +55,7 @@ jobs:
       - name: Verify Chrome and chromedriver
         run: |
           google-chrome --version
-          chromedriver --version || echo "chromedriver not in PATH, checking..."
+          chromedriver --version || true
           which chromedriver || true
 
       - name: Install system dependencies
@@ -43,7 +66,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install pyrogram tgcrypto yt-dlp curl_cffi selenium seleniumbase beautifulsoup4
+          pip install pyrogram tgcrypto yt-dlp curl_cffi seleniumbase beautifulsoup4
 
       - name: Run downloader script
         env:
@@ -51,4 +74,10 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
+          # ✅ مدخلات workflow_dispatch
+          INPUT_SERIES_NAME: ${{ github.event.inputs.series_name }}
+          INPUT_SERIES_NAME_ARABIC: ${{ github.event.inputs.series_name_arabic }}
+          INPUT_SEASON_NUM: ${{ github.event.inputs.season_num }}
+          INPUT_START_EPISODE: ${{ github.event.inputs.start_episode }}
+          INPUT_END_EPISODE: ${{ github.event.inputs.end_episode }}
         run: python main.py
