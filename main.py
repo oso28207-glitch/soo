@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-- جلسة 1: جمع روابط iframe (بالنقر)
-- جلسة 2: استخراج m3u8 باستخدام Selenium Wire + yt-dlp
+- الجلسة 1: جمع روابط iframe (بالنقر)
+- الجلسة 2: استخراج m3u8 باستخدام SeleniumBase CDP Mode
 - TEST_MODE متوفر
-- إصلاح blinker==1.7.0 لـ selenium-wire
 """
 
 import os
@@ -55,48 +54,21 @@ if not validate_env():
     sys.exit(1)
 
 
-# ============================================================
-#  تثبيت المتطلبات مع إصلاح blinker
-# ============================================================
 def install_requirements():
     print("📦 Installing requirements...")
-
-    # ✅ الخطوة 1: تثبيت blinker==1.7.0 أولاً (إصلاح جذري لـ selenium-wire)
-    try:
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "blinker==1.7.0", "--quiet"
-        ])
-        print("  ✅ blinker==1.7.0 (إصلاح مبدئي)")
-    except Exception:
-        print("  ⚠️ Failed to install blinker==1.7.0")
-
-    # ✅ الخطوة 2: باقي المتطلبات
     reqs = [
         "yt-dlp>=2024.4.9",
-        "selenium-wire",
         "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0",
     ]
     if not TEST_MODE:
         reqs += ["pyrogram>=2.0.0", "tgcrypto>=1.2.0"]
-
     for req in reqs:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", req, "--quiet"])
             print(f"  ✅ {req.split('>=')[0]}")
         except Exception:
             print(f"  ⚠️ Failed to install {req}")
-
-    # ✅ الخطوة 3: إعادة تثبيت blinker==1.7.0 للتأكد (لأن selenium-wire قد يرفعه)
-    try:
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "blinker==1.7.0", "--force-reinstall", "--quiet"
-        ])
-        print("  ✅ blinker==1.7.0 (تأكيد نهائي)")
-    except Exception:
-        print("  ⚠️ Failed to reinstall blinker==1.7.0")
 
 
 install_requirements()
@@ -105,8 +77,6 @@ install_requirements()
 import yt_dlp
 from seleniumbase import SB
 from bs4 import BeautifulSoup
-from seleniumwire import webdriver as wire_driver
-from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 app = None
 if not TEST_MODE:
@@ -144,7 +114,7 @@ async def setup_telegram():
 
 
 # ============================================================
-#  استخراج السيرفرات من HTML
+#  استخراج السيرفرات
 # ============================================================
 def extract_servers_from_html(html):
     servers = []
@@ -186,88 +156,77 @@ def extract_post_id_from_html(html):
 
 
 # ============================================================
-#  استخراج m3u8 باستخدام Selenium Wire
+#  ✅ استخراج m3u8 باستخدام SeleniumBase CDP Mode
 # ============================================================
-def extract_m3u8_with_wire(iframe_url):
+def extract_m3u8_with_cdp(iframe_url):
     """
-    يفتح رابط iframe باستخدام Selenium Wire ويعترض طلبات الشبكة
-    لاستخراج أي رابط .m3u8 يتم تحميله.
+    يفتح رابط iframe باستخدام SeleniumBase CDP Mode ويعترض طلبات الشبكة
+    لاستخراج أي رابط .m3u8.
+    يعتمد على CDP.network.RequestWillBeSent و CDP.network.ResponseReceived.
     """
-    print(f"   🎬 [Selenium Wire] فتح {iframe_url}")
+    print(f"   🎬 [CDP Mode] فتح {iframe_url}")
+    captured_urls = []
 
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument('--headless=new')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
-    chrome_options.add_argument('--autoplay-policy=no-user-gesture-required')
-    chrome_options.add_argument('--mute-audio')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_argument(
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    )
+    with SB(uc=True, xvfb=True, headless=False, incognito=True,
+            ad_block_on=True, disable_csp=True,
+            page_load_strategy="eager", locale_code="en") as sb:
+        try:
+            # ✅ تفعيل CDP Mode
+            sb.activate_cdp_mode()
+            sb.cdp.open(iframe_url)
 
-    wire_options = {
-        'disable_encoding': True,
-        'request_storage_base_dir': '/tmp',
-        'verify_ssl': False,
-    }
+            # ✅ تسجيل معالج الأحداث لاعتراض الطلبات
+            def on_request(event):
+                try:
+                    url = event.request.url
+                    captured_urls.append(url)
+                    if ".m3u8" in url:
+                        print(f"      ✅ m3u8 (Request): {url[:150]}")
+                except Exception:
+                    pass
 
-    driver = None
-    video_url = None
+            def on_response(event):
+                try:
+                    url = event.response.url
+                    if ".m3u8" in url:
+                        print(f"      ✅ m3u8 (Response): {url[:150]}")
+                        captured_urls.append(url)
+                except Exception:
+                    pass
 
-    try:
-        driver = wire_driver.Chrome(
-            options=chrome_options,
-            seleniumwire_options=wire_options
-        )
-
-        driver.get(iframe_url)
-
-        # انتظار تحميل المشغل
-        print("      ⏳ انتظار تحميل الفيديو...")
-        time.sleep(15)
-
-        # ✅ المرور على جميع الطلبات المعترضة
-        for request in driver.requests:
-            if not request.response:
-                continue
-
-            # البحث عن m3u8 في رابط الطلب
-            if '.m3u8' in request.url:
-                print(f"      ✅ m3u8 (URL): {request.url[:150]}")
-                video_url = request.url
-                break
-
-            # البحث عن m3u8 داخل نص الاستجابة
+            # محاولة تسجيل المعالجات (قد تختلف التوقيعات حسب إصدار SeleniumBase)
             try:
-                body = request.response.body
-                if isinstance(body, bytes):
-                    body = body.decode('utf-8', errors='ignore')
-                if '.m3u8' in body:
-                    m3u8_match = re.search(r'(https?://[^"\'\s\\]+\.m3u8[^"\'\s\\]*)', body)
-                    if m3u8_match:
-                        print(f"      ✅ m3u8 (Body): {m3u8_match.group(1)[:150]}")
-                        video_url = m3u8_match.group(1)
-                        break
+                import mycdp
+                sb.cdp.add_handler(mycdp.network.RequestWillBeSent, on_request)
+                sb.cdp.add_handler(mycdp.network.ResponseReceived, on_response)
+            except Exception as e:
+                print(f"      ⚠️ فشل تسجيل معالجات CDP: {str(e)[:120]}")
+
+            # انتظار تحميل المشغل
+            print("      ⏳ انتظار تحميل الفيديو...")
+            time.sleep(20)
+
+            # البحث في الروابط الملتقطة
+            for url in captured_urls:
+                if ".m3u8" in url:
+                    return url
+
+            # Fallback: البحث في HTML
+            try:
+                html = sb.get_page_source()
+                m3u8s = re.findall(r'(https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*)', html)
+                if m3u8s:
+                    print(f"      ✅ m3u8 (HTML): {m3u8s[0][:150]}")
+                    return m3u8s[0]
             except Exception:
                 pass
 
-        if not video_url:
             print("      ❌ لم يتم اعتراض أي طلب m3u8.")
+            return None
 
-    except Exception as e:
-        print(f"      ❌ خطأ في Selenium Wire: {str(e)[:200]}")
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-    return video_url
+        except Exception as e:
+            print(f"      ❌ خطأ في CDP Mode: {str(e)[:200]}")
+            return None
 
 
 # ============================================================
@@ -281,9 +240,7 @@ def try_ytdlp_extract(iframe_url):
             'no_warnings': True,
             'skip_download': True,
             'format': 'best[height<=720]/best',
-            'extractor_args': {
-                'generic': ['impersonate']
-            }
+            'extractor_args': {'generic': ['impersonate']}
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(iframe_url, download=False)
@@ -535,13 +492,13 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
             print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}: {item['url'][:100]}")
             print(f"{'='*60}")
 
-            # ----- المحاولة 1: Selenium Wire (الأقوى) -----
-            print(f"   [1/2] Selenium Wire...")
-            v_url = await asyncio.to_thread(extract_m3u8_with_wire, item["url"])
+            # ----- المحاولة 1: SeleniumBase CDP Mode -----
+            print(f"   [1/2] SeleniumBase CDP Mode...")
+            v_url = await asyncio.to_thread(extract_m3u8_with_cdp, item["url"])
             if v_url:
                 video_url = v_url
                 selected_iframe = item["url"]
-                print(f"   ✅ نجح Selenium Wire")
+                print(f"   ✅ نجح CDP Mode")
                 break
 
             # ----- المحاولة 2: yt-dlp (احتياطي) -----
