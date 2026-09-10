@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - معالج متكامل لموقع u.3seq.cam
-معدّل ليعمل على GitHub Actions مع حماية من الحظر
+معدّل ليعمل على GitHub Actions مع دعم workflow_dispatch inputs
 """
 
 import os
@@ -20,6 +20,13 @@ TELEGRAM_API_ID = os.environ.get("API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
 TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
 STRING_SESSION = os.environ.get("STRING_SESSION", "")
+
+# ===== قراءة الإعدادات من البيئة (workflow inputs) =====
+INPUT_SERIES_NAME = os.environ.get("INPUT_SERIES_NAME", "").strip()
+INPUT_SERIES_NAME_ARABIC = os.environ.get("INPUT_SERIES_NAME_ARABIC", "").strip()
+INPUT_SEASON_NUM = os.environ.get("INPUT_SEASON_NUM", "").strip()
+INPUT_START_EPISODE = os.environ.get("INPUT_START_EPISODE", "").strip()
+INPUT_END_EPISODE = os.environ.get("INPUT_END_EPISODE", "").strip()
 
 def validate_env():
     errors = []
@@ -70,9 +77,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
-from bs4 import BeautifulSoup
 
 app = None
+
 
 # ===== دوال مساعدة =====
 
@@ -95,6 +102,7 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
+
 def extract_video_from_iframe(sb, iframe_url):
     """
     استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو الحقيقي (.m3u8)
@@ -102,26 +110,24 @@ def extract_video_from_iframe(sb, iframe_url):
     try:
         print(f"🔄 فتح iframe: {iframe_url}")
         sb.open(iframe_url)
-        
-        # انتظار تحميل عنصر الفيديو
+
         try:
             sb.wait_for_element("video", timeout=20)
             time.sleep(3)
         except:
             print("⚠️ لم يتم العثور على عنصر video خلال 20 ثانية.")
-        
-        # البحث عن مصدر الفيديو
+
         video_src = None
-        
-        # الطريقة الأولى: من عنصر video مباشرة
+
+        # الطريقة 1: عنصر video
         video_elements = sb.find_elements("video")
         if video_elements:
             video_src = video_elements[0].get_attribute("src")
             if video_src:
                 print(f"✅ تم العثور على مصدر الفيديو: {video_src[:100]}...")
                 return video_src
-        
-        # الطريقة الثانية: من عناصر source داخل video
+
+        # الطريقة 2: عناصر source
         source_elements = sb.find_elements("source")
         for source in source_elements:
             src = source.get_attribute("src")
@@ -129,24 +135,25 @@ def extract_video_from_iframe(sb, iframe_url):
                 video_src = src
                 print(f"✅ تم العثور على مصدر بديل: {video_src[:100]}...")
                 return video_src
-        
-        # الطريقة الثالثة: البحث في الصفحة عن أي رابط .m3u8
+
+        # الطريقة 3: regex داخل الصفحة
         page_source = sb.get_page_source()
         m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
         if m3u8_matches:
             video_src = m3u8_matches[0]
             print(f"✅ تم العثور على رابط m3u8: {video_src[:100]}...")
             return video_src
-        
+
         print("⚠️ لم يتم العثور على مصدر الفيديو.")
         return None
-        
+
     except Exception as e:
         print(f"❌ خطأ في استخراج الفيديو من iframe: {e}")
         return None
 
+
 def download_video(video_url, output_path, referer):
-    """تنزيل الفيديو باستخدام yt-dlp مع impersonation وإضافة referer"""
+    """تنزيل الفيديو باستخدام yt-dlp"""
     try:
         ydl_opts = {
             'format': 'best[height<=720]/best',
@@ -168,8 +175,8 @@ def download_video(video_url, output_path, referer):
         print(f"❌ Download error: {e}")
         return False
 
+
 def compress_to_144p(input_path, output_path):
-    """ضغط الفيديو إلى 144p"""
     if not os.path.exists(input_path):
         return False
     cmd = [
@@ -185,6 +192,7 @@ def compress_to_144p(input_path, output_path):
     except:
         return False
 
+
 def create_thumbnail(video_path, thumb_path):
     cmd = [
         'ffmpeg', '-i', video_path,
@@ -196,6 +204,7 @@ def create_thumbnail(video_path, thumb_path):
         return os.path.exists(thumb_path)
     except:
         return False
+
 
 async def upload_video(file_path, caption, thumb_path=None):
     if not app or not os.path.exists(file_path):
@@ -235,166 +244,203 @@ async def upload_video(file_path, caption, thumb_path=None):
         print(f"❌ Upload error: {e}")
         return False
 
-# ===== الدالة الأساسية =====
 
-async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
+# ===== كود Selenium يعمل في thread منفصل =====
+
+def _sync_selenium_work(episode_num, series_name):
     """
-    معالجة حلقة واحدة باستخدام SB() context manager
+    كل عمليات Selenium تعمل داخل هذا الـ thread المنفصل.
+    تعيد (video_url, selected_iframe) أو (None, None) عند الفشل.
     """
     base_url = f"https://u.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}"
-    
+    video_url = None
+    selected_iframe = None
+
+    with SB(uc=True, xvfb=True, incognito=True, headless=False, locale_code="en") as sb:
+        print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
+        sb.open(base_url)
+
+        start_time = time.time()
+        current_url = sb.get_current_url()
+        while current_url == base_url and time.time() - start_time < 10:
+            time.sleep(1)
+            current_url = sb.get_current_url()
+
+        final_url = sb.get_current_url()
+        print(f"🌐 الرابط النهائي: {final_url}")
+
+        if not final_url.endswith('/'):
+            final_url += '/'
+        watch_url = final_url + '?do=watch'
+        print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
+        sb.open(watch_url)
+        time.sleep(3)
+
+        try:
+            sb.wait_for_element("ul.serversList", timeout=30)
+            print("✅ تم العثور على قائمة السيرفرات.")
+        except TimeoutException:
+            print("⚠️ لم يتم العثور على قائمة السيرفرات خلال 30 ثانية.")
+            return None, None
+
+        server_buttons = sb.find_elements("ul.serversList li")
+        if not server_buttons:
+            return None, None
+
+        server_names = [btn.text.strip() for btn in server_buttons]
+        print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
+
+        try:
+            iframe_element = sb.find_element(".watch iframe")
+        except NoSuchElementException:
+            return None, None
+
+        for idx in range(len(server_buttons)):
+            try:
+                btn = sb.find_elements("ul.serversList li")[idx]
+                server_name = btn.text.strip()
+                print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
+
+                old_src = iframe_element.get_attribute("src")
+                print(f"   القديم: {old_src}")
+
+                try:
+                    sb.execute_script("arguments[0].click();", btn)
+                except Exception as e:
+                    print(f"⚠️ فشل النقر بالـ JS، نحاول بالطريقة العادية: {e}")
+                    btn.click()
+
+                try:
+                    WebDriverWait(sb.driver, 20).until(
+                        lambda d: d.find_element(By.CSS_SELECTOR, ".watch iframe").get_attribute("src") != old_src
+                    )
+                    print("✅ تم تغيير iframe بنجاح.")
+                except TimeoutException:
+                    print("⏱️ لم يتغير src خلال المهلة، ربما السيرفر لا يعمل.")
+                    continue
+
+                iframe_url = iframe_element.get_attribute("src")
+                print(f"📦 iframe الجديد: {iframe_url}")
+
+                if not iframe_url or iframe_url == old_src:
+                    print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
+                    continue
+
+                video_url = extract_video_from_iframe(sb, iframe_url)
+                if video_url:
+                    selected_iframe = iframe_url
+                    print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
+                    break
+                else:
+                    print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
+
+            except StaleElementReferenceException:
+                print("⚠️ عنصر قديم، نعيد الحصول عليه...")
+                try:
+                    iframe_element = sb.find_element(".watch iframe")
+                except:
+                    pass
+                continue
+            except Exception as e:
+                print(f"⚠️ خطأ أثناء محاولة السيرفر: {e}")
+                continue
+
+    return video_url, selected_iframe
+
+
+# ===== معالجة حلقة واحدة =====
+
+async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     print(f"\n🎬 Episode {episode_num:02d}")
-    print(f"🔗 Base URL: {base_url}")
-    
+    print(f"🔗 Base URL: https://u.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}")
+
     temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
     try:
-        with SB(uc=True, xvfb=True, incognito=True, headless=False, locale_code="en") as sb:
-            # الذهاب إلى الرابط الأساسي وانتظار إعادة التوجيه
-            print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
-            sb.open(base_url)
-            
-            # انتظار تغيير الرابط أو مرور 10 ثواني
-            start_time = time.time()
-            current_url = sb.get_current_url()
-            while current_url == base_url and time.time() - start_time < 10:
-                time.sleep(1)
-                current_url = sb.get_current_url()
-            
-            final_url = sb.get_current_url()
-            print(f"🌐 الرابط النهائي: {final_url}")
-            
-            # إضافة ?do=watch
-            if not final_url.endswith('/'):
-                final_url += '/'
-            watch_url = final_url + '?do=watch'
-            print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
-            sb.open(watch_url)
-            
-            # انتظار إضافي لتشغيل السكربتات
-            time.sleep(3)
-            
-            # البحث عن قائمة السيرفرات
+        # ✅ تشغيل كل كود Selenium في thread منفصل
+        video_url, selected_iframe = await asyncio.to_thread(
+            _sync_selenium_work, episode_num, series_name
+        )
+
+        if not video_url:
+            return False, "فشل استخراج رابط الفيديو من جميع السيرفرات"
+
+        print(f"🎥 Video URL: {video_url}")
+
+        if not download_video(video_url, temp_file, referer=selected_iframe):
+            return False, "فشل التنزيل"
+
+        if not compress_to_144p(temp_file, final_file):
+            shutil.copy2(temp_file, final_file)
+
+        create_thumbnail(final_file, thumb_file)
+
+        caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
+        success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
+
+        for f in [temp_file, final_file, thumb_file]:
             try:
-                sb.wait_for_element("ul.serversList", timeout=30)
-                print("✅ تم العثور على قائمة السيرفرات.")
-            except TimeoutException:
-                print("⚠️ لم يتم العثور على قائمة السيرفرات خلال 30 ثانية.")
-                return False, "لم يتم العثور على أزرار السيرفرات"
-            
-            # الحصول على جميع أزرار السيرفرات
-            server_buttons = sb.find_elements("ul.serversList li")
-            if not server_buttons:
-                return False, "لا توجد أزرار سيرفرات في القائمة"
-            
-            server_names = [btn.text.strip() for btn in server_buttons]
-            print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
-            
-            # الحصول على عنصر iframe داخل .watch
-            try:
-                iframe_element = sb.find_element(".watch iframe")
-            except NoSuchElementException:
-                return False, "لم يتم العثور على iframe في الصفحة"
-            
-            # متغير لحفظ رابط الفيديو النهائي
-            video_url = None
-            selected_iframe = None
-            
-            # تجربة كل سيرفر
-            for idx in range(len(server_buttons)):
-                try:
-                    btn = sb.find_elements("ul.serversList li")[idx]
-                    server_name = btn.text.strip()
-                    print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
-                    
-                    old_src = iframe_element.get_attribute("src")
-                    print(f"   القديم: {old_src}")
-                    
-                    # النقر على الزر
-                    try:
-                        sb.execute_script("arguments[0].click();", btn)
-                    except Exception as e:
-                        print(f"⚠️ فشل النقر بالـ JS، نحاول بالطريقة العادية: {e}")
-                        btn.click()
-                    
-                    # انتظار تغير src الخاص بـ iframe
-                    try:
-                        WebDriverWait(sb.driver, 20).until(
-                            lambda d: d.find_element(By.CSS_SELECTOR, ".watch iframe").get_attribute("src") != old_src
-                        )
-                        print("✅ تم تغيير iframe بنجاح.")
-                    except TimeoutException:
-                        print("⏱️ لم يتغير src خلال المهلة، ربما السيرفر لا يعمل.")
-                        continue
-                    
-                    iframe_url = iframe_element.get_attribute("src")
-                    print(f"📦 iframe الجديد: {iframe_url}")
-                    
-                    if not iframe_url or iframe_url == old_src:
-                        print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
-                        continue
-                    
-                    # استخراج الفيديو من هذا iframe
-                    video_url = extract_video_from_iframe(sb, iframe_url)
-                    if video_url:
-                        selected_iframe = iframe_url
-                        print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
-                        break
-                    else:
-                        print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
-                        
-                except StaleElementReferenceException:
-                    print("⚠️ عنصر قديم، نعيد الحصول عليه...")
-                    try:
-                        iframe_element = sb.find_element(".watch iframe")
-                    except:
-                        pass
-                    continue
-                except Exception as e:
-                    print(f"⚠️ خطأ أثناء محاولة السيرفر: {e}")
-                    continue
-            
-            if not video_url:
-                return False, "فشل استخراج رابط الفيديو من جميع السيرفرات"
-            
-            print(f"🎥 Video URL: {video_url}")
-            
-            # تنزيل الفيديو
-            if not download_video(video_url, temp_file, referer=selected_iframe):
-                return False, "فشل التنزيل"
-            
-            # ضغط الفيديو إلى 144p
-            if not compress_to_144p(temp_file, final_file):
-                shutil.copy2(temp_file, final_file)
-            
-            # إنشاء صورة مصغرة
-            create_thumbnail(final_file, thumb_file)
-            
-            # رفع إلى تليغرام
-            caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
-            success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
-            
-            # تنظيف
-            for f in [temp_file, final_file, thumb_file]:
-                try:
-                    if os.path.exists(f):
-                        os.remove(f)
-                except:
-                    pass
-            
-            return success, "تم بنجاح" if success else "فشل الرفع"
-            
+                if os.path.exists(f):
+                    os.remove(f)
+            except:
+                pass
+
+        return success, "تم بنجاح" if success else "فشل الرفع"
+
     except Exception as e:
         return False, f"خطأ غير متوقع: {e}"
+
+
+# ===== قراءة الإعدادات =====
+
+def load_config():
+    """
+    الأولوية:
+    1. متغيرات البيئة (workflow_dispatch inputs)
+    2. series_config.json
+    """
+    config = {
+        "series_name": "",
+        "series_name_arabic": "",
+        "season_num": 1,
+        "start_episode": 1,
+        "end_episode": 1,
+    }
+
+    # 1. من ملف الإعدادات إن وُجد
+    config_file = "series_config.json"
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                file_config = json.load(f)
+            config.update({k: v for k, v in file_config.items() if v not in (None, "")})
+            print(f"📄 تم تحميل الإعدادات من {config_file}")
+        except Exception as e:
+            print(f"⚠️ فشل قراءة {config_file}: {e}")
+
+    # 2. تجاوز بمتغيرات البيئة (inputs)
+    if INPUT_SERIES_NAME:
+        config["series_name"] = INPUT_SERIES_NAME
+    if INPUT_SERIES_NAME_ARABIC:
+        config["series_name_arabic"] = INPUT_SERIES_NAME_ARABIC
+    if INPUT_SEASON_NUM:
+        config["season_num"] = int(INPUT_SEASON_NUM)
+    if INPUT_START_EPISODE:
+        config["start_episode"] = int(INPUT_START_EPISODE)
+    if INPUT_END_EPISODE:
+        config["end_episode"] = int(INPUT_END_EPISODE)
+
+    return config
+
 
 # ===== الدالة الرئيسية =====
 
 async def main():
-    print("="*50)
-    print("🎬 معالج الفيديو المتكامل باستخدام Selenium (استخراج من iframe)")
-    print("="*50)
+    print("=" * 60)
+    print("🎬 معالج الفيديو المتكامل - u.3seq.cam")
+    print("=" * 60)
 
     # التحقق من ffmpeg
     try:
@@ -404,38 +450,41 @@ async def main():
         print("❌ ffmpeg غير موجود")
         return
 
-    # الاتصال بتليغرام
-    if not await setup_telegram():
-        return
+    # قراءة الإعدادات
+    config = load_config()
 
-    # قراءة ملف الإعدادات
-    config_file = "series_config.json"
-    if not os.path.exists(config_file):
-        print("❌ series_config.json غير موجود")
-        return
-
-    with open(config_file, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-
-    series_name = config.get("series_name", "").strip().replace(' ', '-')
-    series_name_arabic = config.get("series_name_arabic", "").strip()
+    series_name = str(config.get("series_name", "")).strip().replace(' ', '-')
+    series_name_arabic = str(config.get("series_name_arabic", "")).strip()
     season_num = int(config.get("season_num", 1))
     start_ep = int(config.get("start_episode", 1))
     end_ep = int(config.get("end_episode", 1))
 
-    # تقليل العدد للحماية
+    if not series_name:
+        print("❌ اسم المسلسل بالإنجليزية (series_name) مطلوب")
+        return
+    if not series_name_arabic:
+        series_name_arabic = series_name
+
+    # حد أقصى للحماية
     if end_ep - start_ep + 1 > 25:
-        print("⚠️ عدد الحلقات كبير جداً، سيتم معالجة 25 حلقه فقط.")
+        print("⚠️ عدد الحلقات كبير جداً، سيتم معالجة 25 حلقة فقط.")
         end_ep = start_ep + 24
 
-    print(f"📺 المسلسل: {series_name_arabic}")
+    print(f"📺 المسلسل (EN): {series_name}")
+    print(f"📺 المسلسل (AR): {series_name_arabic}")
+    print(f"🗂️ الموسم: {season_num}")
     print(f"🎬 الحلقات: {start_ep} إلى {end_ep}")
+
+    # الاتصال بتليغرام
+    if not await setup_telegram():
+        return
 
     download_dir = f"downloads_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(download_dir, exist_ok=True)
 
     successful = 0
     failed = []
+    total = end_ep - start_ep + 1
 
     for ep in range(start_ep, end_ep + 1):
         success, msg = await process_episode(ep, series_name, series_name_arabic, season_num, download_dir)
@@ -447,13 +496,16 @@ async def main():
             print(f"❌ الحلقة {ep}: {msg}")
 
         # انتظار عشوائي لتجنب الحظر
-        wait_time = random.randint(45, 90)
-        print(f"⏳ انتظار {wait_time} ثانية...")
-        await asyncio.sleep(wait_time)
+        if ep < end_ep:
+            wait_time = random.randint(45, 90)
+            print(f"⏳ انتظار {wait_time} ثانية...")
+            await asyncio.sleep(wait_time)
 
-    print(f"\n✅ الناجحة: {successful}/{len(range(start_ep, end_ep+1))}")
+    print(f"\n{'='*60}")
+    print(f"✅ الناجحة: {successful}/{total}")
     if failed:
         print(f"❌ الفاشلة: {failed}")
+    print("=" * 60)
 
     # تنظيف
     try:
@@ -463,6 +515,7 @@ async def main():
 
     await app.stop()
     print("🔌 تم قطع الاتصال بتليغرام")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
