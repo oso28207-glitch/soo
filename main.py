@@ -15,6 +15,7 @@ import shutil
 import asyncio
 import random
 import re
+import tempfile
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -114,7 +115,7 @@ async def setup_telegram():
 
 
 # ============================================================
-#  استخراج السيرفرات
+#  استخراج السيرفرات من HTML
 # ============================================================
 def extract_servers_from_html(html):
     servers = []
@@ -156,90 +157,160 @@ def extract_post_id_from_html(html):
 
 
 # ============================================================
-#  ✅ استخراج m3u8 باستخدام SeleniumBase CDP Mode
+#  ✅ استخراج m3u8 باستخدام SeleniumBase CDP Mode (محسّن)
 # ============================================================
 def extract_m3u8_with_cdp(iframe_url):
     """
-    يفتح رابط iframe باستخدام SeleniumBase CDP Mode ويعترض طلبات الشبكة
-    لاستخراج أي رابط .m3u8.
-    يعتمد على CDP.network.RequestWillBeSent و CDP.network.ResponseReceived.
+    يفتح رابط iframe باستخدام SeleniumBase CDP Mode ويعترض طلبات الشبكة.
+    يستخدم ملفاً على القرص للتواصل بين معالجات CDP والعملية الرئيسية.
     """
-    print(f"   🎬 [CDP Mode] فتح {iframe_url}")
-    captured_urls = []
+    print(f"   🎬 [CDP Mode] فتح {iframe_url}", flush=True)
 
-    with SB(uc=True, xvfb=True, headless=False, incognito=True,
-            ad_block_on=True, disable_csp=True,
-            page_load_strategy="eager", locale_code="en") as sb:
+    log_file = tempfile.mktemp(suffix="_m3u8.txt")
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write("")
+
+    def _log_to_file(url):
+        """كتابة آمنة للملف من داخل أي عملية."""
         try:
-            # ✅ تفعيل CDP Mode
-            sb.activate_cdp_mode()
-            sb.cdp.open(iframe_url)
+            with open(log_file, "a", encoding="utf-8") as fh:
+                fh.write(url + "\n")
+                fh.flush()
+        except Exception:
+            pass
 
-            # ✅ تسجيل معالج الأحداث لاعتراض الطلبات
-            def on_request(event):
-                try:
-                    url = event.request.url
-                    captured_urls.append(url)
-                    if ".m3u8" in url:
-                        print(f"      ✅ m3u8 (Request): {url[:150]}")
-                except Exception:
-                    pass
-
-            def on_response(event):
-                try:
-                    url = event.response.url
-                    if ".m3u8" in url:
-                        print(f"      ✅ m3u8 (Response): {url[:150]}")
-                        captured_urls.append(url)
-                except Exception:
-                    pass
-
-            # محاولة تسجيل المعالجات (قد تختلف التوقيعات حسب إصدار SeleniumBase)
+    try:
+        with SB(uc=True, xvfb=True, headless=False, incognito=True,
+                ad_block_on=True, disable_csp=True,
+                page_load_strategy="eager", locale_code="en") as sb:
             try:
-                import mycdp
-                sb.cdp.add_handler(mycdp.network.RequestWillBeSent, on_request)
-                sb.cdp.add_handler(mycdp.network.ResponseReceived, on_response)
+                sb.activate_cdp_mode()
+
+                # ✅ تسجيل معالجات CDP (async + file-based)
+                try:
+                    import mycdp
+
+                    async def on_request(event):
+                        try:
+                            url = event.request.url
+                            _log_to_file(url)
+                            if ".m3u8" in url:
+                                print(f"      ✅ m3u8 (Req): {url[:130]}", flush=True)
+                        except Exception:
+                            pass
+
+                    async def on_response(event):
+                        try:
+                            url = event.response.url
+                            _log_to_file(url)
+                            if ".m3u8" in url:
+                                print(f"      ✅ m3u8 (Res): {url[:130]}", flush=True)
+                        except Exception:
+                            pass
+
+                    sb.cdp.add_handler(mycdp.network.RequestWillBeSent, on_request)
+                    sb.cdp.add_handler(mycdp.network.ResponseReceived, on_response)
+                    print("      ✅ معالجات CDP مسجلة", flush=True)
+                except Exception as e:
+                    print(f"      ⚠️ فشل تسجيل المعالجات: {str(e)[:120]}", flush=True)
+
+                # فتح الرابط
+                sb.cdp.open(iframe_url)
+                print("      ⏳ انتظار التحميل (10s)...", flush=True)
+                sb.cdp.sleep(10)
+
+                # ✅ محاولة النقر على زر التشغيل لتحفيز تحميل الفيديو
+                for selector in [
+                    "button.vjs-big-play-button",
+                    ".vjs-big-play-button",
+                    ".jw-icon-display",
+                    ".play-button",
+                    "video",
+                    "body",
+                ]:
+                    try:
+                        sb.cdp.click_if_visible(selector)
+                        print(f"      🖱️ نقر على: {selector}", flush=True)
+                        sb.cdp.sleep(3)
+                        break
+                    except Exception:
+                        pass
+
+                # انتظار إضافي لالتقاط الطلبات
+                print("      ⏳ انتظار إضافي (15s)...", flush=True)
+                sb.cdp.sleep(15)
+
             except Exception as e:
-                print(f"      ⚠️ فشل تسجيل معالجات CDP: {str(e)[:120]}")
+                print(f"      ❌ خطأ CDP Mode: {str(e)[:200]}", flush=True)
 
-            # انتظار تحميل المشغل
-            print("      ⏳ انتظار تحميل الفيديو...")
-            time.sleep(20)
+    except Exception as e:
+        print(f"      ❌ خطأ في فتح المتصفح: {str(e)[:200]}", flush=True)
 
-            # البحث في الروابط الملتقطة
-            for url in captured_urls:
-                if ".m3u8" in url:
-                    return url
+    # قراءة الملف بعد إغلاق SB
+    urls = []
+    try:
+        with open(log_file, encoding="utf-8") as fh:
+            urls = [u.strip() for u in fh.readlines() if u.strip()]
+    except Exception:
+        pass
 
-            # Fallback: البحث في HTML
-            try:
-                html = sb.get_page_source()
-                m3u8s = re.findall(r'(https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*)', html)
-                if m3u8s:
-                    print(f"      ✅ m3u8 (HTML): {m3u8s[0][:150]}")
-                    return m3u8s[0]
-            except Exception:
-                pass
+    try:
+        os.remove(log_file)
+    except Exception:
+        pass
 
-            print("      ❌ لم يتم اعتراض أي طلب m3u8.")
-            return None
+    print(f"      📊 عدد الروابط الملتقطة: {len(urls)}", flush=True)
 
-        except Exception as e:
-            print(f"      ❌ خطأ في CDP Mode: {str(e)[:200]}")
-            return None
+    if not urls:
+        print("      ❌ لم يتم اعتراض أي طلب.", flush=True)
+        return None
+
+    # ✅ اختيار أفضل m3u8: master > index_720p > أي m3u8
+    master_url = None
+    best_index = None
+    any_m3u8 = None
+
+    for url in urls:
+        if ".m3u8" not in url:
+            continue
+        ul = url.lower()
+        if "master.m3u8" in ul or "/master" in ul:
+            if not master_url:
+                master_url = url
+        elif "index_" in ul or "playlist" in ul:
+            if not best_index:
+                best_index = url
+        elif not any_m3u8:
+            any_m3u8 = url
+
+    result = master_url or best_index or any_m3u8
+
+    if result:
+        print(f"      🎯 m3u8 نهائي: {result[:150]}", flush=True)
+        return result
+
+    # إذا لم نجد m3u8، نبحث عن أي رابط mp4
+    for url in urls:
+        if ".mp4" in url:
+            print(f"      🎯 mp4 نهائي: {url[:150]}", flush=True)
+            return url
+
+    print("      ❌ لم يتم العثور على m3u8/mp4.", flush=True)
+    return None
 
 
 # ============================================================
-#  yt-dlp كخيار احتياطي
+#  yt-dlp كخيار احتياطي (مع nocheckcertificate)
 # ============================================================
 def try_ytdlp_extract(iframe_url):
-    """يحاول yt-dlp مع تفعيل impersonation."""
+    """يحاول yt-dlp مع تفعيل impersonation + تجاهل SSL."""
     try:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
             'format': 'best[height<=720]/best',
+            'nocheckcertificate': True,
             'extractor_args': {'generic': ['impersonate']}
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -367,6 +438,7 @@ def download_video(video_url, output_path, referer):
             'retries': 5,
             'fragment_retries': 5,
             'socket_timeout': 30,
+            'nocheckcertificate': True,
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
