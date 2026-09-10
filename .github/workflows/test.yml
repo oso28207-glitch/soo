@@ -1,0 +1,52 @@
+name: Run Telegram Video Downloader
+
+on:
+  workflow_dispatch:  # تشغيل يدوي من واجهة GitHub
+  # schedule:
+  #   - cron: '0 */6 * * *'  # اختياري: تشغيل تلقائي كل 6 ساعات
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg chromium-browser chromium-chromedriver
+          # التأكد من أن chromedriver في PATH
+          echo "/usr/lib/chromium-browser" >> $GITHUB_PATH
+          echo "/usr/bin" >> $GITHUB_PATH
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyrogram tgcrypto yt-dlp curl_cffi selenium beautifulsoup4
+
+      - name: Create series_config.json
+        run: |
+          cat > series_config.json <<EOF
+          {
+            "series_name": "muhtemel-ask",
+            "series_name_arabic": "احتمال حب",
+            "season_num": 1,
+            "start_episode": 60,
+            "end_episode": 60
+          }
+          EOF
+
+      - name: Run script
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python script.py   # استبدل script.py باسم ملفك
