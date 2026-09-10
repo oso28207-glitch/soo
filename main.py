@@ -757,7 +757,7 @@ async def main():
             print(f"❌ الحلقة {ep}: {msg}")
 
         if ep < end_ep:
-            wait = random.randint(10, 20) if TEST_MODE else random.randint(45, 90)
+            wait = random.randint(5, 15) if TEST_MODE else random.randint(2, 5)
             print(f"⏳ انتظار {wait}s...")
             await asyncio.sleep(wait)
 
