@@ -49,7 +49,6 @@ def install_requirements():
         "tgcrypto>=1.2.0",
         "yt-dlp>=2024.4.9",
         "curl_cffi>=0.5.10",
-        "selenium>=4.15.0",
         "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0"
     ]
@@ -66,7 +65,7 @@ install_requirements()
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 import yt_dlp
-from seleniumbase import Driver
+from seleniumbase import SB
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -74,30 +73,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from bs4 import BeautifulSoup
 
 app = None
-
-# ===== إعداد Selenium مع SeleniumBase UC Mode =====
-def setup_selenium():
-    """
-    إعداد متصفح Chrome باستخدام SeleniumBase UC Mode
-    لتجاوز أنظمة كشف البوتات على GitHub Actions
-    """
-    try:
-        driver = Driver(
-            uc=True,
-            headless=True,
-            incognito=True,
-            agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            xvfb=True,  # مهم جداً على GitHub Actions
-            no_sandbox=True,
-            disable_dev_shm_usage=True,
-            window_size="1920,1080"
-        )
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        print("✅ تم إعداد Selenium مع UC Mode بنجاح")
-        return driver
-    except Exception as e:
-        print(f"❌ فشل إعداد Selenium: {e}")
-        return None
 
 # ===== دوال مساعدة =====
 
@@ -120,19 +95,17 @@ async def setup_telegram():
         print(f"❌ Telegram connection failed: {e}")
         return False
 
-def extract_video_from_iframe(driver, iframe_url):
+def extract_video_from_iframe(sb, iframe_url):
     """
     استخدام نفس جلسة المتصفح لفتح iframe واستخراج رابط الفيديو الحقيقي (.m3u8)
     """
     try:
         print(f"🔄 فتح iframe: {iframe_url}")
-        driver.get(iframe_url)
+        sb.open(iframe_url)
         
         # انتظار تحميل عنصر الفيديو
         try:
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.TAG_NAME, "video"))
-            )
+            sb.wait_for_element("video", timeout=20)
             time.sleep(3)
         except:
             print("⚠️ لم يتم العثور على عنصر video خلال 20 ثانية.")
@@ -141,7 +114,7 @@ def extract_video_from_iframe(driver, iframe_url):
         video_src = None
         
         # الطريقة الأولى: من عنصر video مباشرة
-        video_elements = driver.find_elements(By.TAG_NAME, "video")
+        video_elements = sb.find_elements("video")
         if video_elements:
             video_src = video_elements[0].get_attribute("src")
             if video_src:
@@ -149,7 +122,7 @@ def extract_video_from_iframe(driver, iframe_url):
                 return video_src
         
         # الطريقة الثانية: من عناصر source داخل video
-        source_elements = driver.find_elements(By.TAG_NAME, "source")
+        source_elements = sb.find_elements("source")
         for source in source_elements:
             src = source.get_attribute("src")
             if src:
@@ -158,7 +131,7 @@ def extract_video_from_iframe(driver, iframe_url):
                 return video_src
         
         # الطريقة الثالثة: البحث في الصفحة عن أي رابط .m3u8
-        page_source = driver.page_source
+        page_source = sb.get_page_source()
         m3u8_matches = re.findall(r'(https?://[^"\']+\.m3u8[^"\']*)', page_source)
         if m3u8_matches:
             video_src = m3u8_matches[0]
@@ -266,11 +239,7 @@ async def upload_video(file_path, caption, thumb_path=None):
 
 async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
     """
-    معالجة حلقة واحدة:
-    - فتح صفحة المشاهدة
-    - النقر على أزرار السيرفرات واحداً تلو الآخر
-    - انتظار تغير src الخاص بـ iframe
-    - استخراج الفيديو من أول سيرفر يعمل
+    معالجة حلقة واحدة باستخدام SB() context manager
     """
     base_url = f"https://u.3seq.cam/video/modablaj-{series_name}-episode-{episode_num:02d}"
     
@@ -281,158 +250,143 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
     final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
     thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    # 1. تشغيل Selenium
-    driver = setup_selenium()
-    if not driver:
-        return False, "فشل تشغيل Selenium"
-    
     try:
-        # الذهاب إلى الرابط الأساسي وانتظار إعادة التوجيه
-        print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
-        driver.get(base_url)
-        
-        # انتظار تغيير الرابط أو مرور 10 ثواني
-        start_time = time.time()
-        current_url = driver.current_url
-        while current_url == base_url and time.time() - start_time < 10:
-            time.sleep(1)
-            current_url = driver.current_url
-        
-        final_url = driver.current_url
-        print(f"🌐 الرابط النهائي: {final_url}")
-        
-        # إضافة ?do=watch
-        if not final_url.endswith('/'):
-            final_url += '/'
-        watch_url = final_url + '?do=watch'
-        print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
-        driver.get(watch_url)
-        
-        # انتظار إضافي لتشغيل السكربتات
-        time.sleep(3)
-        
-        # البحث عن قائمة السيرفرات
-        try:
-            WebDriverWait(driver, 30).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, "ul.serversList"))
-            )
-            print("✅ تم العثور على قائمة السيرفرات.")
-        except TimeoutException:
-            print("⚠️ لم يتم العثور على قائمة السيرفرات خلال 30 ثانية.")
-            driver.quit()
-            return False, "لم يتم العثور على أزرار السيرفرات"
-        
-        # الحصول على جميع أزرار السيرفرات
-        server_buttons = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")
-        if not server_buttons:
-            driver.quit()
-            return False, "لا توجد أزرار سيرفرات في القائمة"
-        
-        server_names = [btn.text.strip() for btn in server_buttons]
-        print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
-        
-        # الحصول على عنصر iframe داخل .watch
-        try:
-            iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
-        except NoSuchElementException:
-            driver.quit()
-            return False, "لم يتم العثور على iframe في الصفحة"
-        
-        # متغير لحفظ رابط الفيديو النهائي
-        video_url = None
-        selected_iframe = None
-        
-        # تجربة كل سيرفر
-        for idx in range(len(server_buttons)):
+        with SB(uc=True, xvfb=True, incognito=True, headless=False, locale_code="en") as sb:
+            # الذهاب إلى الرابط الأساسي وانتظار إعادة التوجيه
+            print("🖥️ تشغيل Selenium للحصول على الرابط النهائي...")
+            sb.open(base_url)
+            
+            # انتظار تغيير الرابط أو مرور 10 ثواني
+            start_time = time.time()
+            current_url = sb.get_current_url()
+            while current_url == base_url and time.time() - start_time < 10:
+                time.sleep(1)
+                current_url = sb.get_current_url()
+            
+            final_url = sb.get_current_url()
+            print(f"🌐 الرابط النهائي: {final_url}")
+            
+            # إضافة ?do=watch
+            if not final_url.endswith('/'):
+                final_url += '/'
+            watch_url = final_url + '?do=watch'
+            print(f"📺 جاري تحميل صفحة المشاهدة: {watch_url}")
+            sb.open(watch_url)
+            
+            # انتظار إضافي لتشغيل السكربتات
+            time.sleep(3)
+            
+            # البحث عن قائمة السيرفرات
             try:
-                # إعادة الحصول على العنصر في كل مرة
-                btn = driver.find_elements(By.CSS_SELECTOR, "ul.serversList li")[idx]
-                server_name = btn.text.strip()
-                print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
-                
-                # تسجيل src الحالي للـ iframe
-                old_src = iframe_element.get_attribute("src")
-                print(f"   القديم: {old_src}")
-                
-                # النقر على الزر باستخدام JavaScript
+                sb.wait_for_element("ul.serversList", timeout=30)
+                print("✅ تم العثور على قائمة السيرفرات.")
+            except TimeoutException:
+                print("⚠️ لم يتم العثور على قائمة السيرفرات خلال 30 ثانية.")
+                return False, "لم يتم العثور على أزرار السيرفرات"
+            
+            # الحصول على جميع أزرار السيرفرات
+            server_buttons = sb.find_elements("ul.serversList li")
+            if not server_buttons:
+                return False, "لا توجد أزرار سيرفرات في القائمة"
+            
+            server_names = [btn.text.strip() for btn in server_buttons]
+            print(f"📦 تم العثور على {len(server_buttons)} سيرفر: {', '.join(server_names)}")
+            
+            # الحصول على عنصر iframe داخل .watch
+            try:
+                iframe_element = sb.find_element(".watch iframe")
+            except NoSuchElementException:
+                return False, "لم يتم العثور على iframe في الصفحة"
+            
+            # متغير لحفظ رابط الفيديو النهائي
+            video_url = None
+            selected_iframe = None
+            
+            # تجربة كل سيرفر
+            for idx in range(len(server_buttons)):
                 try:
-                    driver.execute_script("arguments[0].click();", btn)
-                except Exception as e:
-                    print(f"⚠️ فشل النقر بالـ JS، نحاول بالطريقة العادية: {e}")
-                    btn.click()
-                
-                # انتظار تغير src الخاص بـ iframe
-                try:
-                    WebDriverWait(driver, 20).until(
-                        lambda d: d.find_element(By.CSS_SELECTOR, ".watch iframe").get_attribute("src") != old_src
-                    )
-                    print("✅ تم تغيير iframe بنجاح.")
-                except TimeoutException:
-                    print("⏱️ لم يتغير src خلال المهلة، ربما السيرفر لا يعمل.")
-                    continue
-                
-                # الحصول على src الجديد
-                iframe_url = iframe_element.get_attribute("src")
-                print(f"📦 iframe الجديد: {iframe_url}")
-                
-                if not iframe_url or iframe_url == old_src:
-                    print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
-                    continue
-                
-                # استخراج الفيديو من هذا iframe
-                video_url = extract_video_from_iframe(driver, iframe_url)
-                if video_url:
-                    selected_iframe = iframe_url
-                    print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
-                    break
-                else:
-                    print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
+                    btn = sb.find_elements("ul.serversList li")[idx]
+                    server_name = btn.text.strip()
+                    print(f"\n🔄 محاولة السيرفر {idx+1}/{len(server_buttons)}: {server_name}")
                     
-            except StaleElementReferenceException:
-                print("⚠️ عنصر قديم، نعيد الحصول عليه...")
+                    old_src = iframe_element.get_attribute("src")
+                    print(f"   القديم: {old_src}")
+                    
+                    # النقر على الزر
+                    try:
+                        sb.execute_script("arguments[0].click();", btn)
+                    except Exception as e:
+                        print(f"⚠️ فشل النقر بالـ JS، نحاول بالطريقة العادية: {e}")
+                        btn.click()
+                    
+                    # انتظار تغير src الخاص بـ iframe
+                    try:
+                        WebDriverWait(sb.driver, 20).until(
+                            lambda d: d.find_element(By.CSS_SELECTOR, ".watch iframe").get_attribute("src") != old_src
+                        )
+                        print("✅ تم تغيير iframe بنجاح.")
+                    except TimeoutException:
+                        print("⏱️ لم يتغير src خلال المهلة، ربما السيرفر لا يعمل.")
+                        continue
+                    
+                    iframe_url = iframe_element.get_attribute("src")
+                    print(f"📦 iframe الجديد: {iframe_url}")
+                    
+                    if not iframe_url or iframe_url == old_src:
+                        print(f"⚠️ السيرفر {server_name} لم يقدم iframe صالح")
+                        continue
+                    
+                    # استخراج الفيديو من هذا iframe
+                    video_url = extract_video_from_iframe(sb, iframe_url)
+                    if video_url:
+                        selected_iframe = iframe_url
+                        print(f"✅ تم العثور على فيديو من السيرفر {server_name}")
+                        break
+                    else:
+                        print(f"❌ السيرفر {server_name} لم يعطِ فيديو صالح")
+                        
+                except StaleElementReferenceException:
+                    print("⚠️ عنصر قديم، نعيد الحصول عليه...")
+                    try:
+                        iframe_element = sb.find_element(".watch iframe")
+                    except:
+                        pass
+                    continue
+                except Exception as e:
+                    print(f"⚠️ خطأ أثناء محاولة السيرفر: {e}")
+                    continue
+            
+            if not video_url:
+                return False, "فشل استخراج رابط الفيديو من جميع السيرفرات"
+            
+            print(f"🎥 Video URL: {video_url}")
+            
+            # تنزيل الفيديو
+            if not download_video(video_url, temp_file, referer=selected_iframe):
+                return False, "فشل التنزيل"
+            
+            # ضغط الفيديو إلى 144p
+            if not compress_to_144p(temp_file, final_file):
+                shutil.copy2(temp_file, final_file)
+            
+            # إنشاء صورة مصغرة
+            create_thumbnail(final_file, thumb_file)
+            
+            # رفع إلى تليغرام
+            caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
+            success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
+            
+            # تنظيف
+            for f in [temp_file, final_file, thumb_file]:
                 try:
-                    iframe_element = driver.find_element(By.CSS_SELECTOR, ".watch iframe")
+                    if os.path.exists(f):
+                        os.remove(f)
                 except:
                     pass
-                continue
-            except Exception as e:
-                print(f"⚠️ خطأ أثناء محاولة السيرفر: {e}")
-                continue
-        
-        driver.quit()
-        
-        if not video_url:
-            return False, "فشل استخراج رابط الفيديو من جميع السيرفرات"
-        
-        print(f"🎥 Video URL: {video_url}")
-        
-        # 4. تنزيل الفيديو
-        if not download_video(video_url, temp_file, referer=selected_iframe):
-            return False, "فشل التنزيل"
-        
-        # 5. ضغط الفيديو إلى 144p
-        if not compress_to_144p(temp_file, final_file):
-            shutil.copy2(temp_file, final_file)
-        
-        # 6. إنشاء صورة مصغرة
-        create_thumbnail(final_file, thumb_file)
-        
-        # 7. رفع إلى تليغرام
-        caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
-        success = await upload_video(final_file, caption, thumb_file if os.path.exists(thumb_file) else None)
-        
-        # 8. تنظيف
-        for f in [temp_file, final_file, thumb_file]:
-            try:
-                if os.path.exists(f):
-                    os.remove(f)
-            except:
-                pass
-        
-        return success, "تم بنجاح" if success else "فشل الرفع"
-        
+            
+            return success, "تم بنجاح" if success else "فشل الرفع"
+            
     except Exception as e:
-        driver.quit()
         return False, f"خطأ غير متوقع: {e}"
 
 # ===== الدالة الرئيسية =====
