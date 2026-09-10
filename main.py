@@ -2,7 +2,7 @@
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
 - جلسة 1: جمع روابط iframe (بالنقر)
-- جلسة 2: استخراج m3u8 من iframe URL مباشرة (بدون نقر)
+- جلسة 2: استخراج m3u8 باستخدام Selenium Wire + yt-dlp
 - TEST_MODE متوفر
 """
 
@@ -56,9 +56,10 @@ if not validate_env():
 
 def install_requirements():
     print("📦 Installing requirements...")
+    # إضافة selenium-wire
     reqs = [
         "yt-dlp>=2024.4.9",
-        "curl_cffi>=0.5.10",
+        "selenium-wire",
         "seleniumbase>=4.30.0",
         "beautifulsoup4>=4.12.0",
     ]
@@ -77,6 +78,8 @@ install_requirements()
 import yt_dlp
 from seleniumbase import SB
 from bs4 import BeautifulSoup
+from seleniumwire import webdriver as wire_driver  # ✅ استيراد selenium-wire
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 app = None
 if not TEST_MODE:
@@ -114,7 +117,7 @@ async def setup_telegram():
 
 
 # ============================================================
-#  استخراج السيرفرات من HTML
+#  استخراج السيرفرات من HTML (كما هو)
 # ============================================================
 def extract_servers_from_html(html):
     servers = []
@@ -130,12 +133,10 @@ def extract_servers_from_html(html):
                 servers.append({"id": g[2], "name": g[2], "video": g[0], "serverId": g[1]})
         if servers:
             break
-
     if not servers:
         pattern3 = re.compile(r'getServer2\([^,]+,\s*(\d+)\s*,\s*(\d+)\s*\)')
         for i, (video, sid) in enumerate(pattern3.findall(html)):
             servers.append({"id": f"s_{i}", "name": f"server_{i}", "video": video, "serverId": sid})
-
     for srv in servers:
         m = re.search(rf'id=["\']{re.escape(srv["id"])}["\'][^>]*>([^<]*)<', html)
         if m:
@@ -158,7 +159,114 @@ def extract_post_id_from_html(html):
 
 
 # ============================================================
-#  المرحلة 1: جمع روابط iframe عبر النقر
+#  ✅ دوال جديدة لاستخراج m3u8 باستخدام Selenium Wire
+# ============================================================
+
+def extract_m3u8_with_wire(iframe_url):
+    """
+    يفتح رابط iframe باستخدام Selenium Wire ويعترض طلبات الشبكة
+    لاستخراج أي رابط .m3u8 يتم تحميله.
+    """
+    print(f"   🎬 [Selenium Wire] فتح {iframe_url}")
+    
+    # إعدادات Chrome
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--autoplay-policy=no-user-gesture-required')
+    chrome_options.add_argument('--mute-audio')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    
+    # إعدادات Selenium Wire
+    wire_options = {
+        'disable_encoding': True,  # لتعطيل ضغط الاستجابة وتسجيل النص الأصلي
+        'request_storage_base_dir': '/tmp',  # مجلد مؤقت لتخزين الطلبات
+    }
+
+    driver = None
+    video_url = None
+    
+    try:
+        driver = wire_driver.Chrome(
+            options=chrome_options,
+            seleniumwire_options=wire_options
+        )
+        
+        driver.get(iframe_url)
+        
+        # انتظار تحميل المشغل (يمكن تعديل الوقت حسب سرعة الموقع)
+        print("      ⏳ انتظار تحميل الفيديو...")
+        time.sleep(15)  # وقت كافٍ لبدء تشغيل الفيديو واعتراض الطلبات
+        
+        # ✅ المرور على جميع الطلبات التي تم اعتراضها
+        for request in driver.requests:
+            if request.response:
+                # البحث عن m3u8 في رابط الطلب
+                if '.m3u8' in request.url:
+                    print(f"      ✅ تم اعتراض طلب m3u8: {request.url[:150]}")
+                    video_url = request.url
+                    break
+                
+                # أو البحث داخل نص الاستجابة (لمواقع تخفي الرابط في JSON)
+                try:
+                    body = request.response.body.decode('utf-8', errors='ignore')
+                    if '.m3u8' in body:
+                        import re
+                        m3u8_match = re.search(r'(https?://[^"\']+\.m3u8[^"\']*)', body)
+                        if m3u8_match:
+                            print(f"      ✅ تم العثور على m3u8 داخل الاستجابة: {m3u8_match.group(1)[:150]}")
+                            video_url = m3u8_match.group(1)
+                            break
+                except Exception:
+                    pass # نتجاهل الأخطاء في تحليل الاستجابة
+        
+        if not video_url:
+            print("      ❌ لم يتم اعتراض أي طلب m3u8.")
+            
+    except Exception as e:
+        print(f"      ❌ خطأ في Selenium Wire: {e}")
+    finally:
+        if driver:
+            driver.quit()
+    
+    return video_url
+
+
+# ============================================================
+#  دالة yt-dlp المحسّنة
+# ============================================================
+def try_ytdlp_extract(iframe_url):
+    """يحاول yt-dlp مع تفعيل impersonation."""
+    try:
+        # ✅ إضافة --extractor-args "generic:impersonate" بشكل صريح
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'format': 'best[height<=720]/best',
+            'extractor_args': {
+                'generic': ['impersonate']  # ✅ هذا هو الحل لـ Cloudflare
+            }
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(iframe_url, download=False)
+            if info:
+                if info.get('url'):
+                    return info['url']
+                if info.get('formats'):
+                    best = sorted(info['formats'], key=lambda f: f.get('height') or 0)[-1]
+                    if best.get('url'):
+                        return best['url']
+    except Exception as e:
+        print(f"   ⚠️ yt-dlp: {str(e)[:100]}")
+    return None
+
+
+# ============================================================
+#  Selenium Work (الجلسة 1: جمع الروابط)
 # ============================================================
 def collect_iframe_urls(episode_num, series_name):
     """
@@ -261,189 +369,109 @@ def collect_iframe_urls(episode_num, series_name):
 
 
 # ============================================================
-#  المرحلة 2: استخراج m3u8 من iframe URL (جلسة نظيفة)
+#  معالجة حلقة (باستخدام الطرق الجديدة)
 # ============================================================
-JS_EXTRACT_VIDEO = r"""
-(function() {
-    // 1. video element
-    try {
-        var v = document.querySelector('video');
-        if (v) {
-            if (v.src && v.src.startsWith('http')) return v.src;
-            if (v.currentSrc && v.currentSrc.startsWith('http')) return v.currentSrc;
-        }
-    } catch(e) {}
+async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
+    print(f"\n🎬 Episode {episode_num:02d}")
 
-    // 2. source elements
-    try {
-        var sources = document.querySelectorAll('source');
-        for (var i = 0; i < sources.length; i++) {
-            if (sources[i].src && sources[i].src.startsWith('http')) return sources[i].src;
-        }
-    } catch(e) {}
+    temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
+    final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
+    thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
 
-    // 3. jwplayer
-    try {
-        if (typeof jwplayer !== 'undefined') {
-            var p = jwplayer();
-            if (p && p.getPlaylistItem) {
-                var item = p.getPlaylistItem();
-                if (item && item.file) return item.file;
-                if (item && item.sources) {
-                    for (var j = 0; j < item.sources.length; j++) {
-                        if (item.sources[j].file) return item.sources[j].file;
-                    }
-                }
-            }
-        }
-    } catch(e) {}
+    try:
+        # ===== جلسة 1: جمع روابط iframe =====
+        print(f"\n{'='*60}")
+        print("📡 الجلسة 1: جمع روابط iframe")
+        print(f"{'='*60}")
 
-    // 4. videojs
-    try {
-        if (typeof videojs !== 'undefined') {
-            var players = videojs.getPlayers();
-            for (var key in players) {
-                try {
-                    var s = players[key].currentSrc();
-                    if (s) return s;
-                } catch(e) {}
-            }
-        }
-    } catch(e) {}
+        iframe_urls = await asyncio.to_thread(
+            collect_iframe_urls, episode_num, series_name
+        )
 
-    // 5. window globals
-    var globals = ['sources','videoUrl','video_url','file','hls','hlsUrl','m3u8','streamUrl','playlist'];
-    for (var gi = 0; gi < globals.length; gi++) {
-        try {
-            var val = window[globals[gi]];
-            if (typeof val === 'string' && val.startsWith('http')) return val;
-            if (Array.isArray(val) && val[0]) {
-                if (typeof val[0] === 'string') return val[0];
-                if (val[0].file) return val[0].file;
-                if (val[0].src) return val[0].src;
-            }
-        } catch(e) {}
-    }
+        if not iframe_urls:
+            return False, "لم نتمكن من جمع أي رابط iframe"
 
-    // 6. window.config
-    try {
-        if (window.config) {
-            if (window.config.sources && window.config.sources[0]) {
-                var s = window.config.sources[0];
-                if (typeof s === 'string') return s;
-                if (s.file) return s.file;
-                if (s.src) return s.src;
-            }
-            if (window.config.file) return window.config.file;
-        }
-    } catch(e) {}
+        print(f"\n📋 تم جمع {len(iframe_urls)} رابط iframe")
 
-    // 7. scripts
-    try {
-        var scripts = document.querySelectorAll('script');
-        for (var si = 0; si < scripts.length; si++) {
-            var txt = scripts[si].textContent || '';
-            var m = txt.match(/https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*/);
-            if (m) return m[0];
-            m = txt.match(/https?:\/\/[^"'\s\\]+\.mp4[^"'\s\\]*/);
-            if (m) return m[0];
-        }
-    } catch(e) {}
+        # ===== جلسة 2: استخراج m3u8 من كل رابط =====
+        video_url = None
+        selected_iframe = None
 
-    return null;
-})();
-"""
+        for i, item in enumerate(iframe_urls):
+            print(f"\n{'='*60}")
+            print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}: {item['url'][:100]}")
+            print(f"{'='*60}")
 
+            # ----- المحاولة 1: Selenium Wire (الأقوى) -----
+            print(f"   [1/2] Selenium Wire...")
+            v_url = await asyncio.to_thread(extract_m3u8_with_wire, item["url"])
+            if v_url:
+                video_url = v_url
+                selected_iframe = item["url"]
+                print(f"   ✅ نجح Selenium Wire")
+                break
 
-def extract_video_from_iframe_url(iframe_url):
-    """
-    جلسة Selenium نظيفة — تفتح iframe URL مباشرة (بدون نقر) وتستخرج m3u8.
-    """
-    print(f"   🎬 [الجلسة 2] فتح {iframe_url[:120]}")
+            # ----- المحاولة 2: yt-dlp (كخيار احتياطي) -----
+            print(f"   [2/2] yt-dlp...")
+            v_url = await asyncio.to_thread(try_ytdlp_extract, item["url"])
+            if v_url:
+                video_url = v_url
+                selected_iframe = item["url"]
+                print(f"   ✅ نجح yt-dlp")
+                break
 
-    with SB(
-        uc=True, xvfb=True, headless=False, incognito=True,
-        ad_block_on=True, disable_csp=True,
-        page_load_strategy="eager", locale_code="en",
-    ) as sb:
-        try:
-            sb.open(iframe_url)
+        if not video_url:
+            return False, "فشل استخراج m3u8 من جميع السيرفرات"
 
-            # انتظار تحميل المشغل
-            for _ in range(10):
-                time.sleep(2)
+        print(f"\n{'='*60}")
+        print(f"🎥 نجح الاستخراج!")
+        print(f"🔗 {video_url[:150]}")
+        print(f"📎 Referer: {selected_iframe}")
+        print(f"{'='*60}")
+
+        if SKIP_DOWNLOAD:
+            print("🧪 SKIP_DOWNLOAD")
+            return True, "استخراج فقط"
+
+        # ===== تنزيل =====
+        if not download_video(video_url, temp_file, referer=selected_iframe):
+            return False, "فشل التنزيل"
+
+        print(f"✅ تم التنزيل: {os.path.getsize(temp_file)/(1024*1024):.2f} MB")
+
+        # ===== ضغط =====
+        if not compress_to_144p(temp_file, final_file):
+            shutil.copy2(temp_file, final_file)
+
+        # ===== Thumbnail =====
+        create_thumbnail(final_file, thumb_file)
+
+        # ===== رفع =====
+        caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
+        success = await upload_video(
+            final_file, caption,
+            thumb_file if os.path.exists(thumb_file) else None,
+        )
+
+        # ===== تنظيف =====
+        if TEST_MODE and KEEP_VIDEO:
+            print(f"🧪 KEEP_VIDEO: {final_file}")
+        else:
+            for f in [temp_file, final_file, thumb_file]:
                 try:
-                    has_video = sb.driver.execute_script(
-                        "return document.querySelector('video') !== null;"
-                    )
-                    if has_video:
-                        break
+                    if os.path.exists(f):
+                        os.remove(f)
                 except Exception:
                     pass
 
-            time.sleep(4)
+        return success, "تم بنجاح" if success else "فشل الرفع"
 
-            # محاولات متعددة لاستخراج m3u8
-            for attempt in range(4):
-                try:
-                    src = sb.driver.execute_script(JS_EXTRACT_VIDEO)
-                    if src and src.startswith("http"):
-                        print(f"   ✅ m3u8: {src[:150]}")
-                        return src
-                except Exception as e:
-                    print(f"   ⚠️ JS {attempt+1}: {str(e)[:80]}")
-                time.sleep(3)
-
-            # Fallback: HTML regex
-            try:
-                html = sb.get_page_source()
-                m3u8s = re.findall(r'(https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*)', html)
-                if m3u8s:
-                    print(f"   ✅ HTML m3u8: {m3u8s[0][:150]}")
-                    return m3u8s[0]
-                mp4s = re.findall(r'(https?://[^"\'\s<>\\]+\.mp4[^"\'\s<>\\]*)', html)
-                if mp4s:
-                    print(f"   ✅ HTML mp4: {mp4s[0][:150]}")
-                    return mp4s[0]
-            except Exception:
-                pass
-
-            print(f"   ❌ لم يُعثر على فيديو")
-            return None
-
-        except Exception as e:
-            print(f"   ❌ جلسة 2: {str(e)[:120]}")
-            return None
-
-
-# ============================================================
-#  محاولة yt-dlp أولاً (سريع جداً إن نجح)
-# ============================================================
-def try_ytdlp_extract(iframe_url):
-    """يحاول yt-dlp على رابط iframe مباشرة."""
-    try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'format': 'best[height<=720]/best',
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(iframe_url, download=False)
-            if info:
-                if info.get('url'):
-                    return info['url']
-                if info.get('formats'):
-                    best = sorted(info['formats'], key=lambda f: f.get('height') or 0)[-1]
-                    if best.get('url'):
-                        return best['url']
     except Exception as e:
-        print(f"   ⚠️ yt-dlp: {str(e)[:100]}")
-    return None
+        return False, f"خطأ: {e}"
 
 
 # ============================================================
-#  تنزيل + ضغط + رفع
+#  دوال التنزيل والضغط والرفع (كما هي)
 # ============================================================
 def download_video(video_url, output_path, referer):
     try:
@@ -543,108 +571,6 @@ async def upload_video(file_path, caption, thumb_path=None):
     except Exception as e:
         print(f"❌ Upload error: {e}")
         return False
-
-
-# ============================================================
-#  معالجة حلقة
-# ============================================================
-async def process_episode(episode_num, series_name, series_name_arabic, season_num, download_dir):
-    print(f"\n🎬 Episode {episode_num:02d}")
-
-    temp_file = os.path.join(download_dir, f"temp_{episode_num:02d}.mp4")
-    final_file = os.path.join(download_dir, f"final_{episode_num:02d}.mp4")
-    thumb_file = os.path.join(download_dir, f"thumb_{episode_num:02d}.jpg")
-
-    try:
-        # ===== جلسة 1: جمع روابط iframe =====
-        print(f"\n{'='*60}")
-        print("📡 الجلسة 1: جمع روابط iframe")
-        print(f"{'='*60}")
-
-        iframe_urls = await asyncio.to_thread(
-            collect_iframe_urls, episode_num, series_name
-        )
-
-        if not iframe_urls:
-            return False, "لم نتمكن من جمع أي رابط iframe"
-
-        print(f"\n📋 تم جمع {len(iframe_urls)} رابط iframe")
-
-        # ===== جلسة 2: استخراج m3u8 من كل رابط =====
-        video_url = None
-        selected_iframe = None
-
-        for i, item in enumerate(iframe_urls):
-            print(f"\n{'='*60}")
-            print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}: {item['url'][:100]}")
-            print(f"{'='*60}")
-
-            # أولاً: jw-dlp (سريع)
-            print(f"   [1/2] yt-dlp...")
-            v_url = await asyncio.to_thread(try_ytdlp_extract, item["url"])
-            if v_url:
-                video_url = v_url
-                selected_iframe = item["url"]
-                print(f"   ✅ yt-dlp نجح")
-                break
-
-            # ثانياً: Selenium نظيف
-            print(f"   [2/2] Selenium نظيف...")
-            v_url = await asyncio.to_thread(extract_video_from_iframe_url, item["url"])
-            if v_url:
-                video_url = v_url
-                selected_iframe = item["url"]
-                print(f"   ✅ Selenium نجح")
-                break
-
-        if not video_url:
-            return False, "فشل استخراج m3u8 من جميع السيرفرات"
-
-        print(f"\n{'='*60}")
-        print(f"🎥 نجح الاستخراج!")
-        print(f"🔗 {video_url[:150]}")
-        print(f"📎 Referer: {selected_iframe}")
-        print(f"{'='*60}")
-
-        if SKIP_DOWNLOAD:
-            print("🧪 SKIP_DOWNLOAD")
-            return True, "استخراج فقط"
-
-        # ===== تنزيل =====
-        if not download_video(video_url, temp_file, referer=selected_iframe):
-            return False, "فشل التنزيل"
-
-        print(f"✅ تم التنزيل: {os.path.getsize(temp_file)/(1024*1024):.2f} MB")
-
-        # ===== ضغط =====
-        if not compress_to_144p(temp_file, final_file):
-            shutil.copy2(temp_file, final_file)
-
-        # ===== Thumbnail =====
-        create_thumbnail(final_file, thumb_file)
-
-        # ===== رفع =====
-        caption = f"{series_name_arabic} الموسم {season_num} الحلقة {episode_num}"
-        success = await upload_video(
-            final_file, caption,
-            thumb_file if os.path.exists(thumb_file) else None,
-        )
-
-        # ===== تنظيف =====
-        if TEST_MODE and KEEP_VIDEO:
-            print(f"🧪 KEEP_VIDEO: {final_file}")
-        else:
-            for f in [temp_file, final_file, thumb_file]:
-                try:
-                    if os.path.exists(f):
-                        os.remove(f)
-                except Exception:
-                    pass
-
-        return success, "تم بنجاح" if success else "فشل الرفع"
-
-    except Exception as e:
-        return False, f"خطأ: {e}"
 
 
 # ============================================================
