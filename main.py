@@ -2,7 +2,7 @@
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
 - الجلسة 1: جمع روابط iframe (بالنقر)
-- الجلسة 2: استخراج m3u8 باستخدام SeleniumBase CDP Mode
+- الجلسة 2: استخراج m3u8 باستخدام SeleniumBase CDP Mode + yt-dlp
 - TEST_MODE متوفر
 """
 
@@ -219,26 +219,37 @@ def extract_m3u8_with_cdp(iframe_url):
                 print("      ⏳ انتظار التحميل (10s)...", flush=True)
                 sb.cdp.sleep(10)
 
-                # ✅ محاولة النقر على زر التشغيل لتحفيز تحميل الفيديو
-                for selector in [
-                    "button.vjs-big-play-button",
-                    ".vjs-big-play-button",
-                    ".jw-icon-display",
-                    ".play-button",
-                    "video",
-                    "body",
-                ]:
+                # ✅ محاولة النقر على زر التشغيل لتحفيز تحميل الفيديو (نقر متكرر)
+                for _ in range(3):  # محاولة النقر 3 مرات
                     try:
-                        sb.cdp.click_if_visible(selector)
-                        print(f"      🖱️ نقر على: {selector}", flush=True)
-                        sb.cdp.sleep(3)
-                        break
+                        # محاولة النقر على الفيديو نفسه أو زر التشغيل
+                        sb.cdp.click_if_visible("video")
+                        print("      🖱️ نقر على: video", flush=True)
                     except Exception:
                         pass
+                    try:
+                        sb.cdp.click_if_visible("button.vjs-big-play-button")
+                        print("      🖱️ نقر على: vjs-big-play-button", flush=True)
+                    except Exception:
+                        pass
+                    sb.cdp.sleep(2)  # انتظار قصير بين النقرات
 
                 # انتظار إضافي لالتقاط الطلبات
                 print("      ⏳ انتظار إضافي (15s)...", flush=True)
                 sb.cdp.sleep(15)
+
+                # ✅ محاولة أخيرة: استخراج الرابط من DOM مباشرة
+                try:
+                    dom_m3u8 = sb.cdp.execute_script("""
+                        return Array.from(document.querySelectorAll('video, source'))
+                            .map(el => el.src || el.currentSrc || el.getAttribute('src'))
+                            .filter(src => src && src.includes('.m3u8'))[0] || null;
+                    """)
+                    if dom_m3u8:
+                        print(f"      ✅ m3u8 (DOM): {dom_m3u8[:130]}", flush=True)
+                        _log_to_file(dom_m3u8)
+                except Exception:
+                    pass
 
             except Exception as e:
                 print(f"      ❌ خطأ CDP Mode: {str(e)[:200]}", flush=True)
@@ -310,8 +321,8 @@ def try_ytdlp_extract(iframe_url):
             'no_warnings': True,
             'skip_download': True,
             'format': 'best[height<=720]/best',
-            'nocheckcertificate': True,
-            'extractor_args': {'generic': ['impersonate']}
+            'nocheckcertificate': True,  # تعطيل التحقق من SSL
+            'extractor_args': {'generic': ['impersonate']}  # تفعيل impersonation
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(iframe_url, download=False)
@@ -438,7 +449,7 @@ def download_video(video_url, output_path, referer):
             'retries': 5,
             'fragment_retries': 5,
             'socket_timeout': 30,
-            'nocheckcertificate': True,
+            'nocheckcertificate': True,  # تعطيل التحقق من SSL
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -448,7 +459,11 @@ def download_video(video_url, output_path, referer):
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        return os.path.exists(output_path)
+        # التحقق من حجم الملف
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
+            return True
+        print(f"   ⚠️ الملف صغير جداً أو غير موجود: {output_path}")
+        return False
     except Exception as e:
         print(f"❌ Download error: {e}")
         return False
@@ -564,22 +579,26 @@ async def process_episode(episode_num, series_name, series_name_arabic, season_n
             print(f"🎬 [{i+1}/{len(iframe_urls)}] {item['server']}: {item['url'][:100]}")
             print(f"{'='*60}")
 
-            # ----- المحاولة 1: SeleniumBase CDP Mode -----
-            print(f"   [1/2] SeleniumBase CDP Mode...")
+            # ----- المحاولة 1: yt-dlp (أسرع) -----
+            print(f"   [1/2] yt-dlp...")
+            v_url = await asyncio.to_thread(try_ytdlp_extract, item["url"])
+            if v_url:
+                # التحقق من أن الرابط ليس مجرد صفحة ويب
+                if not v_url.startswith("http") or ".m3u8" in v_url or ".mp4" in v_url:
+                    video_url = v_url
+                    selected_iframe = item["url"]
+                    print(f"   ✅ نجح yt-dlp")
+                    break
+                else:
+                    print(f"   ⚠️ yt-dlp أعاد رابط صفحة ويب، نتجاهله")
+
+            # ----- المحاولة 2: SeleniumBase CDP Mode -----
+            print(f"   [2/2] SeleniumBase CDP Mode...")
             v_url = await asyncio.to_thread(extract_m3u8_with_cdp, item["url"])
             if v_url:
                 video_url = v_url
                 selected_iframe = item["url"]
                 print(f"   ✅ نجح CDP Mode")
-                break
-
-            # ----- المحاولة 2: yt-dlp (احتياطي) -----
-            print(f"   [2/2] yt-dlp...")
-            v_url = await asyncio.to_thread(try_ytdlp_extract, item["url"])
-            if v_url:
-                video_url = v_url
-                selected_iframe = item["url"]
-                print(f"   ✅ نجح yt-dlp")
                 break
 
         if not video_url:
