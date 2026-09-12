@@ -26,12 +26,11 @@ SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1"
 MIN_VALID_SIZE = 100 * 1024
 MAX_RUNTIME_SECONDS = 2 * 3600 + 45 * 60
 WAIT_MIN, WAIT_MAX = 15, 30
-
-# ✅ إعدادات التنزيل الجديدة
-DOWNLOAD_TIMEOUT = 300       # 5 دقائق كحد أقصى للفيديو كاملاً
-FRAGMENT_RETRIES = 3         # بدل 10
-SOCKET_TIMEOUT = 10          # بدل 20
+DOWNLOAD_TIMEOUT = 240     # 4 دقائق لكل مرشح
+FRAGMENT_RETRIES = 3
+SOCKET_TIMEOUT = 15
 CONCURRENT_FRAGMENTS = 16
+MIN_VIDEO_DURATION = 60    # ثانية — أقل = تريلر، نُتخطاه
 
 SCRIPT_START = time.time()
 
@@ -148,9 +147,6 @@ def extract_servers(html):
     return servers
 
 
-# ============================================================
-#  تحقق
-# ============================================================
 def is_valid_video_url(url, source_url=None):
     if not url or not url.startswith("http"):
         return False
@@ -161,12 +157,11 @@ def is_valid_video_url(url, source_url=None):
 
 
 # ============================================================
-#  ✅ vinovo API عبر cookies من Selenium
+#  ✅ vinovo API بدون CDP Mode
 # ============================================================
 def try_vinovo_api(iframe_url):
     """
-    يستخدم Selenium لجلب الصفحة + cookies، ثم cffi لاستدعاء API.
-    يتجاوز Cloudflare لأن الكوكيز من جلسة حقيقية.
+    vinovo.to API — يستخدم UC Mode العادي (بدون CDP) لكي تعمل get_cookies()
     """
     if "vinovo.to" not in iframe_url:
         return None
@@ -178,19 +173,19 @@ def try_vinovo_api(iframe_url):
     base_url = iframe_url.split('/e/')[0]
     print(f"   🎯 [vinovo] filecode={file_code}")
 
-    # ✅ استخدام Selenium لجلب الكوكيز
     cookies_dict = {}
     token = None
+
     try:
+        # ✅ UC Mode العادي — لا CDP
         with SB(uc=True, xvfb=True, headless=False, incognito=True,
                 ad_block_on=True, disable_csp=True,
                 page_load_strategy="eager", locale_code="en") as sb:
-            sb.activate_cdp_mode()
-            sb.cdp.open(iframe_url)
-            sb.cdp.sleep(6)
+            sb.open(iframe_url)
+            sb.sleep(6)  # انتظار CF clearance
 
             try:
-                cookies_list = sb.driver.get_cookies()
+                cookies_list = sb.get_cookies()
                 for c in cookies_list:
                     cookies_dict[c["name"]] = c["value"]
                 print(f"   🍪 {len(cookies_dict)} كوكي")
@@ -202,8 +197,10 @@ def try_vinovo_api(iframe_url):
                 tm = re.search(r'name="token"\s+content="([^"]+)"', html)
                 if tm:
                     token = tm.group(1)
+                    print(f"   🔑 token: {token[:20]}...")
             except Exception:
                 pass
+
     except Exception as e:
         print(f"   ⚠️ Selenium: {str(e)[:100]}")
 
@@ -215,14 +212,18 @@ def try_vinovo_api(iframe_url):
             "Referer": iframe_url,
             "Origin": base_url,
             "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/plain, */*",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
         if token:
             headers["X-CSRF-TOKEN"] = token
 
         resp = cffi_requests.post(
-            api_url, json={"filecode": file_code, "device": "web"},
-            headers=headers, impersonate="chrome120", timeout=15,
+            api_url,
+            json={"filecode": file_code, "device": "web"},
+            headers=headers,
+            impersonate="chrome120",
+            timeout=15,
             cookies=cookies_dict,
         )
 
@@ -248,10 +249,10 @@ def try_vinovo_api(iframe_url):
 
 
 # ============================================================
-#  CDP Mode
+#  CDP Mode — كاشف التريلرات
 # ============================================================
 def extract_m3u8_cdp(iframe_url):
-    print(f"   🎬 [CDP] {iframe_url}", flush=True)
+    print(f"   🎬 [CDP] {iframe_url[:90]}", flush=True)
 
     lf = tempfile.mktemp(suffix="_m3u8.txt")
     with open(lf, "w") as f:
@@ -264,6 +265,8 @@ def extract_m3u8_cdp(iframe_url):
                 fh.flush()
         except Exception:
             pass
+
+    video_duration = 0
 
     try:
         with SB(uc=True, xvfb=True, headless=False, incognito=True,
@@ -279,14 +282,13 @@ def extract_m3u8_cdp(iframe_url):
                             u = e.request.url
                             _log(u)
                             if ".m3u8" in u:
-                                print(f"      ✅ {u[:120]}", flush=True)
+                                print(f"      ✅ {u[:110]}", flush=True)
                         except Exception:
                             pass
 
                     async def on_res(e):
                         try:
-                            u = e.response.url
-                            _log(u)
+                            _log(e.response.url)
                         except Exception:
                             pass
 
@@ -308,6 +310,26 @@ def extract_m3u8_cdp(iframe_url):
 
                 sb.cdp.sleep(8)
 
+                # ✅ كشف مدة الفيديو (لكشف التريلرات)
+                try:
+                    dur = sb.cdp.execute_script("""
+                        try {
+                            var v = document.querySelector('video');
+                            if (v && v.duration && isFinite(v.duration)) return v.duration;
+                            var meta = document.querySelector('meta[itemprop="duration"]');
+                            if (meta) return meta.content;
+                            return 0;
+                        } catch(e) { return 0; }
+                    """)
+                    if dur:
+                        try:
+                            video_duration = float(dur)
+                        except (ValueError, TypeError):
+                            pass
+                except Exception:
+                    pass
+
+                # محاولة استخراج m3u8 من DOM
                 try:
                     dom = sb.cdp.execute_script("""
                         return Array.from(document.querySelectorAll('video, source'))
@@ -335,9 +357,15 @@ def extract_m3u8_cdp(iframe_url):
     except Exception:
         pass
 
-    print(f"      📊 {len(urls)} رابط", flush=True)
+    print(f"      📊 {len(urls)} رابط | مدة: {video_duration:.0f}s", flush=True)
+
+    # ✅ إذا كانت المدة أقل من الحد الأدنى = تريلر
+    if 0 < video_duration < MIN_VIDEO_DURATION:
+        print(f"      ⏭️ تريلر قصير ({video_duration:.0f}s) — نتخطاه", flush=True)
+        return None, video_duration
+
     if not urls:
-        return None
+        return None, video_duration
 
     master = best_idx = any_m3u8 = None
     for u in urls:
@@ -351,15 +379,16 @@ def extract_m3u8_cdp(iframe_url):
         elif not any_m3u8:
             any_m3u8 = u
 
-    r = master or best_idx or any_m3u8
-    if r:
-        print(f"      🎯 {r[:120]}", flush=True)
-        return r
-    return None
+    result = master or best_idx or any_m3u8
+    if result:
+        print(f"      🎯 {result[:110]}", flush=True)
+        return result, video_duration
+
+    return None, video_duration
 
 
 # ============================================================
-#  yt-dlp
+#  yt-dlp (سريع للاكتشاف)
 # ============================================================
 def try_ytdlp(iframe_url):
     try:
@@ -381,7 +410,7 @@ def try_ytdlp(iframe_url):
                 if c and is_valid_video_url(c, iframe_url):
                     return c
     except Exception as e:
-        print(f"   ⚠️ yt-dlp: {str(e)[:100]}")
+        print(f"   ⚠️ yt-dlp: {str(e)[:90]}")
     return None
 
 
@@ -420,8 +449,7 @@ def collect_iframes(ep, series_name):
             if not servers:
                 return result
 
-            # ترتيب: vinovo أولاً
-            prio = {"vinovo": 0, "vidaraa": 1, "vidsonic": 2, "vids": 3, "v": 4}
+            prio = {"vinovo": 0, "vidaraa": 1, "vidsonic": 2, "luluvdo": 3, "vids": 4, "v": 5}
             servers.sort(key=lambda s: prio.get(s.get("name", "").lower(), 99))
 
             print(f"📦 {len(servers)} سيرفر:")
@@ -476,30 +504,15 @@ def collect_iframes(ep, series_name):
 
 
 # ============================================================
-#  ✅ التنزيل مع حد أقصى + كشف البطء
+#  ✅ التنزيل — yt-dlp + ffmpeg fallback
 # ============================================================
-def download_video(url, out_path, referer):
-    """
-    - retries: 3 (بدل 10)
-    - socket_timeout: 10s (بدل 20s)
-    - concurrent: 16
-    - deadline: DOWNLOAD_TIMEOUT لوقف العناء إذا السيرفر بطيء
-    """
-    deadline = time.time() + DOWNLOAD_TIMEOUT
-
-    class DeadlineExceeded(Exception):
-        pass
-
-    def _hook(d):
-        if time.time() > deadline:
-            raise DeadlineExceeded("download timeout")
-
+def download_ytdlp(url, out_path, referer, origin):
     try:
-        opts = {
+        ydl_opts = {
             'format': 'best[height<=720]/best',
             'outtmpl': out_path,
             'quiet': False,
-            'no_warnings': False,
+            'no_warnings': True,
             'retries': FRAGMENT_RETRIES,
             'fragment_retries': FRAGMENT_RETRIES,
             'socket_timeout': SOCKET_TIMEOUT,
@@ -507,15 +520,14 @@ def download_video(url, out_path, referer):
             'concurrent_fragment_downloads': CONCURRENT_FRAGMENTS,
             'http_chunk_size': 10485760,
             'buffersize': 1048576,
-            'progress_hooks': [_hook],
             'extractor_args': {'generic': 'impersonate'},
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': referer or 'https://u.3seq.com/',
-                'Origin': 'https://u.3seq.com',
+                'Referer': referer,
+                'Origin': origin,
             },
         }
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
         if not os.path.exists(out_path):
@@ -524,14 +536,74 @@ def download_video(url, out_path, referer):
         if size < MIN_VALID_SIZE:
             return False, f"صغير ({size}B)"
         return True, size
-    except DeadlineExceeded:
-        return False, "تجاوز المهلة الزمنية"
     except Exception as e:
         return False, str(e)[:150]
 
 
+def download_ffmpeg(m3u8_url, out_path, referer):
+    """
+    ✅ fallback عبر ffmpeg مع headers صحيحة.
+    يعمل مع m3u8 token-protected التي يرفضها yt-dlp.
+    """
+    headers = (
+        f"Referer: {referer}\r\n"
+        f"Origin: {referer.split('/e/')[0] if '/e/' in referer else referer}\r\n"
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+    )
+    cmd = [
+        'ffmpeg',
+        '-headers', headers,
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '-referer', referer,
+        '-i', m3u8_url,
+        '-c', 'copy',
+        '-bsf:a', 'aac_adtstoasc',
+        '-y', out_path,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT + 60)
+        if r.returncode != 0 or not os.path.exists(out_path):
+            # جرب بدون -bsf (لبعض m3u8)
+            cmd.remove('-bsf:a')
+            cmd.remove('aac_adtstoasc')
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT + 60)
+
+        if os.path.exists(out_path) and os.path.getsize(out_path) >= MIN_VALID_SIZE:
+            return True, os.path.getsize(out_path)
+        return False, f"ffmpeg code {r.returncode}"
+    except subprocess.TimeoutExpired:
+        return False, "ffmpeg timeout"
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def download_video(url, out_path, referer):
+    """
+    محاولة yt-dlp أولاً، ثم ffmpeg.
+    """
+    origin = referer.split('/e/')[0] if '/e/' in referer else referer
+
+    # 1) yt-dlp
+    ok, info = download_ytdlp(url, out_path, referer, origin)
+    if ok:
+        return True, info
+
+    print(f"   ⚠️ yt-dlp فشل ({info}) — تجربة ffmpeg...")
+
+    # 2) ffmpeg fallback
+    if os.path.exists(out_path):
+        try: os.remove(out_path)
+        except: pass
+
+    ok, info = download_ffmpeg(url, out_path, referer)
+    if ok:
+        return True, info
+
+    return False, f"yt-dlp+ffmpeg: {info}"
+
+
 # ============================================================
-#  ضغط (نفس الإعدادات)
+#  ضغط (نفس الإعدادات — veryfast + crf 28 + b:a 64k)
 # ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
@@ -550,7 +622,7 @@ def compress_144p(inp, out):
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         if r.returncode != 0 or not os.path.exists(out):
-            print(f"   ❌ {r.stderr[-200:]}")
+            print(f"   ❌ {r.stderr[-180:]}")
             return False
         om = os.path.getsize(out) / (1024*1024)
         print(f"   ✅ {im:.2f}→{om:.2f} MB في {time.time()-t0:.1f}s")
@@ -649,6 +721,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             print(f"{'='*60}")
 
             cands = []
+            skip_iframe = False
 
             # 1) vinovo API
             if "vinovo.to" in it["url"]:
@@ -665,9 +738,15 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
             # 3) CDP
             print(f"   [3/3] CDP...")
-            v = await asyncio.to_thread(extract_m3u8_cdp, it["url"])
+            v, dur = await asyncio.to_thread(extract_m3u8_cdp, it["url"])
+            if 0 < dur < MIN_VIDEO_DURATION:
+                skip_iframe = True
             if v:
                 cands.append(("CDP", v))
+
+            if skip_iframe and not cands:
+                print(f"   ⏭️ تريلر — نتخطاه")
+                continue
 
             if not cands:
                 print(f"   ❌ لا مرشحين")
@@ -686,7 +765,8 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     dloaded = info
                     success_if = it["url"]
                     method = src
-                    print(f"   ✅ ({src}) {info/(1024*1024):.2f} MB في {dt:.1f}s")
+                    speed = (info / (1024*1024)) / max(dt, 0.1)
+                    print(f"   ✅ ({src}) {info/(1024*1024):.2f} MB في {dt:.1f}s ≈ {speed:.1f} MB/s")
                     break
                 else:
                     print(f"   ❌ ({src}) {info}")
@@ -760,8 +840,9 @@ async def main():
     print("=" * 60)
     print("🎬 Video Downloader")
     if TEST_MODE: print("🧪 TEST_MODE")
-    print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"⬇️ Timeout للتنزيل: {DOWNLOAD_TIMEOUT}s | retries: {FRAGMENT_RETRIES}")
+    print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m | Timeout: {DOWNLOAD_TIMEOUT}s | retries: {FRAGMENT_RETRIES}")
+    print(f"⬇️ تحميل متوازي: {CONCURRENT_FRAGMENTS} fragment")
+    print(f"🚫 تخطي التريلرات < {MIN_VIDEO_DURATION}s")
     print("=" * 60)
 
     try:
