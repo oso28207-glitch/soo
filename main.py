@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-Final v3 — subprocess + stall detection + in-browser fetch for vinovo
+Final v4 — fixed cookies, consistent types, partial download acceptance
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -25,13 +25,13 @@ SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "false").lower() in ("true", "1", "y
 SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1", "yes")
 
 MIN_VALID_SIZE = 100 * 1024
+MIN_PARTIAL_SIZE = 5 * 1024 * 1024  # ✅ 5 MB — نقبل الملف الجزئي إن تجاوز هذا
 MAX_RUNTIME_SECONDS = 2 * 3600 + 45 * 60
 WAIT_MIN, WAIT_MAX = 15, 30
 
-# ✅ حدود جديدة
-DOWNLOAD_TIMEOUT = 240       # 4 دقائق كحد أقصى للتنزيل الكامل
-STALL_TIMEOUT = 35           # إن لم يزد حجم الملف خلال 35s → اقتل
-MIN_VIDEO_DURATION = 60      # تخطي التريلرات
+DOWNLOAD_TIMEOUT = 240
+STALL_TIMEOUT = 35
+MIN_VIDEO_DURATION = 60
 
 SCRIPT_START = time.time()
 
@@ -119,6 +119,47 @@ async def setup_telegram():
 
 
 # ============================================================
+#  ✅ استخراج Cookies بطريقة موثوقة
+# ============================================================
+def get_cookies_safe(sb):
+    """يحاول عدة طرق لاستخراج cookies."""
+    cookies_dict = {}
+
+    # 1) driver.get_cookies() (يعمل في UC Mode العادي)
+    try:
+        for c in sb.driver.get_cookies():
+            n = c.get("name", "")
+            if n:
+                cookies_dict[n] = c.get("value", "")
+    except Exception:
+        pass
+
+    # 2) CDP Network.getAllCookies (يعمل في CDP Mode)
+    if not cookies_dict:
+        try:
+            result = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+            for c in result.get("cookies", []):
+                n = c.get("name", "")
+                if n:
+                    cookies_dict[n] = c.get("value", "")
+        except Exception:
+            pass
+
+    # 3) CDP Network.getCookies (بدون "All")
+    if not cookies_dict:
+        try:
+            result = sb.driver.execute_cdp_cmd("Network.getCookies", {})
+            for c in result.get("cookies", []):
+                n = c.get("name", "")
+                if n:
+                    cookies_dict[n] = c.get("value", "")
+        except Exception:
+            pass
+
+    return cookies_dict
+
+
+# ============================================================
 #  استخراج السيرفرات
 # ============================================================
 def extract_servers(html):
@@ -158,12 +199,9 @@ def is_valid_video_url(url, source_url=None):
 
 
 # ============================================================
-#  ✅ vinovo — fetch داخل المتصفح (أفضل طريقة)
+#  vinovo — fetch داخل المتصفح
 # ============================================================
 def try_vinovo_browser_fetch(iframe_url):
-    """
-    استدعاء /api/stream من داخل المتصفح (fetch) — cookies + CF clearance تلقائية.
-    """
     if "vinovo.to" not in iframe_url:
         return None
 
@@ -183,7 +221,6 @@ def try_vinovo_browser_fetch(iframe_url):
                 sb.cdp.open(iframe_url)
                 sb.cdp.sleep(7)
 
-                # ✅ استدعاء API من داخل المتصفح
                 fetch_js = f"""
                 (async () => {{
                     try {{
@@ -209,13 +246,13 @@ def try_vinovo_browser_fetch(iframe_url):
                     result = None
 
                 if result:
-                    print(f"      📊 استجابة: {str(result)[:150]}", flush=True)
-                    if isinstance(result, str) and result.startswith("HTTP_"):
-                        print(f"      ⚠️ {result}", flush=True)
-                    elif isinstance(result, str) and result.startswith("ERROR"):
-                        print(f"      ⚠️ {result[:100]}", flush=True)
+                    s = str(result)
+                    print(f"      📊 استجابة: {s[:150]}", flush=True)
+                    if s.startswith("HTTP_"):
+                        print(f"      ⚠️ {s}", flush=True)
+                    elif s.startswith("ERROR"):
+                        print(f"      ⚠️ {s[:100]}", flush=True)
                     else:
-                        # JSON
                         try:
                             j = json.loads(result) if isinstance(result, str) else result
                             su = j.get("streaming_url") or j.get("url") or j.get("file")
@@ -223,15 +260,12 @@ def try_vinovo_browser_fetch(iframe_url):
                                 print(f"      ✅ [vinovo] {su[:120]}", flush=True)
                                 return su
                         except Exception:
-                            # قد يكون نص
-                            mm = re.search(r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', str(result))
+                            mm = re.search(r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', s)
                             if mm:
                                 print(f"      ✅ [vinovo regex] {mm.group(1)[:120]}", flush=True)
                                 return mm.group(1)
-
             except Exception as e:
                 print(f"      ❌ {str(e)[:120]}", flush=True)
-
     except Exception as e:
         print(f"      ❌ {str(e)[:120]}", flush=True)
 
@@ -239,7 +273,7 @@ def try_vinovo_browser_fetch(iframe_url):
 
 
 # ============================================================
-#  CDP — استخراج m3u8 + cookies
+#  CDP — استخراج m3u8 + cookies (بالإصلاح)
 # ============================================================
 def extract_m3u8_cdp(iframe_url):
     print(f"   🎬 [CDP] {iframe_url[:90]}", flush=True)
@@ -301,16 +335,11 @@ def extract_m3u8_cdp(iframe_url):
 
                 sb.cdp.sleep(8)
 
-                # ✅ استخراج cookies
-                try:
-                    cl = sb.cdp.get_cookies()
-                    for c in cl:
-                        cookies_dict[c.get("name", "")] = c.get("value", "")
-                    print(f"      🍪 {len(cookies_dict)} كوكي", flush=True)
-                except Exception as e:
-                    print(f"      ⚠️ cookies: {str(e)[:80]}", flush=True)
+                # ✅ استخراج cookies بالطريقة الصحيحة
+                cookies_dict = get_cookies_safe(sb)
+                print(f"      🍪 {len(cookies_dict)} كوكي", flush=True)
 
-                # مدة
+                # مدة الفيديو
                 try:
                     dur = sb.cdp.execute_script("""
                         try {
@@ -328,7 +357,6 @@ def extract_m3u8_cdp(iframe_url):
                 except Exception:
                     pass
 
-                # DOM
                 try:
                     dom = sb.cdp.execute_script("""
                         return Array.from(document.querySelectorAll('video, source'))
@@ -444,7 +472,6 @@ def collect_iframes(ep, series_name):
             if not servers:
                 return result
 
-            # ✅ luluvdo أولاً (الأكثر استقراراً)، ثم vinovo (fetch جديد)
             prio = {"luluvdo": 0, "vinovo": 1, "vidaraa": 2, "vids": 3, "vidsonic": 4, "v": 5}
             servers.sort(key=lambda s: prio.get(s.get("name", "").lower(), 99))
 
@@ -500,13 +527,12 @@ def collect_iframes(ep, series_name):
 
 
 # ============================================================
-#  ✅ subprocess مع stall detection
+#  ✅ subprocess مع stall detection (نوع إرجاع موحّد)
 # ============================================================
 def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="proc"):
     """
-    تشغيل process مع مراقبة حجم الملف.
-    - يقتل عند انتهاء total_timeout
-    - يقتل عند توقف النمو لأكثر من stall_timeout
+    ✅ الإرجاع موحّد: (bool, int_size_on_success | str_error_on_failure)
+    عند stall: نقبل الملف الجزئي إذا تجاوز MIN_PARTIAL_SIZE.
     """
     try:
         proc = subprocess.Popen(
@@ -530,7 +556,6 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
             time.sleep(2)
             now = time.time()
 
-            # حجم الملف الحالي
             size = 0
             if os.path.exists(out_path):
                 try:
@@ -543,7 +568,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                 if size > best_size:
                     best_size = size
 
-            # فحص المهلة الكلية
+            # total timeout
             if now - start > total_timeout:
                 print(f"      ⏰ {tag}: total timeout ({total_timeout}s)", flush=True)
                 try:
@@ -551,9 +576,12 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                     proc.wait(timeout=5)
                 except Exception:
                     pass
-                return (best_size >= MIN_VALID_SIZE), f"total timeout, size={best_size}"
+                # ✅ نوع موحّد
+                if best_size >= MIN_PARTIAL_SIZE:
+                    return True, best_size
+                return False, f"total timeout, size={best_size}"
 
-            # فحص التوقف
+            # stall
             if now - last_change > stall_timeout and size > 0:
                 print(f"      🛑 {tag}: stalled at {size/(1024*1024):.2f} MB", flush=True)
                 try:
@@ -561,7 +589,11 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                     proc.wait(timeout=5)
                 except Exception:
                     pass
-                return (best_size >= MIN_VALID_SIZE), f"stalled, size={best_size}"
+                # ✅ نوع موحّد — نقبل الملف الجزئي إن تجاوز الحد
+                if best_size >= MIN_PARTIAL_SIZE:
+                    print(f"      ♻️ {tag}: نقبل الملف الجزئي ({best_size/(1024*1024):.2f} MB)", flush=True)
+                    return True, best_size
+                return False, f"stalled, size={best_size}"
 
     except Exception as e:
         try:
@@ -570,15 +602,17 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
             pass
         return False, f"monitor error: {e}"
 
-    # العملية انتهت بنفسها
+    # انتهت بنفسها
     size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
     if size >= MIN_VALID_SIZE:
+        return True, size
+    if size >= MIN_PARTIAL_SIZE:
+        # حتى لو انتهت بخطأ لكن الملف كبير
         return True, size
     return False, f"exited with size={size}"
 
 
 def run_ytdlp_subprocess(url, out_path, referer, cookies_dict=None):
-    """yt-dlp كـ subprocess مع stall detection + cookies."""
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
 
     cmd = [
@@ -599,9 +633,8 @@ def run_ytdlp_subprocess(url, out_path, referer, cookies_dict=None):
         '--add-header', f'Origin:{origin}',
     ]
 
-    # ✅ إضافة cookies
     if cookies_dict:
-        cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items() if k])
+        cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items() if k and v])
         if cookie_str:
             cmd += ['--add-header', f'Cookie:{cookie_str}']
 
@@ -611,12 +644,11 @@ def run_ytdlp_subprocess(url, out_path, referer, cookies_dict=None):
 
 
 def run_ffmpeg_subprocess(m3u8_url, out_path, referer, cookies_dict=None):
-    """ffmpeg مع stall detection + cookies."""
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
 
     cookie_str = ""
     if cookies_dict:
-        cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items() if k])
+        cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items() if k and v])
 
     headers = f"Referer: {referer}\r\nOrigin: {origin}\r\n"
     if cookie_str:
@@ -627,6 +659,7 @@ def run_ffmpeg_subprocess(m3u8_url, out_path, referer, cookies_dict=None):
         'ffmpeg',
         '-headers', headers,
         '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '3',
@@ -641,14 +674,12 @@ def run_ffmpeg_subprocess(m3u8_url, out_path, referer, cookies_dict=None):
 
 def download_video(url, out_path, referer, cookies_dict=None):
     """
-    1) yt-dlp subprocess
-    2) ffmpeg subprocess (للـ m3u8)
-    كلاهما مع stall detection.
+    ✅ الإرجاع موحّد: (bool, int_size | str_error)
     """
     # 1) yt-dlp
     ok, info = run_ytdlp_subprocess(url, out_path, referer, cookies_dict)
     if ok:
-        return True, info
+        return True, info  # info = int
 
     print(f"   ⚠️ yt-dlp: {info}", flush=True)
 
@@ -667,7 +698,7 @@ def download_video(url, out_path, referer, cookies_dict=None):
 
 
 # ============================================================
-#  ضغط (veryfast + crf 28 + b:a 64k — بدون تغيير)
+#  ضغط (بدون تغيير)
 # ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
@@ -784,7 +815,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             print(f"🎬 [{i+1}/{len(iframes)}] {it['server']}")
             print(f"{'='*60}")
 
-            cands = []  # [(method, url, cookies)]
+            cands = []
             skip_iframe = False
 
             # 1) vinovo — browser fetch
@@ -827,13 +858,20 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 )
                 dt = time.time() - t0
 
-                if ok:
-                    dloaded = info
+                # ✅ فحص نوع info قبل أي عملية حسابية
+                if ok and isinstance(info, (int, float)):
+                    dloaded = int(info)
                     success_if = it["url"]
                     method = src
-                    speed = (info / (1024*1024)) / max(dt, 0.1)
-                    print(f"   ✅ ({src}) {info/(1024*1024):.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
+                    speed = (dloaded / (1024*1024)) / max(dt, 0.1)
+                    print(f"   ✅ ({src}) {dloaded/(1024*1024):.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
                     break
+                elif ok and not isinstance(info, (int, float)):
+                    # حالة نادرة — نعتبرها فشل
+                    print(f"   ⚠️ ({src}) نجاح بدون حجم صالح: {info}")
+                    if os.path.exists(tmp):
+                        try: os.remove(tmp)
+                        except: pass
                 else:
                     print(f"   ❌ ({src}) {info} في {dt:.1f}s")
                     if os.path.exists(tmp):
@@ -904,10 +942,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v3")
+    print("🎬 Video Downloader v4")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m | Total: {DOWNLOAD_TIMEOUT}s | Stall: {STALL_TIMEOUT}s")
-    print(f"⬇️ subprocess + stall detection + cookies")
+    print(f"⬇️ subprocess + stall detection + cookies + partial accept")
     print("=" * 60)
 
     try:
