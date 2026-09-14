@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.9 — Fix: accept single/active server iframe (no change detection fail)
+v16.0 — Fix: CDP cookie API + performance.getEntries m3u8 fallback + iframe yt-dlp fallback
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -149,14 +149,25 @@ async def setup_telegram():
 
 def get_cookies_safe(sb):
     cookies_dict = {}
+    # ✅ CDP Mode API الصحيح
     try:
-        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
-        for c in r.get("cookies", []):
-            n, v = c.get("name", ""), c.get("value", "")
+        cdp_cookies = sb.cdp.get_all_cookies()
+        for c in cdp_cookies:
+            n = c.get("name", "")
+            v = c.get("value", "")
             if n and v:
                 cookies_dict[n] = v
     except Exception:
         pass
+    if not cookies_dict:
+        try:
+            r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+            for c in r.get("cookies", []):
+                n, v = c.get("name", ""), c.get("value", "")
+                if n and v:
+                    cookies_dict[n] = v
+        except Exception:
+            pass
     if not cookies_dict:
         try:
             for c in sb.driver.get_cookies():
@@ -169,18 +180,19 @@ def get_cookies_safe(sb):
 
 
 def get_cookies_full(sb):
-    cookies = []
     try:
-        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
-        cookies = r.get("cookies", [])
+        return sb.cdp.get_all_cookies()
     except Exception:
         pass
-    if not cookies:
-        try:
-            cookies = sb.driver.get_cookies()
-        except Exception:
-            pass
-    return cookies
+    try:
+        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+        return r.get("cookies", [])
+    except Exception:
+        pass
+    try:
+        return sb.driver.get_cookies()
+    except Exception:
+        return []
 
 
 def save_cookies_netscape(cookies_list, path):
@@ -388,24 +400,6 @@ def try_vinovo_via_cdp(sb, iframe_url):
     return None
 
 
-def try_vinovo_browser_fetch(iframe_url):
-    if "vinovo.to" not in iframe_url:
-        return None
-    try:
-        with SB(uc=True, xvfb=True, headless=False, incognito=True,
-                ad_block_on=True, disable_csp=True,
-                page_load_strategy="eager", locale_code="en") as sb:
-            try:
-                sb.activate_cdp_mode()
-                sb.cdp.open(iframe_url)
-                sb.cdp.sleep(7)
-                return try_vinovo_via_cdp(sb, iframe_url)
-            except Exception:
-                return None
-    except Exception:
-        return None
-
-
 # ============================================================
 #  JS fetch helpers
 # ============================================================
@@ -507,6 +501,32 @@ def _js_fetch_batch_b64(sb, urls, timeout=120):
                 return res
             return {}
     return {}
+
+
+def _extract_m3u8_from_perf(sb):
+    """✅ جديد: يستخرج روابط m3u8 من performance.getEntries() حتى لو فاتها الـ handler"""
+    urls_found = []
+    try:
+        urls = sb.cdp.execute_script("""
+            try {
+                return performance.getEntriesByType('resource')
+                    .map(e => e.name)
+                    .filter(u => u.includes('.m3u8') || u.includes('/hls/')
+                              || u.includes('master') || u.includes('playlist'));
+            } catch(e) { return []; }
+        """)
+        if urls and isinstance(urls, list):
+            urls_found = [u for u in urls if u]
+    except Exception:
+        pass
+    if not urls_found:
+        try:
+            html = sb.get_page_source()
+            found = re.findall(r'(https?://[^"\'\s<>]+\.m3u8[^"\'\s<>]*)', html)
+            urls_found = list(dict.fromkeys(found))
+        except Exception:
+            pass
+    return urls_found
 
 
 def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
@@ -676,14 +696,17 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
 
                 sb.cdp.open(iframe_url)
                 sb.cdp.sleep(6)
-                for _ in range(3):
-                    for sel in ["video", "button.vjs-big-play-button", ".jw-icon-display"]:
+                # ✅ زيادة محاولات التفاعل مع الفيديو
+                for _ in range(5):
+                    for sel in ["video", "button.vjs-big-play-button",
+                                ".jw-icon-display", ".plyr__control--overlaid",
+                                "[class*='play']", "button[aria-label*='play']"]:
                         try:
                             sb.cdp.click_if_visible(sel)
                         except Exception:
                             pass
-                    sb.cdp.sleep(2)
-                sb.cdp.sleep(8)
+                    sb.cdp.sleep(3)
+                sb.cdp.sleep(10)
 
                 cookies_dict = get_cookies_safe(sb)
                 cookies_full = get_cookies_full(sb)
@@ -729,6 +752,15 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                 others = [u for u in all_m3u8 if u not in master and u not in index_files]
                 m3u8_urls = master + index_files + others
 
+                # ✅ NEW: إذا لم نجد m3u8 من الـ handler، جرّب performance API
+                if not m3u8_urls:
+                    perf_urls = _extract_m3u8_from_perf(sb)
+                    if perf_urls:
+                        print(f"      🔎 performance API → {len(perf_urls)} رابط m3u8", flush=True)
+                        for u in perf_urls:
+                            print(f"         → {u[:110]}", flush=True)
+                        m3u8_urls = perf_urls
+
                 print(f"      📊 {len(urls)} رابط | مدة: {video_duration:.0f}s | 🍪 {len(cookies_dict)}", flush=True)
 
                 if m3u8_urls:
@@ -742,6 +774,10 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                     download_result = _browser_download_hls(
                         sb, m3u8_urls, out_path, expected_dur
                     )
+                else:
+                    # ✅ NEW: fallback إلى رابط الـ iframe نفسه
+                    print(f"      ⚠️ لا m3u8 — استخدام رابط الـ iframe كـ fallback", flush=True)
+                    m3u8_urls = [iframe_url]
             except Exception as e:
                 print(f"      ❌ {str(e)[:150]}", flush=True)
     except Exception as e:
@@ -1265,14 +1301,12 @@ def collect_iframes(ep, series_name):
             for i, srv in enumerate(servers):
                 print(f"\n🔄 [{i+1}/{len(servers)}] {srv['name']}")
                 try:
-                    # ── التقاط الـ iframe الحالي ──
                     old = None
                     try:
                         old = sb.find_element(".watch iframe").get_attribute("src")
                     except Exception:
                         pass
 
-                    # ── هل السيرفر نشط مسبقاً؟ ──
                     is_active = False
                     try:
                         cls = sb.find_element(f"#{srv['id']}").get_attribute("class") or ""
@@ -1280,7 +1314,6 @@ def collect_iframes(ep, series_name):
                     except Exception:
                         pass
 
-                    # ── محاولة الضغط ──
                     clicked = False
                     for m in ["uc_click", "js_click", "click"]:
                         try:
@@ -1290,7 +1323,6 @@ def collect_iframes(ep, series_name):
                         except Exception:
                             pass
 
-                    # ── انتظار تغيّر iframe (إن وُجد) ──
                     new = None
                     for _ in range(10):
                         time.sleep(1)
@@ -1301,27 +1333,17 @@ def collect_iframes(ep, series_name):
                         except Exception:
                             pass
 
-                    # ── منطق القبول v15.9 ──
-                    # نستخدم old إن لم نجد new
                     if not new:
                         new = old
-
-                    # تجاهل الفراغ/blank
                     if not new or "about:blank" in new:
-                        # إذا كان سيرفر نشط مسبقاً ولم نتمكن من قراءة iframe
                         if is_active and not clicked:
                             print(f"   ⚠️ تعذّر قراءة iframe")
                             continue
                         print(f"   ⚠️ iframe فارغ")
                         continue
 
-                    # تنظيف HTML entities
                     new = new.replace("&amp;", "&")
 
-                    # إذا لم يتغيّر الـ iframe:
-                    #   - اقبله إن كان السيرفر نشط مسبقاً (سيرفر وحيد أو أول)
-                    #   - اقبله إن كان هناك سيرفر واحد فقط
-                    #   - ارفضه فقط إن كان هناك عدة سيرفرات ولم يكن نشطاً
                     if new == old:
                         if is_active or len(servers) == 1:
                             print(f"   ✅ (نشط مسبقاً) {new[:90]}")
@@ -1330,7 +1352,6 @@ def collect_iframes(ep, series_name):
                             print(f"   ⚠️ iframe لم يتغير — تخطي")
                         continue
 
-                    # iframe تغيّر → قبول مباشر
                     print(f"   ✅ {new[:90]}")
                     result.append({"server": srv["name"], "url": new})
                 except Exception as e:
@@ -1587,7 +1608,12 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         print(f"   ⚠️ نقل: {e}")
             else:
                 print(f"   ❌ Browser HLS فشل — fallback")
-                for url_idx, url in enumerate(m3u8_urls[:3] if m3u8_urls else []):
+                # ✅ NEW: استخدم iframe_url إذا لم توجد m3u8
+                fallback_urls = list(m3u8_urls) if m3u8_urls else []
+                if not fallback_urls:
+                    fallback_urls = [iframes_url]
+
+                for url_idx, url in enumerate(fallback_urls[:3]):
                     if exceeded() or success_if:
                         break
                     if url_idx > 0:
@@ -1785,10 +1811,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.9")
+    print("🎬 Video Downloader v16.0")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Same-origin browser HLS (ننتقل إلى CDN قبل fetch)")
+    print(f"🌐 Same-origin browser HLS + performance API + iframe fallback")
     print(f"📦 batch={BROWSER_FETCH_BATCH}")
     print("=" * 60)
 
