@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v16.0 — Fix: CDP cookie API + performance.getEntries m3u8 fallback + iframe yt-dlp fallback
+v16.1 — Fix: disable ad-blocker, JW Player API extraction, HTML detection
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -34,6 +34,7 @@ MAX_RUNTIME_SECONDS = 165 * 60
 WAIT_MIN, WAIT_MAX = 10, 20
 
 YTDLP_TIMEOUT = 1800
+YTDLP_TIMEOUT_IFRAME = 150   # ✅ مهلة قصيرة عند fallback إلى iframe
 FFMPEG_TIMEOUT = 1800
 STALL_TIMEOUT = 60
 FILE_CREATE_TIMEOUT = 30
@@ -45,6 +46,9 @@ RESUME_NO_PROGRESS_LIMIT = 3
 MIN_ACCEPTABLE_SPEED = 300 * 1024
 SPEED_CHECK_INTERVAL = 20
 SPEED_GRACE_PERIOD = 30
+
+HTML_SNIFF_SECONDS = 40      # ✅ انتظر 40s قبل فحص HTML
+HTML_SNIFF_MAX_SIZE = 3 * 1024 * 1024
 
 DURATION_ACCEPT_RATIO = 0.95
 CONSENSUS_TOLERANCE = 30
@@ -149,7 +153,6 @@ async def setup_telegram():
 
 def get_cookies_safe(sb):
     cookies_dict = {}
-    # ✅ CDP Mode API الصحيح
     try:
         cdp_cookies = sb.cdp.get_all_cookies()
         for c in cdp_cookies:
@@ -354,52 +357,6 @@ def is_valid_video_url(url, source_url=None):
     return any(x in ul for x in [".m3u8", ".mp4", ".ts", "/hls/", "/master", "/playlist"])
 
 
-def try_vinovo_via_cdp(sb, iframe_url):
-    if "vinovo.to" not in iframe_url:
-        return None
-    m = re.search(r'/e/([A-Za-z0-9]+)', iframe_url)
-    if not m:
-        return None
-    file_code = m.group(1)
-    base_url = iframe_url.split('/e/')[0]
-    cookies_dict = get_cookies_safe(sb)
-    token = None
-    try:
-        html = sb.get_page_source()
-        tm = re.search(r'name="token"\s+content="([^"]+)"', html)
-        if tm:
-            token = tm.group(1)
-    except Exception:
-        pass
-    headers = {
-        "Content-Type": "application/json",
-        "Referer": iframe_url, "Origin": base_url,
-        "X-Requested-With": "XMLHttpRequest",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
-    if token:
-        headers["X-CSRF-TOKEN"] = token
-    try:
-        resp = cffi_requests.post(f"{base_url}/api/stream",
-            json={"filecode": file_code, "device": "web"},
-            headers=headers, cookies=cookies_dict,
-            impersonate="chrome120", timeout=20)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-                su = data.get("streaming_url") or data.get("url") or data.get("file")
-                if su:
-                    return su
-            except Exception:
-                pass
-            mm = re.search(r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', resp.text)
-            if mm:
-                return mm.group(1)
-    except Exception:
-        pass
-    return None
-
-
 # ============================================================
 #  JS fetch helpers
 # ============================================================
@@ -504,7 +461,7 @@ def _js_fetch_batch_b64(sb, urls, timeout=120):
 
 
 def _extract_m3u8_from_perf(sb):
-    """✅ جديد: يستخرج روابط m3u8 من performance.getEntries() حتى لو فاتها الـ handler"""
+    """استخراج m3u8 من performance.getEntries()"""
     urls_found = []
     try:
         urls = sb.cdp.execute_script("""
@@ -527,6 +484,88 @@ def _extract_m3u8_from_perf(sb):
         except Exception:
             pass
     return urls_found
+
+
+def _extract_m3u8_from_jwplayer(sb):
+    """✅ NEW v16.1: استخراج m3u8 من JW Player 8 config — الأكثر موثوقية"""
+    for js in [
+        # getPlaylist
+        """try {
+            if (typeof jwplayer === 'undefined') return null;
+            var p = jwplayer();
+            if (!p) return null;
+            var pl = p.getPlaylist ? p.getPlaylist() : null;
+            if (pl && pl[0] && pl[0].sources) {
+                for (var i=0;i<pl[0].sources.length;i++) {
+                    var f = pl[0].sources[i].file;
+                    if (f && f.indexOf('m3u8')>=0) return f;
+                }
+                for (var i=0;i<pl[0].sources.length;i++) {
+                    if (pl[0].sources[i].file) return pl[0].sources[i].file;
+                }
+            }
+            return null;
+        } catch(e) { return null; }""",
+        # getConfig
+        """try {
+            if (typeof jwplayer === 'undefined') return null;
+            var p = jwplayer();
+            if (!p || !p.getConfig) return null;
+            var cfg = p.getConfig();
+            if (cfg && cfg.playlist && cfg.playlist[0]) {
+                var s = cfg.playlist[0].sources || [];
+                for (var i=0;i<s.length;i++) {
+                    if (s[i].file && s[i].file.indexOf('m3u8')>=0) return s[i].file;
+                }
+                for (var i=0;i<s.length;i++) {
+                    if (s[i].file) return s[i].file;
+                }
+            }
+            if (cfg && cfg.sources) {
+                for (var i=0;i<cfg.sources.length;i++) {
+                    if (cfg.sources[i].file && cfg.sources[i].file.indexOf('m3u8')>=0) return cfg.sources[i].file;
+                }
+            }
+            return null;
+        } catch(e) { return null; }""",
+        # متغيرات عامة
+        """try {
+            var cands = [window.playlist, window.videoUrl, window.hlsUrl,
+                        window.__PLAYLIST__, window.__VIDEO_URL__,
+                        window.streamUrl, window.fileUrl, window.source,
+                        window.m3u8, window.m3u8Url];
+            for (var i=0;i<cands.length;i++) {
+                var c = cands[i];
+                if (typeof c === 'string' && c.indexOf('m3u8')>=0) return c;
+                if (c && c.file && String(c.file).indexOf('m3u8')>=0) return c.file;
+                if (c && c.src && String(c.src).indexOf('m3u8')>=0) return c.src;
+                if (Array.isArray(c)) {
+                    for (var j=0;j<c.length;j++) {
+                        if (c[j] && c[j].file && String(c[j].file).indexOf('m3u8')>=0) return c[j].file;
+                    }
+                }
+            }
+            return null;
+        } catch(e) { return null; }""",
+        # video element src
+        """try {
+            var v = document.querySelector('video');
+            if (v) {
+                var s = v.src || v.currentSrc;
+                if (s && s.indexOf('m3u8')>=0) return s;
+            }
+            var src = document.querySelector('video source');
+            if (src && src.src && src.src.indexOf('m3u8')>=0) return src.src;
+            return null;
+        } catch(e) { return null; }""",
+    ]:
+        try:
+            u = sb.cdp.execute_script(js)
+            if u and isinstance(u, str) and 'http' in u and 'm3u8' in u.lower():
+                return u
+        except Exception:
+            pass
+    return None
 
 
 def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
@@ -673,8 +712,10 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
     download_result = None
 
     try:
+        # ✅ v16.1: ad_block_on=False (كان يحجب cdn-vids.xyz)
         with SB(uc=True, xvfb=True, headless=False, incognito=True,
-                ad_block_on=True, disable_csp=True,
+                ad_block_on=False,
+                disable_csp=True,
                 page_load_strategy="eager", locale_code="en") as sb:
             try:
                 sb.activate_cdp_mode()
@@ -695,44 +736,64 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                     pass
 
                 sb.cdp.open(iframe_url)
-                sb.cdp.sleep(6)
-                # ✅ زيادة محاولات التفاعل مع الفيديو
-                for _ in range(5):
+                sb.cdp.sleep(8)
+
+                # ✅ v16.1: 6 دورات + محددات JW + تشغيل برمجي
+                for cycle in range(6):
                     for sel in ["video", "button.vjs-big-play-button",
+                                ".jw-icon-playback", ".jw-display-icon-container",
                                 ".jw-icon-display", ".plyr__control--overlaid",
-                                "[class*='play']", "button[aria-label*='play']"]:
+                                "[class*='play']", "button[aria-label*='lay']",
+                                ".vjs-big-play-button", ".jwplayer"]:
                         try:
                             sb.cdp.click_if_visible(sel)
                         except Exception:
                             pass
-                    sb.cdp.sleep(3)
-                sb.cdp.sleep(10)
+                    try:
+                        sb.cdp.execute_script("""
+                            try {
+                                if (typeof jwplayer !== 'undefined') {
+                                    var p = jwplayer();
+                                    if (p && p.play) p.play(true);
+                                }
+                                var v = document.querySelector('video');
+                                if (v) { v.muted = true; if (v.play) v.play(); }
+                            } catch(e){}
+                        """)
+                    except Exception:
+                        pass
+                    sb.cdp.sleep(5)
+                sb.cdp.sleep(8)
 
                 cookies_dict = get_cookies_safe(sb)
                 cookies_full = get_cookies_full(sb)
-                print(f"      🍪 {len(cookies_dict)} كوكي (كل النطاقات)", flush=True)
+                print(f"      🍪 {len(cookies_dict)} كوكي", flush=True)
 
+                # مدة الفيديو
                 try:
                     dur = sb.cdp.execute_script("""
                         try {
                             var v = document.querySelector('video');
-                            if (v && v.duration && isFinite(v.duration) && v.duration > 0) return v.duration;
-                            if (window.__PM && window.__PM.duration) return window.__PM.duration;
+                            if (v && v.duration && isFinite(v.duration)) return v.duration;
+                            if (typeof jwplayer !== 'undefined') {
+                                var p = jwplayer();
+                                var d = p && p.getDuration && p.getDuration();
+                                if (d && isFinite(d)) return d;
+                            }
                             return 0;
                         } catch(e) { return 0; }
                     """)
                     if dur:
-                        try:
-                            video_duration = float(dur)
-                        except Exception:
-                            pass
+                        try: video_duration = float(dur)
+                        except Exception: pass
                 except Exception:
                     pass
 
                 try:
                     dom = sb.cdp.execute_script("""
                         return Array.from(document.querySelectorAll('video, source'))
-                            .map(el => el.src || el.currentSrc).filter(s => s && s.includes('.m3u8'))[0] || null;
+                            .map(el => el.src || el.currentSrc)
+                            .filter(s => s && s.includes('.m3u8'))[0] || null;
                     """)
                     if dom:
                         _log(dom)
@@ -752,14 +813,21 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                 others = [u for u in all_m3u8 if u not in master and u not in index_files]
                 m3u8_urls = master + index_files + others
 
-                # ✅ NEW: إذا لم نجد m3u8 من الـ handler، جرّب performance API
+                # ✅ إصلاح #1: performance API
                 if not m3u8_urls:
                     perf_urls = _extract_m3u8_from_perf(sb)
                     if perf_urls:
-                        print(f"      🔎 performance API → {len(perf_urls)} رابط m3u8", flush=True)
+                        print(f"      🔎 performance API → {len(perf_urls)} رابط", flush=True)
                         for u in perf_urls:
                             print(f"         → {u[:110]}", flush=True)
                         m3u8_urls = perf_urls
+
+                # ✅ إصلاح #2: JW Player API (الأقوى)
+                if not m3u8_urls:
+                    jw_url = _extract_m3u8_from_jwplayer(sb)
+                    if jw_url:
+                        print(f"      🎯 JW Player API → {jw_url[:110]}", flush=True)
+                        m3u8_urls = [jw_url]
 
                 print(f"      📊 {len(urls)} رابط | مدة: {video_duration:.0f}s | 🍪 {len(cookies_dict)}", flush=True)
 
@@ -768,15 +836,14 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                     try:
                         sb.cdp.open(m3u8_urls[0])
                         sb.cdp.sleep(3)
-                        print(f"      🔀 تم الانتقال إلى نطاق الـ CDN", flush=True)
+                        print(f"      🔀 انتقل إلى CDN", flush=True)
                     except Exception as _e:
-                        print(f"      ⚠️ فشل الانتقال: {str(_e)[:80]}", flush=True)
+                        print(f"      ⚠️ {str(_e)[:80]}", flush=True)
                     download_result = _browser_download_hls(
                         sb, m3u8_urls, out_path, expected_dur
                     )
                 else:
-                    # ✅ NEW: fallback إلى رابط الـ iframe نفسه
-                    print(f"      ⚠️ لا m3u8 — استخدام رابط الـ iframe كـ fallback", flush=True)
+                    print(f"      ⚠️ لا m3u8 — fallback إلى iframe", flush=True)
                     m3u8_urls = [iframe_url]
             except Exception as e:
                 print(f"      ❌ {str(e)[:150]}", flush=True)
@@ -857,10 +924,31 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_info):
     ]
 
 
-def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, cookies_file=None):
+def _is_html_file(path, max_size=HTML_SNIFF_MAX_SIZE):
+    """✅ v16.1: كشف إذا كان الملف المحمّل صفحة HTML بدل فيديو"""
+    try:
+        if not os.path.exists(path):
+            return False
+        sz = os.path.getsize(path)
+        if sz == 0 or sz > max_size:
+            return False
+        with open(path, 'rb') as fh:
+            head = fh.read(500)
+        hl = head.lower()
+        return (b'<!doctype' in hl or b'<html' in hl or b'<head>' in hl
+                or b'<?xml' in head or b'<body' in hl)
+    except Exception:
+        return False
+
+
+def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0,
+                         cookies_file=None, is_iframe_fallback=False):
     last_size = 0
     no_progress = 0
     first_round_failed = False
+
+    # ✅ v16.1: مهلة قصيرة عند fallback إلى iframe
+    total_timeout = YTDLP_TIMEOUT_IFRAME if is_iframe_fallback else YTDLP_TIMEOUT
 
     for round_num in range(MAX_RESUME_ROUNDS):
         if exceeded():
@@ -875,12 +963,20 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
                 return True, cur_size, False
 
         print(f"\n   🔁 round {round_num+1}/{MAX_RESUME_ROUNDS} | "
-              f"size={cur_size/(1024*1024):.1f} MB | dur={cur_dur}s", flush=True)
+              f"size={cur_size/(1024*1024):.1f} MB | dur={cur_dur}s | "
+              f"timeout={total_timeout}s", flush=True)
 
         cmd = build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file)
-        ok, info, natural = run_with_adaptive_monitoring(
-            cmd, out_path, YTDLP_TIMEOUT, "yt-dlp"
-        )
+
+        # ✅ v16.1: عند fallback iframe، مراقب خاص يفحص HTML بسرعة
+        if is_iframe_fallback and round_num == 0:
+            ok, info, natural = run_with_html_sniff(
+                cmd, out_path, total_timeout, "yt-dlp-iframe"
+            )
+        else:
+            ok, info, natural = run_with_adaptive_monitoring(
+                cmd, out_path, total_timeout, "yt-dlp"
+            )
 
         new_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
 
@@ -901,6 +997,9 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
         if natural and ok:
             break
 
+        if is_iframe_fallback:
+            break
+
         time.sleep(3)
 
     if os.path.exists(out_path):
@@ -908,6 +1007,122 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
         if size >= MIN_PARTIAL_ACCEPT:
             return True, size, False
     return False, ("403-fast-fail" if first_round_failed else "no progress"), False
+
+
+def run_with_html_sniff(cmd, out_path, total_timeout, tag="proc"):
+    """
+    ✅ v16.1: مراقب خاص لـ yt-dlp على iframe — يكشف HTML مبكراً ويوقف
+    """
+    log_path = out_path + f".{tag}.log"
+    try:
+        log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
+    except Exception as e:
+        return False, f"log_open_failed: {e}", False
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+    except Exception as e:
+        log_file.close()
+        return False, f"spawn_failed: {e}", False
+
+    start = time.time()
+    best_size = 0
+    last_change = start
+    sniffer_checked = False
+
+    try:
+        while proc.poll() is None:
+            time.sleep(3)
+            now = time.time()
+            size = _get_current_size(out_path)
+            if size > best_size:
+                best_size = size
+                last_change = now
+
+            if now - start > 30:
+                el = now - start
+                mb = size / (1024*1024)
+                print(f"      ⏱️  {tag}: {mb:.1f} MB | {el:.0f}s", flush=True)
+
+            # ✅ فحص HTML بعد HTML_SNIFF_SECONDS
+            if not sniffer_checked and (now - start) > HTML_SNIFF_SECONDS and size > 0:
+                sniffer_checked = True
+                target = out_path if os.path.exists(out_path) else None
+                if not target:
+                    # ابحث في ملفات مؤقتة
+                    dir_name = os.path.dirname(out_path)
+                    base_name = os.path.basename(out_path)
+                    try:
+                        for f in os.listdir(dir_name):
+                            if f.startswith(base_name):
+                                cand = os.path.join(dir_name, f)
+                                if os.path.isfile(cand) and os.path.getsize(cand) > 0:
+                                    target = cand
+                                    break
+                    except Exception:
+                        pass
+                if target and _is_html_file(target):
+                    print(f"      ❌ {tag}: الملف HTML وليس فيديو — إيقاف", flush=True)
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
+                    log_file.close()
+                    # احذف الملف HTML
+                    try:
+                        if os.path.exists(target):
+                            os.remove(target)
+                    except Exception:
+                        pass
+                    return False, "html_not_video", False
+
+            if now - start > total_timeout:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                if best_size >= MIN_PARTIAL_ACCEPT:
+                    return True, best_size, False
+                return False, f"total_timeout@{best_size}", False
+
+            if now - last_change > STALL_TIMEOUT and size > 0:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                if best_size >= MIN_PARTIAL_ACCEPT:
+                    return True, best_size, False
+                return False, f"stalled@{best_size}", False
+
+    except Exception as e:
+        try: proc.kill()
+        except: pass
+        log_file.close()
+        return False, f"monitor_error: {e}", False
+
+    try: log_file.close()
+    except: pass
+
+    exit_code = proc.returncode
+    size = _get_current_size(out_path)
+    natural_exit = (exit_code == 0)
+
+    # فحص نهائي إذا كان الملف صغيراً
+    if 0 < size < HTML_SNIFF_MAX_SIZE:
+        target = out_path if os.path.exists(out_path) else None
+        if target and _is_html_file(target):
+            try: os.remove(target)
+            except Exception: pass
+            return False, "html_not_video", False
+
+    if size >= MIN_VALID_SIZE:
+        return True, size, natural_exit
+    return False, f"exited@{size}", natural_exit
 
 
 def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_info, expected_dur=0):
@@ -1034,7 +1249,8 @@ def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_info, expec
     return True, final_size, False
 
 
-def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
+def download_video(url, out_path, referer, cookies_info=None, expected_dur=0,
+                   is_iframe_fallback=False):
     if os.path.exists(out_path):
         try: os.remove(out_path)
         except Exception: pass
@@ -1061,9 +1277,12 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
             cookies_file = out_path + ".cookies.txt"
             save_cookies_netscape(cookies_list, cookies_file)
 
-    print(f"   [yt-dlp+resume] timeout={YTDLP_TIMEOUT}s...", flush=True)
+    print(f"   [yt-dlp+resume] timeout="
+          f"{YTDLP_TIMEOUT_IFRAME if is_iframe_fallback else YTDLP_TIMEOUT}s...",
+          flush=True)
     ok, info, natural = download_with_resume(
-        url, out_path, referer, cookies_info, expected_dur, cookies_file
+        url, out_path, referer, cookies_info, expected_dur, cookies_file,
+        is_iframe_fallback=is_iframe_fallback
     )
     if ok and isinstance(info, (int, float)):
         try:
@@ -1570,7 +1789,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 print(f"   🎞️ المدة الحقيقية: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s)")
 
                 expected_dur = 0
-                if m3u8_urls:
+                if m3u8_urls and m3u8_urls[0] != iframes_url:
                     ck_dict_only = ck.get("dict", {}) if isinstance(ck, dict) else {}
                     expected_dur = await asyncio.to_thread(
                         get_expected_duration, m3u8_urls[0], iframes_url, ck_dict_only
@@ -1608,7 +1827,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         print(f"   ⚠️ نقل: {e}")
             else:
                 print(f"   ❌ Browser HLS فشل — fallback")
-                # ✅ NEW: استخدم iframe_url إذا لم توجد m3u8
                 fallback_urls = list(m3u8_urls) if m3u8_urls else []
                 if not fallback_urls:
                     fallback_urls = [iframes_url]
@@ -1619,17 +1837,21 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     if url_idx > 0:
                         print(f"\n   🔄 محاولة m3u8 بديل #{url_idx+1}...")
 
+                    is_iframe_fallback = (url == iframes_url)
                     expected_dur = 0
                     if ".m3u8" in url:
                         ck_dict_only = ck.get("dict", {}) if isinstance(ck, dict) else {}
                         expected_dur = await asyncio.to_thread(
                             get_expected_duration, url, iframes_url, ck_dict_only
                         )
+                    elif is_iframe_fallback:
+                        print(f"   ⏱️ رابط iframe — مهلة قصيرة ({YTDLP_TIMEOUT_IFRAME}s)", flush=True)
 
                     print(f"\n   ⬇️ (CDP-fb) attempt 1/{MAX_DOWNLOAD_ATTEMPTS}...")
                     t0 = time.time()
                     ok, info, natural = await asyncio.to_thread(
-                        download_video, url, tmp_ts, iframes_url, ck, expected_dur
+                        download_video, url, tmp_ts, iframes_url, ck, expected_dur,
+                        is_iframe_fallback
                     )
                     dt = time.time() - t0
 
@@ -1811,10 +2033,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v16.0")
+    print("🎬 Video Downloader v16.1")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Same-origin browser HLS + performance API + iframe fallback")
+    print(f"🌐 Same-origin browser HLS + JW Player API + HTML detection")
     print(f"📦 batch={BROWSER_FETCH_BATCH}")
     print("=" * 60)
 
