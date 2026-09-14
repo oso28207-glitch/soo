@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v7 — FFmpeg TS/MP4 fix + Pyrogram compatibility
+v9 — TS container (streaming-friendly) + fast timeout + smart priority
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -26,14 +26,15 @@ SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1"
 
 # ===== الحدود =====
 MIN_VALID_SIZE = 100 * 1024
-MIN_PARTIAL_ACCEPT = 50 * 1024 * 1024
-MIN_EPISODE_DURATION = 600
+MIN_PARTIAL_ACCEPT = 30 * 1024 * 1024      # ✅ 30 MB بدل 50 (سيرفرات بطيئة)
+MIN_EPISODE_DURATION = 300                 # ✅ 5 دقائق (بعد الضغط) بدل 10
 MAX_RUNTIME_SECONDS = 165 * 60
-WAIT_MIN, WAIT_MAX = 15, 30
+WAIT_MIN, WAIT_MAX = 10, 20                # ✅ أقل لتوفير الوقت
 
 YTDLP_TIMEOUT = 600
-FFMPEG_TIMEOUT = 2400
-STALL_TIMEOUT = 180
+FFMPEG_TIMEOUT = 900                       # ✅ 15 دقيقة بدل 40
+STALL_TIMEOUT = 90                         # ✅ 90s بدل 180 (vidsonic يتوقف 60s+)
+FILE_CREATE_TIMEOUT = 45                   # ✅ 45s بدل 60
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 
@@ -165,7 +166,6 @@ def get_essential_cookies(cookies_dict):
         kl = k.lower()
         if any(x in kl for x in ['cf_clearance', 'session', 'token', 'auth', 'jwt']):
             important.append(f"{k}={v}")
-    # حد أقصى 1500 حرف
     s = "; ".join(important)
     if len(s) > 1500:
         s = s[:1500]
@@ -555,10 +555,11 @@ def collect_iframes(ep, series_name):
             if not servers:
                 return result
 
-            prio = {"vidsonic": 0, "vinovo": 1, "vidaraa": 2, "vids": 3, "luluvdo": 4, "v": 5}
+            # ✅ ترتيب جديد: luluvdo أولاً، vidsonic آخراً (بطيء جداً)
+            prio = {"luluvdo": 0, "vinovo": 1, "vidaraa": 2, "vids": 3, "v": 4, "vidsonic": 5, "playmate": 6}
             servers.sort(key=lambda s: prio.get(s.get("name", "").lower(), 99))
 
-            print(f"📦 {len(servers)} سيرفر:")
+            print(f"📦 {len(servers)} سيرفر (مرتبة):")
             for s in servers:
                 print(f"   - {s['name']}")
 
@@ -610,7 +611,7 @@ def collect_iframes(ep, series_name):
 
 
 # ============================================================
-#  Subprocess with stall detection
+#  ✅ Subprocess with stall detection + fast fail
 # ============================================================
 def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="proc"):
     log_path = out_path + f".{tag}.log"
@@ -630,6 +631,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
     last_change = start
     best_size = 0
     last_report = start
+    file_created = False
 
     try:
         while proc.poll() is None:
@@ -640,8 +642,11 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
             if os.path.exists(out_path):
                 try:
                     size = os.path.getsize(out_path)
+                    if size > 0:
+                        file_created = True
                 except Exception:
                     pass
+
             if size > last_size:
                 last_size = size
                 last_change = now
@@ -655,6 +660,19 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                 print(f"      ⏱️  {tag}: {mb:.1f} MB | {el:.0f}s | stall={stall_s:.0f}s", flush=True)
                 last_report = now
 
+            # فشل فوري إذا لم يُنشأ ملف خلال X ثانية
+            if not file_created and (now - start) > FILE_CREATE_TIMEOUT:
+                print(f"      🚫 {tag}: لم يُنشأ ملف خلال {FILE_CREATE_TIMEOUT}s — إلغاء فوري", flush=True)
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                _print_log_tail(log_path, 300)
+                return False, f"no_file_{FILE_CREATE_TIMEOUT}s"
+
+            # Total timeout
             if now - start > total_timeout:
                 print(f"      ⏰ {tag}: total timeout ({total_timeout}s), size={best_size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -668,6 +686,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                     return True, best_size
                 return False, f"total_timeout@size={best_size}"
 
+            # Stall detection
             if now - last_change > stall_timeout and size > 0:
                 print(f"      🛑 {tag}: stalled at {size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -724,6 +743,8 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--buffer-size', '1M',
         '--no-check-certificate',
         '--continue',
+        # ✅ hls-use-mpegts يجعل الملفات TS بدل MP4 غير المكتمل
+        '--hls-use-mpegts',
         '--impersonate', 'chrome',
         '--extractor-args', 'generic:impersonate',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -735,7 +756,6 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--add-header', 'Sec-Fetch-Dest:empty',
     ]
 
-    # ✅ فقط الكوكيز المهمة
     cookie_str = get_essential_cookies(cookies_dict)
     if cookie_str:
         cmd += ['--add-header', f'Cookie:{cookie_str}']
@@ -745,13 +765,11 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
 
 
 def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
-    """ffmpeg مع headers مختصرة + إجبار TS container"""
+    """✅ الإصلاح: -f mpegts بدل mp4 — partial صالح دائماً"""
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
 
-    # ✅ فقط الكوكيز المهمة
     cookie_str = get_essential_cookies(cookies_dict)
 
-    # ✅ headers مختصرة جداً
     header_lines = [
         f"Referer: {referer}",
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -779,10 +797,7 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
         '-multiple_requests', '1',
         '-i', m3u8_url,
         '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        '-f', 'mp4',
-        '-movflags', '+faststart',
-        '-max_muxing_queue_size', '4096',
+        '-f', 'mpegts',                  # ✅ TS بدل MP4
         '-y', out_path,
     ]
     return cmd
@@ -818,7 +833,7 @@ def download_video(url, out_path, referer, cookies_dict=None):
 
 
 # ============================================================
-#  Compression
+#  Compression — TS → MP4
 # ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
@@ -844,26 +859,19 @@ def compress_144p(inp, out):
         '-f', 'mp4',
         '-movflags', '+faststart',
         '-max_muxing_queue_size', '4096',
-        '-vsync', 'vfr',
         '-y', out,
     ]
 
     try:
         t0 = time.time()
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         dt = time.time() - t0
 
         if r.returncode != 0:
             print(f"   ❌ ffmpeg code={r.returncode}")
             if r.stderr:
                 print(f"      📋 {r.stderr[-300:]}")
-            # ✅ محاولة بدون -vsync
-            print(f"   🔄 محاولة بدون -vsync...")
-            cmd_no_vsync = [c for c in cmd if c not in ('-vsync', 'vfr')]
-            r = subprocess.run(cmd_no_vsync, capture_output=True, text=True, timeout=3600)
-            if r.returncode != 0:
-                print(f"   ❌ فشل أيضاً: {r.stderr[-200:]}")
-                return False
+            return False
 
         if not os.path.exists(out) or os.path.getsize(out) < 10 * 1024:
             print(f"   ❌ الناتج صغير جداً")
@@ -932,68 +940,6 @@ def is_valid_video_file(vp):
         return False
 
 
-def fix_video(inp, out):
-    """محاولة إصلاح ملف معطوب — يدعم TS/MP4"""
-    print(f"   🔧 محاولة إصلاح: {os.path.basename(inp)}...")
-
-    # نحاول أولاً `-c copy` إلى MP4 صحيح، ثم إعادة ترميز
-    attempts = [
-        # 1. إعادة muxing بدون re-encode
-        [
-            'ffmpeg',
-            '-err_detect', 'ignore_err',
-            '-fflags', '+discardcorrupt+genpts',
-            '-analyzeduration', '100M',
-            '-probesize', '100M',
-            '-i', inp,
-            '-c', 'copy',
-            '-bsf:a', 'aac_adtstoasc',
-            '-f', 'mp4',
-            '-movflags', '+faststart',
-            '-y', out,
-        ],
-        # 2. إعادة ترميز كامل (إن فشل الأول)
-        [
-            'ffmpeg',
-            '-err_detect', 'ignore_err',
-            '-fflags', '+discardcorrupt+genpts',
-            '-analyzeduration', '100M',
-            '-probesize', '100M',
-            '-i', inp,
-            '-c:v', 'libx264',
-            '-crf', '30',
-            '-preset', 'ultrafast',
-            '-c:a', 'aac',
-            '-b:a', '48k',
-            '-f', 'mp4',
-            '-movflags', '+faststart',
-            '-vsync', 'vfr',
-            '-max_muxing_queue_size', '4096',
-            '-y', out,
-        ],
-    ]
-
-    for idx, attempt_cmd in enumerate(attempts):
-        try:
-            print(f"      محاولة {idx+1}/2...", flush=True)
-            r = subprocess.run(attempt_cmd, capture_output=True, text=True, timeout=1800)
-            if r.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 100 * 1024:
-                if is_valid_video_file(out):
-                    print(f"   ✅ تم الإصلاح (محاولة {idx+1})")
-                    return True
-                else:
-                    if os.path.exists(out):
-                        try: os.remove(out)
-                        except Exception: pass
-            elif r.stderr:
-                print(f"      📋 {r.stderr[-200:]}", flush=True)
-        except Exception as e:
-            print(f"   ⚠️ محاولة {idx+1} فشلت: {str(e)[:100]}")
-
-    print(f"   ❌ فشل الإصلاح")
-    return False
-
-
 def thumb(vp, tp):
     """thumbnail آمن مع 3 محاولات"""
     for ss in ['00:00:05', '00:00:01', '00:00:00']:
@@ -1028,23 +974,10 @@ async def upload(fp, caption, tp=None):
         print(f"   ❌ لا يوجد ملف")
         return False
 
-    # 1. التحقق من صلاحية الملف
+    # التحقق من الصلاحية
     if not is_valid_video_file(fp):
-        print(f"   ⚠️ الملف ليس فيديو صالح — نحاول الإصلاح...")
-        fixed = fp + ".fixed.mp4"
-        if fix_video(fp, fixed):
-            try:
-                os.remove(fp)
-                shutil.move(fixed, fp)
-            except Exception:
-                fp = fixed
-        else:
-            print(f"   ⚠️ تعذر الإصلاح — سيُرفع كما هو")
-            if os.path.exists(fixed):
-                try: os.remove(fixed)
-                except Exception: pass
+        print(f"   ⚠️ الملف ليس فيديو صالح")
 
-    # 2. استخراج metadata
     w, h, d = meta(fp)
     if w == 0 or h == 0:
         w, h = 640, 360
@@ -1060,7 +993,6 @@ async def upload(fp, caption, tp=None):
 
     t = tp if tp and os.path.exists(tp) else None
 
-    # 3. محاولة الرفع الأولى
     try:
         t0 = time.time()
         await app.send_video(
@@ -1081,7 +1013,7 @@ async def upload(fp, caption, tp=None):
     except Exception as e:
         print(f"   ❌ فشل رفع: {str(e)[:200]}")
 
-    # 4. محاولة ثانية بدون thumbnail
+    # محاولة ثانية بدون thumbnail
     try:
         print(f"   🔄 محاولة ثانية بدون thumbnail...")
         await app.send_video(
@@ -1106,7 +1038,7 @@ async def upload(fp, caption, tp=None):
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
 
-    tmp = os.path.join(ddir, f"temp_{ep:02d}.mp4")
+    tmp_ts = os.path.join(ddir, f"temp_{ep:02d}.ts")     # ✅ TS
     fin = os.path.join(ddir, f"final_{ep:02d}.mp4")
     thb = os.path.join(ddir, f"thumb_{ep:02d}.jpg")
 
@@ -1170,7 +1102,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 print(f"\n   ⬇️ ({src})...")
                 t0 = time.time()
                 ok, info = await asyncio.to_thread(
-                    download_video, url, tmp, it["url"], ck
+                    download_video, url, tmp_ts, it["url"], ck
                 )
                 dt = time.time() - t0
 
@@ -1180,9 +1112,10 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     speed = size_mb / max(dt, 0.1)
                     print(f"   📦 ({src}) {size_mb:.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
 
+                    # ✅ استخراج المدة من TS صالح
                     actual_dur = 0
-                    if os.path.exists(tmp):
-                        _, _, actual_dur = meta(tmp)
+                    if os.path.exists(tmp_ts):
+                        _, _, actual_dur = meta(tmp_ts)
                     print(f"   🎞️ مدة التنزيل: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s)")
 
                     if actual_dur >= MIN_EPISODE_DURATION:
@@ -1192,29 +1125,30 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         print(f"   ✅ نجاح كامل!")
                         break
                     else:
+                        # partial
                         if size > (partial_candidate[1] if partial_candidate else 0):
-                            partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}.mp4")
+                            partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}.ts")
                             try:
                                 if os.path.exists(partial_path):
                                     os.remove(partial_path)
-                                shutil.move(tmp, partial_path)
+                                shutil.move(tmp_ts, partial_path)
                                 partial_candidate = (src, size, it["url"], partial_path, actual_dur)
                                 print(f"   ♻️ partial: {size_mb:.1f} MB / {actual_dur}s")
                             except Exception as e:
                                 print(f"   ⚠️ نقل partial: {e}")
                         else:
-                            if os.path.exists(tmp):
-                                try: os.remove(tmp)
+                            if os.path.exists(tmp_ts):
+                                try: os.remove(tmp_ts)
                                 except Exception: pass
                 elif ok and not isinstance(info, (int, float)):
                     print(f"   ⚠️ ({src}) نجاح بدون حجم صالح: {info}")
-                    if os.path.exists(tmp):
-                        try: os.remove(tmp)
+                    if os.path.exists(tmp_ts):
+                        try: os.remove(tmp_ts)
                         except: pass
                 else:
                     print(f"   ❌ ({src}) {info} في {dt:.1f}s")
-                    if os.path.exists(tmp):
-                        try: os.remove(tmp)
+                    if os.path.exists(tmp_ts):
+                        try: os.remove(tmp_ts)
                         except: pass
 
             if success_if:
@@ -1227,32 +1161,23 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             method, size, url, partial_path, dur = partial_candidate
             print(f"\n♻️ قبول partial: {method} | {size/(1024*1024):.2f} MB / {dur}s")
             try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-                shutil.move(partial_path, tmp)
+                if os.path.exists(tmp_ts):
+                    os.remove(tmp_ts)
+                shutil.move(partial_path, tmp_ts)
             except Exception as e:
                 print(f"   ❌ نقل: {e}")
                 return False, "partial move failed"
         else:
             return False, "فشل من جميع السيرفرات"
 
-        # ✅ ضغط
+        # ✅ ضغط TS → MP4
         print(f"\n🗜️ ضغط...")
         if SKIP_COMPRESS:
-            shutil.copy2(tmp, fin)
+            shutil.copy2(tmp_ts, fin)
         else:
-            if not compress_144p(tmp, fin):
-                print(f"   ⚠️ فشل الضغط — نحاول إصلاح الملف ثم ضغط مرة أخرى")
-                fixed_tmp = tmp + ".fixed.mp4"
-                if fix_video(tmp, fixed_tmp):
-                    if not compress_144p(fixed_tmp, fin):
-                        print(f"   ⚠️ فشل مرة أخرى — استخدام الأصل")
-                        shutil.copy2(tmp, fin)
-                    try: os.remove(fixed_tmp)
-                    except Exception: pass
-                else:
-                    print(f"   ⚠️ تعذر الإصلاح — استخدام الأصل")
-                    shutil.copy2(tmp, fin)
+            if not compress_144p(tmp_ts, fin):
+                print(f"   ⚠️ فشل الضغط — نسخ TS كما هو")
+                shutil.copy2(tmp_ts, fin)
 
         if not os.path.exists(fin):
             return False, "لا ملف نهائي"
@@ -1268,7 +1193,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
         # تنظيف
         if not (TEST_MODE and KEEP_VIDEO):
-            for f in [tmp, fin, thb]:
+            for f in [tmp_ts, fin, thb]:
                 try:
                     if os.path.exists(f): os.remove(f)
                 except: pass
@@ -1310,12 +1235,12 @@ def load_config():
 # ============================================================
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v7")
+    print("🎬 Video Downloader v9")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
-    print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
-    print(f"🎞️ الحد الأدنى للحلقة: {MIN_EPISODE_DURATION}s")
+    print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s")
+    print(f"🛑 stall: {STALL_TIMEOUT}s | file-create: {FILE_CREATE_TIMEOUT}s")
+    print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB | TS container")
     print("=" * 60)
 
     try:
