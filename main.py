@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.1 — Fixed: real duration validation + reject truncated episodes
+v15.2 — Fixed: master.m3u8 duration + strict rejection of truncated episodes
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -42,16 +42,12 @@ MIN_ACCEPTABLE_SPEED = 300 * 1024
 SPEED_CHECK_INTERVAL = 20
 SPEED_GRACE_PERIOD = 30
 
-# ✅ v15: عتبة قبول المدة المتوقعة
 DURATION_ACCEPT_RATIO = 0.95
 CONSENSUS_TOLERANCE = 30
 
-# ✅✅ v15.1: عتبات التحقق من المدة الحقيقية
-#    الملف النهائي MP4 يجب أن يكون ≥ 85% من المدة المتوقعة وإلا يُرفض
+# ✅✅ v15.2
 MIN_REAL_RATIO_AFTER_COMPRESS = 0.85
-#    الحد الأدنى الحقيقي لقبول أي partial (10 دقائق)
 MIN_PARTIAL_REAL_DURATION = 600
-# =====================
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 
@@ -187,57 +183,87 @@ def get_all_cookies_string(cookies_dict):
 
 
 # ============================================================
-#  المدة المتوقعة من m3u8 (SUM of EXTINF)
+#  ✅✅ v15.2: get_expected_duration يحل master.m3u8
 # ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
-    for attempt in range(3):
-        try:
-            cookie_str = get_all_cookies_string(cookies_dict)
-            headers = {
-                "Referer": referer,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            }
-            if cookie_str:
-                headers["Cookie"] = cookie_str
-            resp = cffi_requests.get(m3u8_url, headers=headers,
-                                      impersonate="chrome120", timeout=20)
-            if resp.status_code != 200:
-                if attempt < 2:
-                    time.sleep(2)
-                    continue
-                return 0
+    cookie_str = get_all_cookies_string(cookies_dict)
+    headers = {
+        "Referer": referer,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+    if cookie_str:
+        headers["Cookie"] = cookie_str
 
-            total = 0.0
-            has_extinf = False
-            for line in resp.text.splitlines():
-                m = re.match(r'#EXTINF:([\d.]+)', line.strip())
+    def _sum_extinf(text, base_url):
+        total = 0.0
+        count = 0
+        variants = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                m = re.match(r'#EXTINF:([\d.]+)', line)
                 if m:
                     total += float(m.group(1))
-                    has_extinf = True
-
-            if has_extinf and total > 0:
-                return int(total)
-
-            try:
-                p = subprocess.run(
-                    ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                     '-of', 'default=noprint_wrappers=1:nokey=1', m3u8_url],
-                    capture_output=True, text=True, timeout=20,
-                )
-                if p.returncode == 0 and p.stdout.strip():
-                    return int(float(p.stdout.strip()))
-            except Exception:
-                pass
-
-            if attempt < 2:
-                time.sleep(2)
+                    count += 1
                 continue
+            if '.m3u8' in line:
+                if line.startswith('http'):
+                    variants.append(line)
+                else:
+                    variants.append(base_url.rstrip('/') + '/' + line.lstrip('/'))
+        return total, count, variants
+
+    def _fetch(url, depth=0):
+        if depth > 3:
+            return 0
+        try:
+            resp = cffi_requests.get(url, headers=headers,
+                                      impersonate="chrome120", timeout=25)
+            if resp.status_code != 200:
+                return 0
+            base_url = url.rsplit('/', 1)[0]
+            total, count, variants = _sum_extinf(resp.text, base_url)
+            if count > 0 and total > 0:
+                return int(total)
+            if variants:
+                for v in variants[:3]:
+                    d = _fetch(v, depth + 1)
+                    if d > 0:
+                        return d
             return 0
         except Exception:
-            if attempt < 2:
-                time.sleep(2)
-                continue
             return 0
+
+    # عبر curl_cffi
+    for attempt in range(2):
+        d = _fetch(m3u8_url)
+        if d > 0:
+            return d
+        time.sleep(2)
+
+    # ffprobe
+    try:
+        header_arg = f"Referer: {referer}\r\n"
+        if cookie_str:
+            header_arg += f"Cookie: {cookie_str}\r\n"
+        header_arg += "User-Agent: Mozilla/5.0\r\n"
+        p = subprocess.run(
+            ['ffprobe', '-v', 'error',
+             '-headers', header_arg,
+             '-analyzeduration', '50M', '-probesize', '50M',
+             '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', m3u8_url],
+            capture_output=True, text=True, timeout=60,
+        )
+        if p.returncode == 0 and p.stdout.strip():
+            try:
+                return int(float(p.stdout.strip()))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     return 0
 
 
@@ -403,7 +429,7 @@ def extract_m3u8_cdp(iframe_url):
                     dur = sb.cdp.execute_script("""
                         try {
                             var v = document.querySelector('video');
-                            if (v && v.duration && isFinite(v.duration)) return v.duration;
+                            if (v && v.duration && isFinite(v.duration) && v.duration > 0) return v.duration;
                             if (window.__PM && window.__PM.duration) return window.__PM.duration;
                             return 0;
                         } catch(e) { return 0; }
@@ -861,14 +887,7 @@ def compress_144p(inp, out):
         return False
 
 
-# ============================================================
-#  ✅✅ v15.1: دوال المدة الحقيقية
-# ============================================================
 def meta(vp, accurate=False):
-    """
-    meta عادي: يعتمد على format=duration (قد يكون كاذباً للـ TS المقطوع).
-    accurate=True: يقرأ الملف كامل مع buffers كبيرة (أبطأ لكن أدق).
-    """
     w, h, d = 0, 0, 0
     try:
         cmd = ['ffprobe', '-v', 'error',
@@ -899,15 +918,7 @@ def meta(vp, accurate=False):
 
 
 def get_real_duration(vp):
-    """
-    ✅✅ v15.1: المدة الحقيقية عن طريق عد الحزم (packets) وليس PTS.
-    هذا يحل مشكلة TS المقطوع الذي يعطي PTS مدة كاذبة.
-
-    المنطق:
-      1) عدّ كل الحزم الفعلية (nb_read_packets) → عدد الإطارات
-      2) duration = nb_read_packets / fps
-      3) fallback: format=duration مع قراءة كاملة
-    """
+    """المدة الحقيقية عن طريق عدّ الحزم (packets) وليس PTS."""
     try:
         p = subprocess.run(
             ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
@@ -935,7 +946,6 @@ def get_real_duration(vp):
                                     return d
                         except Exception:
                             pass
-                    # fallback duration من نفس الاستدعاء
                     dur = s.get("duration")
                     if dur:
                         try:
@@ -948,8 +958,6 @@ def get_real_duration(vp):
                 pass
     except Exception:
         pass
-
-    # fallback أخير
     _, _, d = meta(vp, accurate=True)
     return d
 
@@ -986,7 +994,6 @@ async def upload(fp, caption, tp=None, override_duration=None):
     if app is None or not os.path.exists(fp):
         return False
 
-    # ✅ v15.1: المدة من MP4 (موثوق) أو من override
     w, h, real_d = meta(fp)
     if override_duration and override_duration > 0:
         d = int(override_duration)
@@ -1030,7 +1037,7 @@ async def upload(fp, caption, tp=None, override_duration=None):
 
 
 # ============================================================
-#  ✅✅ v15.1: process_episode مع تحقق صارم من المدة الحقيقية
+#  ✅✅ v15.2: process_episode مع رفض صارم للملفات المقطوعة
 # ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
@@ -1038,7 +1045,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
     fin = os.path.join(ddir, f"final_{ep:02d}.mp4")
     thb = os.path.join(ddir, f"thumb_{ep:02d}.jpg")
 
-    # متغيرات نطاق خارجي
     expected_dur_final = 0
 
     try:
@@ -1101,6 +1107,8 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         )
                         if expected_dur > 0:
                             print(f"   📏 المدة المتوقعة: {expected_dur}s ({expected_dur//60}m)")
+                        else:
+                            print(f"   ⚠️ لا يمكن تحديد المدة المتوقعة من m3u8")
 
                     attempt_success = False
                     for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
@@ -1119,12 +1127,12 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                             speed = size_mb / max(dt, 0.1)
                             print(f"   📦 ({src}) {size_mb:.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
 
-                            # ✅✅ v15.1: المدة الحقيقية عن طريق عدّ الحزم
                             actual_dur = 0
                             if os.path.exists(tmp_ts):
                                 actual_dur = await asyncio.to_thread(get_real_duration, tmp_ts)
                             print(f"   🎞️ المدة الحقيقية: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s) | طبيعي: {natural}")
 
+                            # ✅✅ v15.2: منطق قبول صارم
                             is_complete = False
                             reason = ""
 
@@ -1133,13 +1141,13 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                     is_complete = True
                                     reason = f"وصلنا {actual_dur}/{expected_dur}s"
                                 else:
-                                    reason = f"فقط {actual_dur}/{expected_dur}s"
+                                    reason = f"فقط {actual_dur}/{expected_dur}s ({int(actual_dur*100/expected_dur)}%)"
                             elif natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
                                 is_complete = True
                                 reason = "انتهى طبيعياً"
-                            elif actual_dur >= MIN_EPISODE_DURATION:
-                                is_complete = True
-                                reason = "المدة كافية"
+                            else:
+                                # ❌ لا نقبل: لا مدة متوقعة ولم ينتهِ طبيعياً
+                                reason = f"غير موثوق ({actual_dur}s) — طبيعي={natural} ولا مدة متوقعة"
 
                             if is_complete:
                                 success_if = it["url"]
@@ -1150,14 +1158,13 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                 print(f"   ✅ نجاح كامل ({reason})!")
                                 break
                             else:
-                                # احفظ كـ partial (لن نقرر إلا في النهاية)
                                 partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}_{url_idx}.ts")
                                 try:
                                     if os.path.exists(partial_path):
                                         os.remove(partial_path)
                                     shutil.move(tmp_ts, partial_path)
                                     partials.append((src, size, it["url"], partial_path, actual_dur, expected_dur))
-                                    print(f"   ♻️ partial: {size_mb:.1f} MB / {actual_dur}s (متوقع {expected_dur}s)")
+                                    print(f"   ♻️ partial محفوظ: {size_mb:.1f} MB / {actual_dur}s (متوقع {expected_dur}s) — {reason}")
                                 except Exception as e:
                                     print(f"   ⚠️ نقل: {e}")
                         else:
@@ -1177,7 +1184,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             if success_if:
                 break
 
-        # ✅✅ v15.1: إذا لم نجد كامل → قيّم الـ partials بالمدة الحقيقية
+        # ✅✅ v15.2: تقييم partials بصرامة
         if not success_if and partials:
             print(f"\n🔍 تحليل partials ({len(partials)} مرشح):")
 
@@ -1188,50 +1195,57 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 scored.append((src, size, url, path, real_dur, exp, ratio))
                 print(f"   - {src}: حقيقي={real_dur}s | متوقع={exp}s | نسبة={ratio:.0%} | حجم={size/(1024*1024):.1f} MB")
 
-            # اختر الأفضل حسب النسبة ثم الحجم
-            best = max(scored, key=lambda p: (p[6], p[1]))
-            src, size, url, path, real_dur, exp, ratio = best
+            with_exp = [p for p in scored if p[5] > 0]
+            without_exp = [p for p in scored if p[5] == 0]
 
-            print(f"\n🏆 أفضل partial: {src} | حقيقي={real_dur}s | متوقع={exp}s | نسبة={ratio:.0%}")
+            if with_exp:
+                best = max(with_exp, key=lambda p: (p[6], p[1]))
+                src, size, url, path, real_dur, exp, ratio = best
+                print(f"\n🏆 أفضل partial (مع مدة متوقعة): {src} | حقيقي={real_dur}s | متوقع={exp}s | نسبة={ratio:.0%}")
 
-            # ✅ رفض إذا المدة الحقيقية أقل من الحد الأدنى
-            if real_dur < MIN_PARTIAL_REAL_DURATION:
-                print(f"   ❌ قصير جداً ({real_dur}s < {MIN_PARTIAL_REAL_DURATION}s) — رفض كل الـ partials")
-                for p in scored:
-                    try:
-                        if os.path.exists(p[3]):
-                            os.remove(p[3])
-                    except: pass
-                return False, f"كل الـ partials مقطوعة (أفضل: {real_dur}s)"
-
-            # ✅ رفض إذا النسبة أقل من 85% (حلقة ناقصة جداً)
-            if exp > 0 and ratio < MIN_REAL_RATIO_AFTER_COMPRESS:
-                print(f"   ❌ النسبة {ratio:.0%} أقل من {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}% — رفض")
-                for p in scored:
-                    try:
-                        if os.path.exists(p[3]):
-                            os.remove(p[3])
-                    except: pass
-                return False, f"حلقة مقطوعة ({real_dur}s من {exp}s = {ratio:.0%})"
-
-            print(f"♻️ قبول partial: {src} | {size/(1024*1024):.2f} MB / حقيقي {real_dur}s / نسبة {ratio:.0%}")
-            try:
-                if os.path.exists(tmp_ts):
-                    os.remove(tmp_ts)
-                shutil.move(path, tmp_ts)
-                success_if = url
-                dloaded = size
-                method = src
-                expected_dur_final = exp
-                # نظّف باقي الـ partials
-                for p in scored:
-                    if p[3] != path:
+                if real_dur < MIN_PARTIAL_REAL_DURATION:
+                    print(f"   ❌ قصير جداً ({real_dur}s < {MIN_PARTIAL_REAL_DURATION}s)")
+                    for p in scored:
                         try:
-                            if os.path.exists(p[3]):
-                                os.remove(p[3])
+                            if os.path.exists(p[3]): os.remove(p[3])
                         except: pass
-            except Exception as e:
-                return False, f"partial move: {e}"
+                    return False, f"كل الـ partials مقطوعة (أفضل: {real_dur}s)"
+
+                if ratio < MIN_REAL_RATIO_AFTER_COMPRESS:
+                    print(f"   ❌ النسبة {ratio:.0%} < {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
+                    for p in scored:
+                        try:
+                            if os.path.exists(p[3]): os.remove(p[3])
+                        except: pass
+                    return False, f"حلقة مقطوعة ({real_dur}s من {exp}s = {ratio:.0%})"
+
+                print(f"♻️ قبول partial: {src} | {size/(1024*1024):.2f} MB / حقيقي {real_dur}s / نسبة {ratio:.0%}")
+                try:
+                    if os.path.exists(tmp_ts): os.remove(tmp_ts)
+                    shutil.move(path, tmp_ts)
+                    success_if = url
+                    dloaded = size
+                    method = src
+                    expected_dur_final = exp
+                    for p in scored:
+                        if p[3] != path:
+                            try:
+                                if os.path.exists(p[3]): os.remove(p[3])
+                            except: pass
+                except Exception as e:
+                    return False, f"partial move: {e}"
+
+            elif without_exp:
+                # ⚠️ لا مدة متوقعة → نرفض لتفادي رفع محتوى مقطوع
+                best = max(without_exp, key=lambda p: p[4])
+                src, size, url, path, real_dur, exp, ratio = best
+                print(f"\n⚠️ أفضل partial بدون مدة متوقعة: {src} | حقيقي={real_dur}s")
+                print(f"   ❌ لا يمكن التأكد من اكتمال الحلقة — رفض لتفادي رفع محتوى مقطوع")
+                for p in scored:
+                    try:
+                        if os.path.exists(p[3]): os.remove(p[3])
+                    except: pass
+                return False, f"لا مدة متوقعة + لا اكتمال طبيعي (أفضل: {real_dur}s)"
 
         if not success_if:
             return False, "فشل من جميع السيرفرات"
@@ -1249,7 +1263,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
         if not os.path.exists(fin):
             return False, "لا ملف نهائي"
 
-        # ✅✅ v15.1: تحقق نهائي من المدة الحقيقية للملف MP4
         real_final_dur = await asyncio.to_thread(get_real_duration, fin)
         print(f"   🎞️ المدة الحقيقية النهائية: {real_final_dur}s")
 
@@ -1270,7 +1283,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
         print(f"\n📤 رفع...")
         cap = f"{sn_ar} الموسم {season} الحلقة {ep}"
-        # ✅ مرّر المدة الحقيقية النهائية
         ok = await upload(fin, cap,
                           thb if os.path.exists(thb) else None,
                           override_duration=real_final_dur)
@@ -1308,7 +1320,7 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.1")
+    print("🎬 Video Downloader v15.2")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
@@ -1318,6 +1330,7 @@ async def main():
     print(f"📏 عتبة القبول: {int(DURATION_ACCEPT_RATIO*100)}% من المتوقعة")
     print(f"✅✅ تحقق نهائي: ≥ {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}% من المدة الحقيقية")
     print(f"🛡️ حد أدنى للـ partial الحقيقي: {MIN_PARTIAL_REAL_DURATION}s")
+    print(f"🚫 رفض المقطوع بدون مدة متوقعة حتى لو انتهى")
     print(f"🔗 محاولة كل m3u8 URLs من CDP")
     print("=" * 60)
 
