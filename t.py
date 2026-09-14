@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - shhaiid4u.net
-v16.0 — API-based extraction (no iframes needed)
+v16.1 — Fixed URL building + robust player-api extraction
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -14,7 +14,6 @@ TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
 TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
 STRING_SESSION = os.environ.get("STRING_SESSION", "")
 
-# ===== إعدادات الموقع =====
 SITE_BASE = "https://shhaiid4u.net"
 
 INPUT_SERIES_NAME = os.environ.get("INPUT_SERIES_NAME", "").strip()
@@ -30,27 +29,13 @@ SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1"
 
 MIN_VALID_SIZE = 100 * 1024
 MIN_PARTIAL_ACCEPT = 30 * 1024 * 1024
-MIN_EPISODE_DURATION = 900
-NATURAL_EXIT_MIN_DURATION = 600
 MAX_RUNTIME_SECONDS = 165 * 60
 WAIT_MIN, WAIT_MAX = 10, 20
 
 YTDLP_TIMEOUT = 1800
-FFMPEG_TIMEOUT = 1800
 STALL_TIMEOUT = 60
-FILE_CREATE_TIMEOUT = 30
-
-MIN_ACCEPTABLE_SPEED = 300 * 1024
-SPEED_CHECK_INTERVAL = 20
-SPEED_GRACE_PERIOD = 30
-
-DURATION_ACCEPT_RATIO = 0.95
-MIN_REAL_RATIO_AFTER_COMPRESS = 0.85
-MIN_PARTIAL_REAL_DURATION = 600
 
 CURL_CFFI_WORKERS = 8
-CURL_CFFI_TIMEOUT = 60
-BROWSER_FETCH_BATCH = 6
 
 SCRIPT_START = time.time()
 
@@ -110,7 +95,6 @@ install_requirements()
 
 import yt_dlp
 from seleniumbase import SB
-from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
 app = None
@@ -141,35 +125,46 @@ async def setup_telegram():
 
 
 # ============================================================
-#  ✅ v16.0: بناء رابط الحلقة من shhaiid4u.net
+#  ✅✅ v16.1: بناء رابط صحيح بدون تكرار "الموسم"
 # ============================================================
-def build_episode_url(series_name, episode_num):
-    """
-    يبني رابط الحلقة على shhaiid4u.net
-    مثال: https://shhaiid4u.net/watch/مسلسل-احتمال-حب-الموسم-الاول-الحلقة-65-مدبلجة
-    """
-    # تنسيق الرابط: /watch/{series-slug}-الموسم-الاول-الحلقة-{ep}-مدبلجة
-    base_slug = series_name.replace(' ', '-')
-    # نحتاج إلى صياغة دقيقة
-    ep_slug = f"الحلقة-{episode_num}-مدبلجة"
-    season_slug = "الموسم-الاول"  # يمكن تعديله حسب الحاجة
-
-    full_path = f"/watch/{base_slug}-{season_slug}-{ep_slug}"
-    return SITE_BASE + quote(full_path, safe='/-')
+SEASON_AR_MAP = {
+    1: "الاول", 2: "الثاني", 3: "الثالث", 4: "الرابع",
+    5: "الخامس", 6: "السادس", 7: "السابع", 8: "الثامن",
+    9: "التاسع", 10: "العاشر",
+}
 
 
-# ============================================================
-#  ✅ v16.0: استخراج player API من الصفحة
-# ============================================================
-def extract_player_api(page_url):
+def build_episode_url(series_slug, episode_num, season_num=1):
     """
-    يفتح الصفحة ويستخرج data-player-api و data-player-fallback
-    يرجع (api_url, fallback_url, cookies_dict)
+    يبني رابط صحيح:
+    - إذا series_slug يحتوي على "الموسم" → لا نضيفه مرة أخرى
+    - وإلا نضيف "الموسم-{اسم الموسم}"
     """
-    print(f"   🔍 فتح الصفحة: {page_url[:80]}...", flush=True)
+    sn = series_slug.strip().strip('-')
+
+    # ✅ إذا كان الموسم موجوداً بالفعل، لا نضيفه
+    if "الموسم" not in sn:
+        season_ar = SEASON_AR_MAP.get(season_num, "الاول")
+        sn = f"{sn}-الموسم-{season_ar}"
+
+    full_path = f"/watch/{sn}-الحلقة-{episode_num}-مدبلجة"
+    encoded = quote(full_path, safe='/-')
+    return SITE_BASE + encoded
+
+
+# ============================================================
+#  ✅✅ v16.1: استخراج player-api مع debugging
+# ============================================================
+def extract_player_api(page_url, debug_html_path=None):
+    """
+    يفتح الصفحة، يستخرج player-api مع 4 أنماط regex مختلفة.
+    يحفظ HTML للتشخيص إذا فشل.
+    """
+    print(f"   🔍 فتح الصفحة...", flush=True)
     api_url = None
     fallback_url = None
     cookies_dict = {}
+    html_saved = False
 
     try:
         with SB(uc=True, xvfb=True, headless=False, incognito=True,
@@ -178,21 +173,85 @@ def extract_player_api(page_url):
             try:
                 sb.activate_cdp_mode()
                 sb.cdp.open(page_url)
-                sb.cdp.sleep(6)
+                sb.cdp.sleep(8)
 
-                # استخرج العناصر المخفية
+                # التحقق من تحميل الصفحة بنجاح
+                try:
+                    title = sb.cdp.execute_script("return document.title || ''")
+                    current_url = sb.cdp.execute_script("return window.location.href || ''")
+                    print(f"   📄 title: {str(title)[:80]}", flush=True)
+                    print(f"   🌐 current_url: {str(current_url)[:120]}", flush=True)
+                except Exception:
+                    pass
+
+                # محاولة click لتشغيل أي lazy loading
+                for sel in ["video", "button", "[data-player]", ".play", ".play-button"]:
+                    try:
+                        sb.cdp.click_if_visible(sel)
+                    except Exception:
+                        pass
+                sb.cdp.sleep(3)
+
                 html = sb.cdp.get_page_source()
+                print(f"   📏 HTML size: {len(html) if html else 0}", flush=True)
 
-                # ابحث عن data-player-api
-                m = re.search(r'data-player-api="([^"]+)"', html)
-                if m:
-                    api_url = m.group(1)
-                    print(f"   ✅ player-api: {api_url[:80]}", flush=True)
+                # ✅✅ 4 أنماط لـ player-api
+                patterns = [
+                    # 1) النمط الأصلي
+                    r'data-player-api="([^"]+)"',
+                    # 2) single quotes
+                    r"data-player-api='([^']+)'",
+                    # 3) مع مسافات
+                    r'data-player-api\s*=\s*"([^"]+)"',
+                    # 4) أي عنصر يحمل اللاحقة
+                    r'data-player-api\s*=\s*[\'"]([^\'"]+)[\'"]',
+                ]
+                for pat in patterns:
+                    m = re.search(pat, html)
+                    if m:
+                        api_url = m.group(1)
+                        print(f"   ✅ player-api (نمط {patterns.index(pat)+1}): {api_url[:100]}", flush=True)
+                        break
 
-                m2 = re.search(r'data-player-fallback="([^"]+)"', html)
-                if m2:
-                    fallback_url = m2.group(1)
-                    print(f"   ✅ player-fallback: {fallback_url[:80]}", flush=True)
+                # fallback
+                for pat in [
+                    r'data-player-fallback="([^"]+)"',
+                    r"data-player-fallback='([^']+)'",
+                ]:
+                    m = re.search(pat, html)
+                    if m:
+                        fallback_url = m.group(1)
+                        print(f"   ✅ player-fallback: {fallback_url[:100]}", flush=True)
+                        break
+
+                # إذا فشل، ابحث عن أي شيء يشبه API
+                if not api_url:
+                    alt_patterns = [
+                        r'/media/api/[a-f0-9]+',
+                        r'/api/player/[a-zA-Z0-9]+',
+                        r'"player_api"\s*:\s*"([^"]+)"',
+                        r'api["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                    ]
+                    for pat in alt_patterns:
+                        m = re.search(pat, html)
+                        if m:
+                            candidate = m.group(1) if m.lastindex else m.group(0)
+                            if candidate.startswith('http'):
+                                api_url = candidate
+                            else:
+                                api_url = SITE_BASE + candidate if candidate.startswith('/') else SITE_BASE + '/' + candidate
+                            print(f"   ✅ API (بديل): {api_url[:100]}", flush=True)
+                            break
+
+                # احفظ HTML للتشخيص
+                if not api_url and debug_html_path:
+                    try:
+                        with open(debug_html_path, 'w', encoding='utf-8') as f:
+                            f.write(html or "")
+                        html_saved = True
+                        print(f"   💾 HTML محفوظ: {debug_html_path}", flush=True)
+                    except Exception:
+                        pass
 
                 # جيب الكوكيز
                 try:
@@ -206,50 +265,53 @@ def extract_player_api(page_url):
 
                 print(f"   🍪 {len(cookies_dict)} كوكي", flush=True)
 
+                # إذا لم ينجح، اطبع جزءاً من HTML
+                if not api_url and html:
+                    # ابحث عن أي شيء فيه "player" أو "api"
+                    candidates = re.findall(r'[\w-]*(?:player|api)[\w-]*', html[:50000])
+                    print(f"   🔎 كلمات مفتاحية: {list(set(candidates))[:10]}", flush=True)
+
             except Exception as e:
                 print(f"   ❌ {str(e)[:120]}", flush=True)
     except Exception as e:
         print(f"   ❌ {str(e)[:120]}", flush=True)
 
-    return api_url, fallback_url, cookies_dict
+    return api_url, fallback_url, cookies_dict, html_saved
 
 
 # ============================================================
-#  ✅ v16.0: استدعاء API للحصول على رابط البث
+#  API call
 # ============================================================
 def call_player_api(api_url, cookies_dict):
-    """
-    يستدعي API ويعيد (stream_url, player_url)
-    """
-    print(f"   📡 استدعاء API: {api_url[:80]}...", flush=True)
+    print(f"   📡 API: {api_url[:90]}...", flush=True)
 
     headers = {
-        "Referer": SITE_BASE,
+        "Referer": SITE_BASE + "/",
         "Origin": SITE_BASE,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest",
     }
 
     try:
         r = cffi_requests.get(api_url, headers=headers,
                                cookies=cookies_dict,
                                impersonate="chrome120", timeout=20)
+        print(f"   📡 API HTTP {r.status_code}", flush=True)
         if r.status_code != 200:
-            print(f"   ❌ API HTTP {r.status_code}", flush=True)
+            print(f"   📋 {r.text[:200]}", flush=True)
             return None, None
 
         data = r.json()
-        if data.get("status") != "ok":
-            print(f"   ❌ API status: {data.get('status')}", flush=True)
-            return None, None
+        print(f"   📋 JSON keys: {list(data.keys())}", flush=True)
 
-        stream_url = data.get("stream")
-        player_url = data.get("player")
+        stream_url = data.get("stream") or data.get("url") or data.get("file")
+        player_url = data.get("player") or data.get("embed")
 
         if stream_url:
-            print(f"   ✅ stream: {stream_url[:100]}", flush=True)
+            print(f"   ✅ stream: {stream_url[:120]}", flush=True)
         if player_url:
-            print(f"   ✅ player: {player_url[:100]}", flush=True)
+            print(f"   ✅ player: {player_url[:120]}", flush=True)
 
         return stream_url, player_url
 
@@ -259,7 +321,7 @@ def call_player_api(api_url, cookies_dict):
 
 
 # ============================================================
-#  ✅ v16.0: تحميل HLS عبر curl_cffi
+#  HLS downloader
 # ============================================================
 def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_dict, expected_dur=0):
     print(f"   [curl_cffi HLS] {m3u8_url[:80]}...", flush=True)
@@ -383,12 +445,8 @@ def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_dict, expec
     return True, final_size, False
 
 
-# ============================================================
-#  ✅ v16.0: تحميل مباشر بـ yt-dlp
-# ============================================================
 def download_with_ytdlp(stream_url, out_path, referer, cookies_dict):
     print(f"   [yt-dlp] {stream_url[:80]}...", flush=True)
-
     cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items()])[:8000]
 
     cmd = [
@@ -442,7 +500,6 @@ def download_with_ytdlp(stream_url, out_path, referer, cookies_dict):
                     best_size = size
 
             if now - last_change > STALL_TIMEOUT and size > 0:
-                print(f"      🛑 yt-dlp stalled at {size/(1024*1024):.1f} MB", flush=True)
                 try:
                     proc.kill()
                     proc.wait(timeout=5)
@@ -478,40 +535,45 @@ def download_with_ytdlp(stream_url, out_path, referer, cookies_dict):
 
 
 # ============================================================
-#  ✅ v16.0: معالجة الحلقة
+#  process_episode
 # ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
     tmp_ts = os.path.join(ddir, f"temp_{ep:02d}.ts")
     fin = os.path.join(ddir, f"final_{ep:02d}.mp4")
     thb = os.path.join(ddir, f"thumb_{ep:02d}.jpg")
+    debug_html = os.path.join(ddir, f"debug_ep{ep:02d}.html")
 
     try:
-        # 1) بناء رابط الحلقة
-        page_url = build_episode_url(sn, ep)
-        print(f"   🔗 {page_url[:100]}", flush=True)
+        page_url = build_episode_url(sn, ep, season)
+        print(f"   🔗 {page_url}", flush=True)
 
-        # 2) استخراج API
-        api_url, fallback_url, cookies_dict = await asyncio.to_thread(
-            extract_player_api, page_url
+        api_url, fallback_url, cookies_dict, saved = await asyncio.to_thread(
+            extract_player_api, page_url, debug_html
         )
 
+        if not api_url and fallback_url:
+            print(f"   🔄 استخدام fallback", flush=True)
+            api_url = fallback_url
+
         if not api_url:
-            print(f"   ❌ لم يتم العثور على player-api", flush=True)
+            if saved:
+                return False, f"لا player-api (HTML: {debug_html})"
             return False, "لا player-api"
 
-        # 3) استدعاء API
         stream_url, player_url = await asyncio.to_thread(
             call_player_api, api_url, cookies_dict
         )
 
+        if not stream_url and player_url:
+            print(f"   🔄 استخدام player URL كـ stream", flush=True)
+            stream_url = player_url
+
         if not stream_url:
-            print(f"   ❌ فشل الحصول على stream URL", flush=True)
             return False, "لا stream URL"
 
-        # 4) تحميل الفيديو (جرّب curl_cffi أولاً)
         print(f"\n   ⬇️ تحميل...", flush=True)
-        ok, info = await asyncio.to_thread(
+        ok, info, _ = await asyncio.to_thread(
             download_hls_with_curl_cffi,
             stream_url, tmp_ts, page_url, cookies_dict, 0
         )
@@ -524,29 +586,24 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             )
 
         if not ok:
-            print(f"   ❌ فشل التحميل: {info}", flush=True)
             return False, f"فشل: {info}"
 
         size = os.path.getsize(tmp_ts) if os.path.exists(tmp_ts) else 0
         print(f"   📦 {size/(1024*1024):.2f} MB", flush=True)
 
-        # 5) الضغط
         print(f"\n🗜️ ضغط...")
         if SKIP_COMPRESS:
             shutil.copy2(tmp_ts, fin)
         else:
             if not compress_144p(tmp_ts, fin):
-                print(f"   ⚠️ فشل الضغط — نسخ TS")
                 shutil.copy2(tmp_ts, fin)
 
         if not os.path.exists(fin):
             return False, "لا ملف نهائي"
 
-        # 6) Thumbnail
         print(f"\n🖼️ Thumbnail...")
         thumb(fin, thb)
 
-        # 7) رفع
         print(f"\n📤 رفع...")
         cap = f"{sn_ar} الموسم {season} الحلقة {ep}"
         ok = await upload(fin, cap, thb if os.path.exists(thb) else None)
@@ -564,7 +621,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
 
 # ============================================================
-#  الضغط والميتا والرفع
+#  helpers
 # ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
@@ -585,7 +642,6 @@ def compress_144p(inp, out):
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) < 10 * 1024:
-            print(f"   ❌ ffmpeg code={r.returncode}")
             return False
         om = os.path.getsize(out) / (1024 * 1024)
         print(f"   ✅ {im:.2f}→{om:.2f} MB في {time.time()-t0:.1f}s")
@@ -647,10 +703,7 @@ async def upload(fp, caption, tp=None):
     if w == 0 or h == 0:
         w, h = 640, 360
     if d == 0:
-        try:
-            d = int(os.path.getsize(fp) / (1024 * 1024) * 5)
-        except Exception:
-            d = 60
+        d = 60
 
     mb = os.path.getsize(fp) / (1024 * 1024)
     print(f"   📤 رفع {mb:.2f} MB | {w}x{h} | {d}s...")
@@ -677,7 +730,7 @@ async def upload(fp, caption, tp=None):
 
 
 # ============================================================
-#  Main
+#  main
 # ============================================================
 def load_config():
     c = {"series_name": "", "series_name_arabic": "", "season_num": 1,
@@ -700,7 +753,7 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v16.0 — shhaiid4u.net")
+    print("🎬 Video Downloader v16.1 — shhaiid4u.net")
     if TEST_MODE: print("🧪 TEST_MODE")
     print("=" * 60)
 
