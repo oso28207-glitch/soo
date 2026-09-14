@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v7 — FFmpeg TS/MP4 fix + Pyrogram compatibility
+v8 — Fast fail on no-file-created + all previous fixes
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -34,6 +34,7 @@ WAIT_MIN, WAIT_MAX = 15, 30
 YTDLP_TIMEOUT = 600
 FFMPEG_TIMEOUT = 2400
 STALL_TIMEOUT = 180
+FILE_CREATE_TIMEOUT = 60        # ✅ إن لم يُنشأ ملف خلال 60s → فشل
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 
@@ -165,7 +166,6 @@ def get_essential_cookies(cookies_dict):
         kl = k.lower()
         if any(x in kl for x in ['cf_clearance', 'session', 'token', 'auth', 'jwt']):
             important.append(f"{k}={v}")
-    # حد أقصى 1500 حرف
     s = "; ".join(important)
     if len(s) > 1500:
         s = s[:1500]
@@ -610,9 +610,14 @@ def collect_iframes(ep, series_name):
 
 
 # ============================================================
-#  Subprocess with stall detection
+#  ✅ Subprocess with FAST-FAIL on no-file-created
 # ============================================================
 def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="proc"):
+    """
+    ✅ v8: يقتل العملية إذا لم يُنشأ أي ملف خلال FILE_CREATE_TIMEOUT (60s)
+    ✅ stall detection للـ partial downloads
+    ✅ total timeout كحد أقصى
+    """
     log_path = out_path + f".{tag}.log"
     try:
         log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
@@ -630,6 +635,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
     last_change = start
     best_size = 0
     last_report = start
+    file_created = False   # ✅ هل أُنشئ ملف الإخراج ولو بحجم 1 بايت
 
     try:
         while proc.poll() is None:
@@ -640,21 +646,38 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
             if os.path.exists(out_path):
                 try:
                     size = os.path.getsize(out_path)
+                    if size > 0:
+                        file_created = True
                 except Exception:
                     pass
+
             if size > last_size:
                 last_size = size
                 last_change = now
                 if size > best_size:
                     best_size = size
 
+            # Progress report كل 30s
             if now - last_report > 30:
                 el = now - start
-                mb = size / (1024*1024)
+                mb = size / (1024 * 1024)
                 stall_s = now - last_change
                 print(f"      ⏱️  {tag}: {mb:.1f} MB | {el:.0f}s | stall={stall_s:.0f}s", flush=True)
                 last_report = now
 
+            # ✅ إصلاح v8: فشل فوري إذا لم يُنشأ ملف خلال 60s
+            if not file_created and (now - start) > FILE_CREATE_TIMEOUT:
+                print(f"      🚫 {tag}: لم يُنشأ ملف خلال {FILE_CREATE_TIMEOUT}s — إلغاء فوري", flush=True)
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                _print_log_tail(log_path, 300)
+                return False, f"no_file_{FILE_CREATE_TIMEOUT}s"
+
+            # Total timeout
             if now - start > total_timeout:
                 print(f"      ⏰ {tag}: total timeout ({total_timeout}s), size={best_size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -668,6 +691,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                     return True, best_size
                 return False, f"total_timeout@size={best_size}"
 
+            # Stall detection
             if now - last_change > stall_timeout and size > 0:
                 print(f"      🛑 {tag}: stalled at {size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -735,7 +759,6 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--add-header', 'Sec-Fetch-Dest:empty',
     ]
 
-    # ✅ فقط الكوكيز المهمة
     cookie_str = get_essential_cookies(cookies_dict)
     if cookie_str:
         cmd += ['--add-header', f'Cookie:{cookie_str}']
@@ -745,13 +768,10 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
 
 
 def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
-    """ffmpeg مع headers مختصرة + إجبار TS container"""
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
 
-    # ✅ فقط الكوكيز المهمة
     cookie_str = get_essential_cookies(cookies_dict)
 
-    # ✅ headers مختصرة جداً
     header_lines = [
         f"Referer: {referer}",
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -857,7 +877,6 @@ def compress_144p(inp, out):
             print(f"   ❌ ffmpeg code={r.returncode}")
             if r.stderr:
                 print(f"      📋 {r.stderr[-300:]}")
-            # ✅ محاولة بدون -vsync
             print(f"   🔄 محاولة بدون -vsync...")
             cmd_no_vsync = [c for c in cmd if c not in ('-vsync', 'vfr')]
             r = subprocess.run(cmd_no_vsync, capture_output=True, text=True, timeout=3600)
@@ -936,7 +955,6 @@ def fix_video(inp, out):
     """محاولة إصلاح ملف معطوب — يدعم TS/MP4"""
     print(f"   🔧 محاولة إصلاح: {os.path.basename(inp)}...")
 
-    # نحاول أولاً `-c copy` إلى MP4 صحيح، ثم إعادة ترميز
     attempts = [
         # 1. إعادة muxing بدون re-encode
         [
@@ -952,7 +970,7 @@ def fix_video(inp, out):
             '-movflags', '+faststart',
             '-y', out,
         ],
-        # 2. إعادة ترميز كامل (إن فشل الأول)
+        # 2. إعادة ترميز كامل
         [
             'ffmpeg',
             '-err_detect', 'ignore_err',
@@ -1310,10 +1328,11 @@ def load_config():
 # ============================================================
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v7")
+    print("🎬 Video Downloader v8")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
+    print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s")
+    print(f"🛑 stall: {STALL_TIMEOUT}s | file-create: {FILE_CREATE_TIMEOUT}s")
     print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
     print(f"🎞️ الحد الأدنى للحلقة: {MIN_EPISODE_DURATION}s")
     print("=" * 60)
