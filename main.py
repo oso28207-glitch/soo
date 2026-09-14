@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v13 — Adaptive speed detection + luluvdo priority + strict duration
+v14 — luluvdo debug + retry with fresh session + strict duration check
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -24,25 +24,26 @@ SKIP_DOWNLOAD = os.environ.get("SKIP_DOWNLOAD", "false").lower() in ("true", "1"
 SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "false").lower() in ("true", "1", "yes")
 SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1", "yes")
 
-# ===== الحدود المحسّنة =====
+# ===== الحدود =====
 MIN_VALID_SIZE = 100 * 1024
 MIN_PARTIAL_ACCEPT = 30 * 1024 * 1024
-MIN_EPISODE_DURATION = 1200            # 20 دقيقة
-NATURAL_EXIT_MIN_DURATION = 600        # 10 دقائق
+MIN_EPISODE_DURATION = 1500            # 25 دقيقة
+NATURAL_EXIT_MIN_DURATION = 900        # 15 دقيقة
 MAX_RUNTIME_SECONDS = 165 * 60
 WAIT_MIN, WAIT_MAX = 10, 20
 
-# ✅ timeouts أقصر بكثير
-YTDLP_TIMEOUT = 1800                   # 30 دقيقة
-FFMPEG_TIMEOUT = 1800                  # 30 دقيقة
-STALL_TIMEOUT = 60                     # ✅ دقيقة واحدة فقط
+YTDLP_TIMEOUT = 1800
+FFMPEG_TIMEOUT = 1800
+STALL_TIMEOUT = 45                     # ✅ 45s بدل 60
 FILE_CREATE_TIMEOUT = 30
 MAX_DOWNLOAD_ATTEMPTS = 2
 
-# ✅ كشف البطء التكيفي
 MIN_ACCEPTABLE_SPEED = 300 * 1024      # 300 KB/s
-SPEED_CHECK_INTERVAL = 30              # كل 30 ثانية
-SPEED_GRACE_PERIOD = 60                # 60 ثانية سماح أول
+SPEED_CHECK_INTERVAL = 20
+SPEED_GRACE_PERIOD = 30
+
+# ✅ v14: عتبة القبول من المدة المتوقعة
+DURATION_ACCEPT_RATIO = 0.95           # 95% من المدة المتوقعة
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 
@@ -113,7 +114,6 @@ if not (TEST_MODE and SKIP_UPLOAD):
     from pyrogram.errors import FloodWait
 
 
-# ============================================================
 async def setup_telegram():
     global app
     if TEST_MODE and SKIP_UPLOAD:
@@ -182,7 +182,7 @@ def get_all_cookies_string(cookies_dict):
 
 
 # ============================================================
-#  ✅ المدة المتوقعة
+#  المدة المتوقعة
 # ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
     try:
@@ -247,7 +247,7 @@ def is_valid_video_url(url, source_url=None):
 
 
 # ============================================================
-#  vinovo (مختصر — كما v12)
+#  vinovo
 # ============================================================
 def try_vinovo_via_cdp(sb, iframe_url):
     if "vinovo.to" not in iframe_url:
@@ -268,8 +268,7 @@ def try_vinovo_via_cdp(sb, iframe_url):
         pass
     headers = {
         "Content-Type": "application/json",
-        "Referer": iframe_url,
-        "Origin": base_url,
+        "Referer": iframe_url, "Origin": base_url,
         "X-Requested-With": "XMLHttpRequest",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
@@ -500,7 +499,6 @@ def collect_iframes(ep, series_name):
             if not servers:
                 return result
 
-            # ✅ luluvdo أولاً، vidsonic أخيراً
             prio = {"luluvdo": 0, "vinovo": 1, "vidaraa": 2, "vids": 3, "v": 4, "vidsonic": 5, "playmate": 6}
             servers.sort(key=lambda s: prio.get(s.get("name", "").lower(), 99))
             print(f"📦 {len(servers)} سيرفر (مرتبة):")
@@ -547,7 +545,7 @@ def collect_iframes(ep, series_name):
 
 
 # ============================================================
-#  ✅ v13: subprocess + adaptive speed detection
+#  ✅ v14: subprocess + adaptive + show error content
 # ============================================================
 def _check_file_created(out_path):
     for path in [out_path, out_path + ".part", out_path + ".ytdl", out_path + ".temp"]:
@@ -598,13 +596,18 @@ def _get_current_size(out_path):
     return total
 
 
+def _show_error_content(out_path, chars=200):
+    """✅ v14: يعرض محتوى الملف الصغير (خطأ) للتشخيص"""
+    try:
+        if os.path.exists(out_path) and os.path.getsize(out_path) < 5000:
+            with open(out_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()[:chars]
+            print(f"      🔍 محتوى الخطأ: {content[:chars]}", flush=True)
+    except Exception:
+        pass
+
+
 def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
-    """
-    ✅ v13: كشف البطء التكيفي
-    - يقيس السرعة كل 30s
-    - إذا السرعة < MIN_ACCEPTABLE_SPEED لأكثر من SPEED_GRACE_PERIOD + SPEED_CHECK_INTERVAL → إلغاء
-    - stall: إذا لم يزد الحجم 60s → إلغاء
-    """
     log_path = out_path + f".{tag}.log"
     try:
         log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
@@ -641,7 +644,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 if size > best_size:
                     best_size = size
 
-            # تقرير كل 30s
             if now - last_report > 30:
                 el = now - start
                 mb = size / (1024*1024)
@@ -649,15 +651,13 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 print(f"      ⏱️  {tag}: {mb:.1f} MB | {el:.0f}s | stall={stall_s:.0f}s", flush=True)
                 last_report = now
 
-            # ✅ كشف البطء التكيفي
             if now - last_speed_check > SPEED_CHECK_INTERVAL:
                 speed = (size - last_speed_size) / (now - last_speed_check)
                 speed_kb = speed / 1024
                 last_speed_check = now
                 last_speed_size = size
 
-                # تجاهل أول فترة سماح
-                if (now - start) > SPEED_GRACE_PERIOD:
+                if (now - start) > SPEED_GRACE_PERIOD and size > 0:
                     if speed < MIN_ACCEPTABLE_SPEED:
                         slow_count += 1
                         print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s (بطيء #{slow_count})", flush=True)
@@ -675,7 +675,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                     else:
                         slow_count = 0
 
-            # فشل فوري إذا لم يُنشأ ملف
             if not file_created and (now - start) > FILE_CREATE_TIMEOUT:
                 print(f"      🚫 {tag}: لم يُنشأ ملف خلال {FILE_CREATE_TIMEOUT}s", flush=True)
                 try:
@@ -686,7 +685,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 log_file.close()
                 return False, f"no_file_{FILE_CREATE_TIMEOUT}s", False
 
-            # total timeout
             if now - start > total_timeout:
                 print(f"      ⏰ {tag}: total timeout ({total_timeout}s), size={best_size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -699,7 +697,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                     return True, best_size, False
                 return False, f"total_timeout@{best_size}", False
 
-            # stall
             if now - last_change > STALL_TIMEOUT and size > 0:
                 print(f"      🛑 {tag}: stalled at {size/(1024*1024):.1f} MB", flush=True)
                 try:
@@ -724,9 +721,27 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
     exit_code = proc.returncode
     size = _get_current_size(out_path)
     natural_exit = (exit_code == 0)
+
+    # ✅ v14: إذا الملف صغير جداً، اعرض محتواه (خطأ)
+    if size < 5000:
+        _show_error_content(out_path)
+        _print_log_tail(log_path, 400)
+
     if size >= MIN_VALID_SIZE:
         return True, size, natural_exit
     return False, f"exited@{size}", natural_exit
+
+
+def _print_log_tail(log_path, chars=400):
+    try:
+        if os.path.exists(log_path):
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            if content:
+                tail = content[-chars:].replace('\n', ' | ')
+                print(f"      📋 {tail}", flush=True)
+    except Exception:
+        pass
 
 
 def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
@@ -831,7 +846,7 @@ def compress_144p(inp, out):
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) < 10 * 1024:
-            print(f"   ❌ ffmpeg code={r.returncode}: {r.stderr[-200:] if r.stderr else ''}")
+            print(f"   ❌ ffmpeg code={r.returncode}")
             return False
         om = os.path.getsize(out) / (1024 * 1024)
         print(f"   ✅ {im:.2f}→{om:.2f} MB في {time.time()-t0:.1f}s")
@@ -983,7 +998,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 if exceeded():
                     break
 
-                # ✅ المدة المتوقعة
                 expected_dur = 0
                 if ".m3u8" in url:
                     expected_dur = await asyncio.to_thread(
@@ -1014,18 +1028,20 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                             _, _, actual_dur = meta(tmp_ts)
                         print(f"   🎞️ مدة التنزيل: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s) | طبيعي: {natural}")
 
-                        # ✅ شروط القبول
+                        # ✅ v14: شروط القبول المُشدَّدة
                         is_complete = False
                         reason = ""
-                        if natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
+
+                        if expected_dur > 0:
+                            if actual_dur >= int(expected_dur * DURATION_ACCEPT_RATIO):
+                                is_complete = True
+                                reason = f"وصلنا {actual_dur}/{expected_dur}s"
+                        elif natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
                             is_complete = True
                             reason = "انتهى طبيعياً"
                         elif actual_dur >= MIN_EPISODE_DURATION:
                             is_complete = True
                             reason = "المدة كافية"
-                        elif expected_dur > 0 and actual_dur >= expected_dur - 60:
-                            is_complete = True
-                            reason = f"وصلنا للمدة المتوقعة"
 
                         if is_complete:
                             success_if = it["url"]
@@ -1035,7 +1051,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                             print(f"   ✅ نجاح كامل ({reason})!")
                             break
                         else:
-                            # احفظ partial للمقارنة
                             if size > (partial_candidate[1] if partial_candidate else 0):
                                 partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}.ts")
                                 try:
@@ -1128,13 +1143,14 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v13")
+    print("🎬 Video Downloader v14")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
     print(f"🐌 الحد الأدنى للسرعة: {MIN_ACCEPTABLE_SPEED//1024} KB/s")
     print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
-    print(f"🎞️ الحد الأدنى للحلقة: {MIN_EPISODE_DURATION}s ({MIN_EPISODE_DURATION//60}m)")
+    print(f"🎞️ الحد الأدنى: {MIN_EPISODE_DURATION}s ({MIN_EPISODE_DURATION//60}m)")
+    print(f"📏 عتبة القبول من المتوقعة: {int(DURATION_ACCEPT_RATIO*100)}%")
     print("=" * 60)
 
     try:
