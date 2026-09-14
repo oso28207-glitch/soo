@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v16.3 — Fix: set Referer header via CDP before iframe navigation + wait for jwplayer
+v16.4 — Fix: fetch embed HTML via curl_cffi with proper Referer + extract m3u8 from HTML
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -65,6 +65,7 @@ BROWSER_FETCH_BATCH = 6
 
 PARENT_WAIT_SECONDS = 20
 JWPLAYER_WAIT_SECONDS = 60
+EMBED_FETCH_TIMEOUT = 25       # ✅ v16.4
 
 SCRIPT_START = time.time()
 
@@ -578,22 +579,111 @@ def _extract_m3u8_from_jwplayer(sb):
 
 
 def _set_referer_header(sb, referer):
-    """✅ v16.3: ضبط ترويسة Referer و Origin قبل تنقلات CDP"""
+    """✅ v16.4: إصلاح — استخدام sb.driver.execute_cdp_cmd"""
     try:
-        sb.cdp.send_cdp_cmd("Network.enable", {})
+        sb.driver.execute_cdp_cmd("Network.enable", {})
     except Exception:
         pass
     try:
-        sb.cdp.send_cdp_cmd("Network.setExtraHTTPHeaders", {
+        sb.driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {
             "headers": {
                 "Referer": referer,
                 "Origin": "https://u.3seq.cam",
             }
         })
+        print(f"      ✅ تم ضبط Referer", flush=True)
         return True
     except Exception as e:
         print(f"      ⚠️ set_referer: {str(e)[:80]}", flush=True)
-        return False
+        # جرب sb.cdp إن كان متوفراً
+        try:
+            sb.cdp.send_cdp_cmd("Network.setExtraHTTPHeaders", {
+                "headers": {"Referer": referer}
+            })
+            print(f"      ✅ تم ضبط Referer (cdp)", flush=True)
+            return True
+        except Exception:
+            return False
+
+
+# ============================================================
+#  ✅ v16.4: جلب HTML الـ embed عبر curl_cffi
+# ============================================================
+def fetch_embed_html_cffi(iframe_url, referer, cookies_dict):
+    """جلب صفحة الـ embed مباشرة بـ Referer و cookies صحيحة"""
+    cookie_str = get_all_cookies_string(cookies_dict)
+    headers = {
+        "Referer": referer,
+        "Origin": "https://u.3seq.cam",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "iframe",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+    }
+    if cookie_str:
+        headers["Cookie"] = cookie_str
+    try:
+        r = cffi_requests.get(iframe_url, headers=headers,
+                              impersonate="chrome120", timeout=EMBED_FETCH_TIMEOUT,
+                              verify=False, allow_redirects=True)
+        print(f"      📄 [cffi] embed: HTTP {r.status_code} | {len(r.text)} bytes", flush=True)
+        return r.text if r.status_code == 200 else None
+    except Exception as e:
+        print(f"      ❌ [cffi] embed: {str(e)[:100]}", flush=True)
+        return None
+
+
+def extract_m3u8_from_html(html, iframe_url=None):
+    """استخراج m3u8 من HTML الـ embed (6 أنماط مختلفة)"""
+    if not html:
+        return []
+    found = []
+
+    def _add(u):
+        if not u:
+            return
+        u = u.replace('\\/', '/').strip()
+        if u.startswith('http') and ('.m3u8' in u.lower() or 'master' in u.lower()):
+            if u not in found:
+                found.append(u)
+
+    # 1) أي رابط .m3u8 مباشر في HTML
+    for m in re.finditer(r'(https?:[^\s"\'<>\\]+\.m3u8[^\s"\'<>\\]*)', html):
+        _add(m.group(1))
+
+    # 2) file:"..." أو file:'...'
+    for m in re.finditer(r'["\']file["\']\s*:\s*["\']([^"\']+)["\']', html):
+        _add(m.group(1))
+
+    # 3) sources:[{file:"..."}]
+    for m in re.finditer(
+        r'["\']sources["\']\s*:\s*\[[^\]]*?["\']file["\']\s*:\s*["\']([^"\']+)["\']',
+        html, re.DOTALL):
+        _add(m.group(1))
+
+    # 4) jwplayer(...).setup({...file:...})
+    for m in re.finditer(
+        r'jwplayer\s*\([^)]*\)\s*\.\s*setup\s*\(\s*\{[^}]*?["\']file["\']\s*:\s*["\']([^"\']+)["\']',
+        html, re.DOTALL):
+        _add(m.group(1))
+
+    # 5) متغيرات JS شائعة
+    for name in ['videoUrl', 'fileUrl', 'streamUrl', 'hlsUrl', 'm3u8',
+                 'source', 'videoSrc', 'file', 'url']:
+        for m in re.finditer(
+            rf'["\']?{name}["\']?\s*[:=]\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
+            html):
+            _add(m.group(1))
+
+    # 6) data-src أو data-file
+    for m in re.finditer(r'data-(?:src|file|url|video)\s*=\s*["\']([^"\']+\.m3u8[^"\']*)["\']', html):
+        _add(m.group(1))
+
+    return found
 
 
 def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
@@ -768,40 +858,50 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                 except Exception as e:
                     print(f"      ⚠️ handler: {str(e)[:80]}", flush=True)
 
-                # ✅ v16.3 الخطوة 1: افتح الصفحة الأم أولاً لضبط الكوكيز
+                # ✅ v16.4 الخطوة 1: اجمع كوكيز الصفحة الأم
                 if watch_url:
                     try:
                         sb.cdp.open(watch_url)
-                        sb.cdp.sleep(5)
+                        sb.cdp.sleep(6)
                         for sel in ["#s_0", ".serversList li", "ul.serversList li"]:
                             try:
                                 sb.cdp.click_if_visible(sel)
                                 break
                             except Exception:
                                 pass
-                        # ✅ v16.3: انتظر 20s لتشغيل الـ iframe في السياق الأم
                         print(f"      ⏳ انتظار {PARENT_WAIT_SECONDS}s على الصفحة الأم...", flush=True)
                         sb.cdp.sleep(PARENT_WAIT_SECONDS)
                         cookies_dict = get_cookies_safe(sb)
                         cookies_full = get_cookies_full(sb)
                         print(f"      🍪 بعد الأم: {len(cookies_dict)} كوكي", flush=True)
-
-                        # ✅ فحص: هل التقطنا m3u8 من الـ iframe أثناء وجودنا على الأم؟
-                        try:
-                            with open(lf, encoding="utf-8") as fh:
-                                captured = [u.strip() for u in fh.readlines() if u.strip()]
-                            m3u8_in_parent = [u for u in captured if ".m3u8" in u]
-                            if m3u8_in_parent:
-                                print(f"      🎯 التقاط m3u8 من السياق الأم: {len(m3u8_in_parent)} رابط", flush=True)
-                                for u in m3u8_in_parent[:3]:
-                                    print(f"         → {u[:110]}", flush=True)
-                                m3u8_urls = m3u8_in_parent
-                        except Exception:
-                            pass
                     except Exception as e:
                         print(f"      ⚠️ parent: {str(e)[:80]}", flush=True)
 
-                # ✅ v16.3 الخطوة 2: إذا لم نجد m3u8، انتقل إلى iframe مع Referer صحيح
+                # ✅ v16.4 الخطوة 2: جلب HTML الـ embed عبر curl_cffi
+                if cookies_dict and watch_url:
+                    print(f"      🎯 [v16.4] جلب embed HTML عبر curl_cffi...", flush=True)
+                    html = fetch_embed_html_cffi(iframe_url, watch_url, cookies_dict)
+                    if html:
+                        try:
+                            dbg = os.path.join(os.path.dirname(out_path),
+                                               "embed_debug.html")
+                            with open(dbg, 'w', encoding='utf-8') as fh:
+                                fh.write(html)
+                            print(f"      💾 حُفظ في {dbg}", flush=True)
+                        except Exception:
+                            pass
+
+                        extracted = extract_m3u8_from_html(html, iframe_url)
+                        if extracted:
+                            print(f"      ✨ استُخرج {len(extracted)} m3u8 من HTML:", flush=True)
+                            for u in extracted[:5]:
+                                print(f"         → {u[:110]}", flush=True)
+                            m3u8_urls = extracted
+                        else:
+                            sample = html[:500].replace("\n", " ")
+                            print(f"      ⚠️ لا m3u8 في HTML (عينة): {sample[:200]}", flush=True)
+
+                # ✅ v16.4 الخطوة 3: إن فشل، جرّب فتح الـ iframe مع Referer
                 if not m3u8_urls:
                     print(f"      🔀 الانتقال إلى iframe مع Referer...", flush=True)
                     _set_referer_header(sb, watch_url or "https://u.3seq.cam/")
@@ -810,7 +910,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                     except Exception as e:
                         print(f"      ⚠️ open iframe: {str(e)[:80]}", flush=True)
 
-                    # ✅ v16.3: انتظر ظهور jwplayer.js (حتى 60s)
                     print(f"      ⏳ انتظار JW Player (حتى {JWPLAYER_WAIT_SECONDS}s)...", flush=True)
                     jw_ready = False
                     for tick in range(JWPLAYER_WAIT_SECONDS // 2):
@@ -828,7 +927,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                     if not jw_ready:
                         print(f"      ⚠️ jwplayer لم يظهر", flush=True)
 
-                    # محاولات تشغيل
                     for cycle in range(4):
                         for sel in ["video", "button.vjs-big-play-button",
                                     ".jw-icon-playback", ".jw-display-icon-container",
@@ -879,10 +977,9 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                 except Exception:
                     pass
 
-                # URLs
                 all_perf_urls = _extract_all_urls_from_perf(sb)
                 print(f"      🔍 performance API: {len(all_perf_urls)} resource", flush=True)
-                for u in all_perf_urls[:20]:
+                for u in all_perf_urls[:15]:
                     print(f"         → {u[:100]}", flush=True)
 
                 try:
@@ -904,14 +1001,12 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                     pass
 
                 print(f"      📋 CDP handler: {len(urls)} رابط", flush=True)
-                for u in urls[:20]:
-                    print(f"         · {u[:100]}", flush=True)
 
+                # جمع كل المصادر
                 all_m3u8 = [u for u in urls if ".m3u8" in u]
                 for u in all_perf_urls:
                     if ".m3u8" in u and u not in all_m3u8:
                         all_m3u8.append(u)
-                # ضم أي m3u8 من السياق الأم
                 for u in m3u8_urls:
                     if u not in all_m3u8:
                         all_m3u8.append(u)
@@ -924,9 +1019,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                 if not final_m3u8:
                     perf_urls = _extract_m3u8_from_perf(sb)
                     if perf_urls:
-                        print(f"      🔎 performance m3u8 → {len(perf_urls)}", flush=True)
-                        for u in perf_urls:
-                            print(f"         → {u[:110]}", flush=True)
                         final_m3u8 = perf_urls
 
                 if not final_m3u8:
@@ -936,12 +1028,10 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                         final_m3u8 = [jw_url]
 
                 m3u8_urls = final_m3u8
-
-                print(f"      📊 {len(urls)} (handler) + {len(all_perf_urls)} (perf) | مدة: {video_duration:.0f}s | 🍪 {len(cookies_dict)}", flush=True)
+                print(f"      📊 {len(urls)} (handler) + {len(all_perf_urls)} (perf) + {len(m3u8_urls)} (m3u8) | 🍪 {len(cookies_dict)}", flush=True)
 
                 if m3u8_urls:
                     print(f"      🎯 {m3u8_urls[0][:110]}", flush=True)
-                    # لا ننتقل إلى CDN — نبقي سياق v.vidsp.net للـ fetch
                     download_result = _browser_download_hls(
                         sb, m3u8_urls, out_path, expected_dur
                     )
@@ -2146,10 +2236,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v16.3")
+    print("🎬 Video Downloader v16.4")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Referer header + JW Player wait + parent capture")
+    print(f"🌐 cffi embed fetch + Referer fix + HTML m3u8 extract")
     print(f"📦 batch={BROWSER_FETCH_BATCH}")
     print("=" * 60)
 
