@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.7 — Browser-native HLS via execute_script + polling
+v15.8 — Same-origin browser HLS download (fix CORS on tnmr.org)
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -407,7 +407,7 @@ def try_vinovo_browser_fetch(iframe_url):
 
 
 # ============================================================
-#  ✅✅ v15.7: JS fetch helpers (polling-based)
+#  JS fetch helpers
 # ============================================================
 def _js_fetch_text(sb, url, timeout=40):
     url_json = json.dumps(url)
@@ -415,7 +415,7 @@ def _js_fetch_text(sb, url, timeout=40):
     (function(){
         window.__hlsText = null;
         window.__hlsTextDone = false;
-        fetch(%s, {credentials: 'include'})
+        fetch(%s, {credentials: 'include', mode: 'cors'})
             .then(r => r.text().then(t => {
                 window.__hlsText = {status: r.status, text: t};
                 window.__hlsTextDone = true;
@@ -460,7 +460,7 @@ def _js_fetch_batch_b64(sb, urls, timeout=120):
         var pending = urls.length;
         if (pending === 0) { window.__hlsBatch = results; window.__hlsBatchDone = true; return; }
         urls.forEach(function(u, idx) {
-            fetch(u, {credentials: 'include'})
+            fetch(u, {credentials: 'include', mode: 'cors'})
                 .then(r => {
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     return r.arrayBuffer();
@@ -515,7 +515,8 @@ def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
 
     r1 = _js_fetch_text(sb, m3u8_url, timeout=40)
     if not r1 or r1.get("status") != 200:
-        print(f"   ❌ فشل جلب m3u8: {r1}", flush=True)
+        err = r1.get("error") if r1 else "None"
+        print(f"   ❌ فشل جلب m3u8: status={r1.get('status') if r1 else 'None'} err={err}", flush=True)
         return None
 
     m3u8_content = r1.get("text", "")
@@ -732,6 +733,13 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
 
                 if m3u8_urls:
                     print(f"      🎯 {m3u8_urls[0][:110]}", flush=True)
+                    # ✅✅ v15.8: انتقل إلى نطاق الـ CDN قبل fetch (same-origin)
+                    try:
+                        sb.cdp.open(m3u8_urls[0])
+                        sb.cdp.sleep(3)
+                        print(f"      🔀 تم الانتقال إلى نطاق الـ CDN", flush=True)
+                    except Exception as _e:
+                        print(f"      ⚠️ فشل الانتقال: {str(_e)[:80]}", flush=True)
                     download_result = _browser_download_hls(
                         sb, m3u8_urls, out_path, expected_dur
                     )
@@ -1736,13 +1744,11 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.7")
+    print("🎬 Video Downloader v15.8")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Browser HLS via execute_script + polling")
+    print(f"🌐 Same-origin browser HLS (ننتقل إلى tmnr.org قبل fetch)")
     print(f"📦 batch={BROWSER_FETCH_BATCH}")
-    print(f"📏 عتبة القبول: {int(DURATION_ACCEPT_RATIO*100)}%")
-    print(f"✅✅ تحقق نهائي: ≥ {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
     print("=" * 60)
 
     try:
