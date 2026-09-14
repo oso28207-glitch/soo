@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.6 — Browser-native HLS download (bypass Cloudflare 403 on tmnr.org)
+v15.7 — Browser-native HLS via execute_script + polling
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -26,7 +26,6 @@ SKIP_DOWNLOAD = os.environ.get("SKIP_DOWNLOAD", "false").lower() in ("true", "1"
 SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "false").lower() in ("true", "1", "yes")
 SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1", "yes")
 
-# ===== الحدود =====
 MIN_VALID_SIZE = 100 * 1024
 MIN_PARTIAL_ACCEPT = 30 * 1024 * 1024
 MIN_EPISODE_DURATION = 900
@@ -58,9 +57,7 @@ CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 CURL_CFFI_WORKERS = 8
 CURL_CFFI_TIMEOUT = 60
 
-# ✅ v15.6: browser fetch
-BROWSER_FETCH_BATCH = 6       # عدد الـ segments في كل دفعة عبر المتصفح
-BROWSER_FETCH_MAX_SEG_MB = 3  # الحد الأقصى لحجم segment (MB) — لتجنب btoa بطيء
+BROWSER_FETCH_BATCH = 6
 
 SCRIPT_START = time.time()
 
@@ -150,9 +147,6 @@ async def setup_telegram():
         return False
 
 
-# ============================================================
-#  كوكيز
-# ============================================================
 def get_cookies_safe(sb):
     cookies_dict = {}
     try:
@@ -232,9 +226,6 @@ def get_all_cookies_string(cookies_dict):
     return s[:8000]
 
 
-# ============================================================
-#  get_expected_duration
-# ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
     cookie_str = get_all_cookies_string(cookies_dict)
     headers = {
@@ -416,16 +407,231 @@ def try_vinovo_browser_fetch(iframe_url):
 
 
 # ============================================================
-#  ✅✅ v15.6: extract_and_download_via_browser
-#  يفتح المتصفح، يستخرج m3u8، ثم يحمل كل الـ segments
-#  عبر المتصفح نفسه (تجاوز Cloudflare 100%)
+#  ✅✅ v15.7: JS fetch helpers (polling-based)
 # ============================================================
+def _js_fetch_text(sb, url, timeout=40):
+    url_json = json.dumps(url)
+    js = """
+    (function(){
+        window.__hlsText = null;
+        window.__hlsTextDone = false;
+        fetch(%s, {credentials: 'include'})
+            .then(r => r.text().then(t => {
+                window.__hlsText = {status: r.status, text: t};
+                window.__hlsTextDone = true;
+            }))
+            .catch(e => {
+                window.__hlsText = {status: -1, error: String(e)};
+                window.__hlsTextDone = true;
+            });
+    })();
+    """ % url_json
+
+    try:
+        sb.cdp.execute_script(js)
+    except Exception:
+        return None
+
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(0.3)
+        try:
+            done = sb.cdp.execute_script("return window.__hlsTextDone === true")
+        except Exception:
+            done = False
+        if done:
+            try:
+                return sb.cdp.execute_script("return window.__hlsText")
+            except Exception:
+                return None
+    return None
+
+
+def _js_fetch_batch_b64(sb, urls, timeout=120):
+    if not urls:
+        return {}
+    urls_json = json.dumps(urls)
+    js = """
+    (function(){
+        window.__hlsBatch = {};
+        window.__hlsBatchDone = false;
+        var urls = %s;
+        var results = {};
+        var pending = urls.length;
+        if (pending === 0) { window.__hlsBatch = results; window.__hlsBatchDone = true; return; }
+        urls.forEach(function(u, idx) {
+            fetch(u, {credentials: 'include'})
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.arrayBuffer();
+                })
+                .then(buf => {
+                    var bytes = new Uint8Array(buf);
+                    var binary = '';
+                    var chunk = 8192;
+                    for (var j = 0; j < bytes.length; j += chunk) {
+                        binary += String.fromCharCode.apply(null, bytes.subarray(j, Math.min(j+chunk, bytes.length)));
+                    }
+                    results[String(idx)] = btoa(binary);
+                    pending--;
+                    if (pending === 0) { window.__hlsBatch = results; window.__hlsBatchDone = true; }
+                })
+                .catch(e => {
+                    results[String(idx)] = null;
+                    pending--;
+                    if (pending === 0) { window.__hlsBatch = results; window.__hlsBatchDone = true; }
+                });
+        });
+    })();
+    """ % urls_json
+
+    try:
+        sb.cdp.execute_script(js)
+    except Exception as e:
+        print(f"      ❌ JS inject fail: {str(e)[:80]}", flush=True)
+        return {}
+
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(0.3)
+        try:
+            done = sb.cdp.execute_script("return window.__hlsBatchDone === true")
+        except Exception:
+            done = False
+        if done:
+            try:
+                res = sb.cdp.execute_script("return window.__hlsBatch")
+            except Exception:
+                return {}
+            if isinstance(res, dict):
+                return res
+            return {}
+    return {}
+
+
+def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
+    m3u8_url = m3u8_urls[0]
+    print(f"   🌐 تحميل عبر المتصفح: {m3u8_url[:80]}", flush=True)
+
+    r1 = _js_fetch_text(sb, m3u8_url, timeout=40)
+    if not r1 or r1.get("status") != 200:
+        print(f"   ❌ فشل جلب m3u8: {r1}", flush=True)
+        return None
+
+    m3u8_content = r1.get("text", "")
+    base_url = m3u8_url.rsplit('/', 1)[0]
+
+    def _parse(text, b_url):
+        segs = []
+        variants = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '.m3u8' in line:
+                variants.append(line if line.startswith('http') else urljoin(b_url + '/', line))
+                continue
+            if line.endswith('.ts') or '.ts?' in line or 'seg' in line.lower():
+                segs.append(line if line.startswith('http') else urljoin(b_url + '/', line))
+        return segs, variants
+
+    segments, variants = _parse(m3u8_content, base_url)
+
+    if not segments and variants:
+        print(f"   📋 master → {len(variants)} variant", flush=True)
+        for v in variants[:3]:
+            rv = _js_fetch_text(sb, v, timeout=40)
+            if rv and rv.get("status") == 200:
+                v_base = v.rsplit('/', 1)[0]
+                segments, _ = _parse(rv.get("text", ""), v_base)
+                if segments:
+                    print(f"   ✅ variant: {len(segments)} segment", flush=True)
+                    break
+
+    if not segments:
+        print(f"   ❌ لا segments", flush=True)
+        return None
+
+    print(f"   ⬇️ تحميل {len(segments)} segment عبر المتصفح (batch={BROWSER_FETCH_BATCH})...", flush=True)
+
+    seg_dir = tempfile.mkdtemp(prefix="hls_seg_")
+    seg_paths = {}
+    failed = 0
+    total_bytes = 0
+
+    for i in range(0, len(segments), BROWSER_FETCH_BATCH):
+        if exceeded():
+            break
+        batch = segments[i:i+BROWSER_FETCH_BATCH]
+        result = _js_fetch_batch_b64(sb, batch, timeout=120)
+
+        for idx_str, b64 in result.items():
+            try:
+                idx = int(idx_str)
+            except Exception:
+                continue
+            seg_idx = i + idx
+            if b64:
+                try:
+                    data = base64.b64decode(b64)
+                    seg_path = os.path.join(seg_dir, f"seg_{seg_idx:06d}.ts")
+                    with open(seg_path, 'wb') as f:
+                        f.write(data)
+                    seg_paths[seg_idx] = seg_path
+                    total_bytes += len(data)
+                except Exception:
+                    failed += 1
+            else:
+                failed += 1
+
+        done = min(i + BROWSER_FETCH_BATCH, len(segments))
+        if done % 30 == 0 or done == len(segments):
+            print(f"      📦 {done}/{len(segments)} | {total_bytes/(1024*1024):.1f} MB | فشل: {failed}", flush=True)
+
+    if not seg_paths:
+        try: shutil.rmtree(seg_dir, ignore_errors=True)
+        except: pass
+        return None
+
+    success_rate = len(seg_paths) / max(len(segments), 1)
+    print(f"   ✅ {len(seg_paths)}/{len(segments)} ({success_rate:.0%}) | {total_bytes/(1024*1024):.1f} MB", flush=True)
+
+    sorted_segs = [seg_paths[k] for k in sorted(seg_paths.keys())]
+    concat_file = os.path.join(seg_dir, "concat.txt")
+    with open(concat_file, 'w') as f:
+        for p in sorted_segs:
+            f.write(f"file '{p}'\n")
+
+    print(f"   🔗 دمج {len(sorted_segs)} segment...", flush=True)
+    concat_cmd = [
+        'ffmpeg', '-hide_banner', '-loglevel', 'warning',
+        '-f', 'concat', '-safe', '0',
+        '-i', concat_file,
+        '-c', 'copy', '-f', 'mpegts', '-y', out_path
+    ]
+    try:
+        r = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not os.path.exists(out_path):
+            print(f"   ❌ فشل الدمج: {r.returncode}", flush=True)
+            try: shutil.rmtree(seg_dir, ignore_errors=True)
+            except: pass
+            return None
+    except Exception as e:
+        print(f"   ❌ concat: {e}", flush=True)
+        try: shutil.rmtree(seg_dir, ignore_errors=True)
+        except: pass
+        return None
+
+    final_size = os.path.getsize(out_path)
+    print(f"   ✅ ملف نهائي: {final_size/(1024*1024):.1f} MB", flush=True)
+
+    try: shutil.rmtree(seg_dir, ignore_errors=True)
+    except: pass
+
+    return (final_size, True)
+
+
 def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
-    """
-    يفتح iframe، يستخرج m3u8 URLs، ثم يحمل الـ segments عبر المتصفح.
-    يرجع: (m3u8_urls, video_duration, cookies_dict, cookies_full, download_result)
-    download_result = (size, success) أو None
-    """
     print(f"   🌐 [Browser HLS] {iframe_url[:80]}", flush=True)
     lf = tempfile.mktemp(suffix="_m3u8.txt")
     with open(lf, "w") as f:
@@ -482,7 +688,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                 cookies_full = get_cookies_full(sb)
                 print(f"      🍪 {len(cookies_dict)} كوكي (كل النطاقات)", flush=True)
 
-                # المدة
                 try:
                     dur = sb.cdp.execute_script("""
                         try {
@@ -510,7 +715,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
                 except Exception:
                     pass
 
-                # اقرأ URLs
                 urls = []
                 try:
                     with open(lf, encoding="utf-8") as fh:
@@ -528,7 +732,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
 
                 if m3u8_urls:
                     print(f"      🎯 {m3u8_urls[0][:110]}", flush=True)
-                    # ✅ حمّل الآن عبر المتصفح
                     download_result = _browser_download_hls(
                         sb, m3u8_urls, out_path, expected_dur
                     )
@@ -543,184 +746,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
         pass
 
     return m3u8_urls, video_duration, cookies_dict, cookies_full, download_result
-
-
-def _browser_download_hls(sb, m3u8_urls, out_path, expected_dur=0):
-    """
-    ✅ يحمل m3u8 + segments عبر المتصفح نفسه.
-    يرجع (size, success).
-    """
-    # 1) احصل على m3u8 الأول
-    m3u8_url = m3u8_urls[0]
-    print(f"   🌐 تحميل عبر المتصفح: {m3u8_url[:80]}", flush=True)
-
-    r1 = sb.cdp.execute_async_script("""
-        var url = arguments[0];
-        var callback = arguments[arguments.length - 1];
-        fetch(url, {credentials: 'include'})
-            .then(r => r.text().then(t => callback({status: r.status, text: t})))
-            .catch(e => callback({status: -1, error: e.toString()}));
-    """, m3u8_url)
-
-    if not r1 or r1.get("status") != 200:
-        print(f"   ❌ فشل جلب m3u8: {r1}", flush=True)
-        return None
-
-    m3u8_content = r1["text"]
-    base_url = m3u8_url.rsplit('/', 1)[0]
-
-    # 2) حلل m3u8 (master أو media)
-    def _parse(text, b_url):
-        segs = []
-        variants = []
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '.m3u8' in line:
-                variants.append(line if line.startswith('http') else urljoin(b_url + '/', line))
-                continue
-            if line.endswith('.ts') or '.ts?' in line or 'seg' in line.lower():
-                segs.append(line if line.startswith('http') else urljoin(b_url + '/', line))
-        return segs, variants
-
-    segments, variants = _parse(m3u8_content, base_url)
-
-    # إذا كان master → اجلب أول variant
-    if not segments and variants:
-        print(f"   📋 master → {len(variants)} variant، نجرب الأول", flush=True)
-        for v in variants[:3]:
-            rv = sb.cdp.execute_async_script("""
-                var url = arguments[0];
-                var callback = arguments[arguments.length - 1];
-                fetch(url, {credentials: 'include'})
-                    .then(r => r.text().then(t => callback({status: r.status, text: t})))
-                    .catch(e => callback({status: -1, error: e.toString()}));
-            """, v)
-            if rv and rv.get("status") == 200:
-                v_base = v.rsplit('/', 1)[0]
-                segments, _ = _parse(rv["text"], v_base)
-                if segments:
-                    print(f"   ✅ variant: {len(segments)} segment", flush=True)
-                    break
-
-    if not segments:
-        print(f"   ❌ لا segments", flush=True)
-        return None
-
-    print(f"   ⬇️ تحميل {len(segments)} segment عبر المتصفح...", flush=True)
-
-    # 3) حمل عبر المتصفح بدفعات
-    seg_dir = tempfile.mkdtemp(prefix="hls_seg_")
-    seg_paths = {}
-    failed = 0
-    total_bytes = 0
-
-    for i in range(0, len(segments), BROWSER_FETCH_BATCH):
-        if exceeded():
-            break
-        batch = segments[i:i+BROWSER_FETCH_BATCH]
-
-        # ✅ JavaScript يجيب البيانات base64
-        result = sb.cdp.execute_async_script("""
-            var urls = arguments[0];
-            var callback = arguments[arguments.length - 1];
-            var results = {};
-            var pending = urls.length;
-            if (pending === 0) { callback(results); return; }
-            urls.forEach(function(u, idx) {
-                fetch(u, {credentials: 'include'})
-                    .then(r => {
-                        if (!r.ok) { throw new Error('HTTP ' + r.status); }
-                        return r.arrayBuffer();
-                    })
-                    .then(buf => {
-                        var bytes = new Uint8Array(buf);
-                        var binary = '';
-                        var chunk = 8192;
-                        for (var j = 0; j < bytes.length; j += chunk) {
-                            binary += String.fromCharCode.apply(null, bytes.subarray(j, Math.min(j+chunk, bytes.length)));
-                        }
-                        results[idx] = btoa(binary);
-                        pending--;
-                        if (pending === 0) callback(results);
-                    })
-                    .catch(e => {
-                        results[idx] = null;
-                        pending--;
-                        if (pending === 0) callback(results);
-                    });
-            });
-        """, batch)
-
-        if not result:
-            result = {}
-
-        for idx_str, b64 in result.items():
-            try:
-                idx = int(idx_str)
-            except Exception:
-                continue
-            seg_idx = i + idx
-            if b64:
-                try:
-                    data = base64.b64decode(b64)
-                    seg_path = os.path.join(seg_dir, f"seg_{seg_idx:06d}.ts")
-                    with open(seg_path, 'wb') as f:
-                        f.write(data)
-                    seg_paths[seg_idx] = seg_path
-                    total_bytes += len(data)
-                except Exception:
-                    failed += 1
-            else:
-                failed += 1
-
-        done = min(i + BROWSER_FETCH_BATCH, len(segments))
-        if done % 30 == 0 or done == len(segments):
-            print(f"      📦 {done}/{len(segments)} | {total_bytes/(1024*1024):.1f} MB | فشل: {failed}", flush=True)
-
-    if not seg_paths:
-        try: shutil.rmtree(seg_dir, ignore_errors=True)
-        except: pass
-        return None
-
-    success_rate = len(seg_paths) / max(len(segments), 1)
-    print(f"   ✅ {len(seg_paths)}/{len(segments)} ({success_rate:.0%}) | {total_bytes/(1024*1024):.1f} MB", flush=True)
-
-    # 4) ادمج
-    sorted_segs = [seg_paths[k] for k in sorted(seg_paths.keys())]
-    concat_file = os.path.join(seg_dir, "concat.txt")
-    with open(concat_file, 'w') as f:
-        for p in sorted_segs:
-            f.write(f"file '{p}'\n")
-
-    print(f"   🔗 دمج {len(sorted_segs)} segment...", flush=True)
-    concat_cmd = [
-        'ffmpeg', '-hide_banner', '-loglevel', 'warning',
-        '-f', 'concat', '-safe', '0',
-        '-i', concat_file,
-        '-c', 'copy', '-f', 'mpegts', '-y', out_path
-    ]
-    try:
-        r = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=600)
-        if r.returncode != 0 or not os.path.exists(out_path):
-            print(f"   ❌ فشل الدمج: {r.returncode}", flush=True)
-            try: shutil.rmtree(seg_dir, ignore_errors=True)
-            except: pass
-            return None
-    except Exception as e:
-        print(f"   ❌ concat: {e}", flush=True)
-        try: shutil.rmtree(seg_dir, ignore_errors=True)
-        except: pass
-        return None
-
-    final_size = os.path.getsize(out_path)
-    print(f"   ✅ ملف نهائي: {final_size/(1024*1024):.1f} MB", flush=True)
-
-    try: shutil.rmtree(seg_dir, ignore_errors=True)
-    except: pass
-
-    return (final_size, True)
 
 
 # ============================================================
@@ -820,7 +845,7 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
             no_progress += 1
             print(f"   ⚠️ لا تقدم ({no_progress}/{RESUME_NO_PROGRESS_LIMIT})", flush=True)
             if round_num == 0 and no_progress >= 1:
-                print(f"   🚫 فشل من أول محاولة (403 محتمل) — إيقاف", flush=True)
+                print(f"   🚫 فشل من أول محاولة — إيقاف", flush=True)
                 first_round_failed = True
                 break
             if no_progress >= RESUME_NO_PROGRESS_LIMIT:
@@ -839,12 +864,11 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
         size = os.path.getsize(out_path)
         if size >= MIN_PARTIAL_ACCEPT:
             return True, size, False
-    return False, ("403-fast-fail" if first_round_failed else "no progress after retries"), False
+    return False, ("403-fast-fail" if first_round_failed else "no progress"), False
 
 
 def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_info, expected_dur=0):
     print(f"   [curl_cffi HLS] {m3u8_url[:80]}...", flush=True)
-
     cookie_str = ""
     if isinstance(cookies_info, dict):
         cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
@@ -937,7 +961,7 @@ def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_info, expec
     if not seg_paths:
         try: shutil.rmtree(seg_dir, ignore_errors=True)
         except: pass
-        return False, f"all_segments_failed ({failed})", False
+        return False, f"all_segments_failed", False
 
     sorted_segs = [seg_paths[k] for k in sorted(seg_paths.keys())]
     concat_file = os.path.join(seg_dir, "concat.txt")
@@ -980,9 +1004,7 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
         )
         if ok and isinstance(info, (int, float)) and info >= MIN_VALID_SIZE:
             return True, info, natural
-        if ok:
-            print(f"   ⚠️ curl_cffi حجم صغير", flush=True)
-        else:
+        if not ok:
             print(f"   ⚠️ curl_cffi: {info}", flush=True)
 
     if os.path.exists(out_path):
@@ -1033,9 +1055,6 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
     return False, info, False
 
 
-# ============================================================
-#  أدوات الملفات والمراقبة
-# ============================================================
 def _check_file_created(out_path):
     for path in [out_path, out_path + ".part", out_path + ".ytdl", out_path + ".temp"]:
         if os.path.exists(path):
@@ -1139,9 +1158,9 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                     if speed < MIN_ACCEPTABLE_SPEED:
                         slow_count += 1
                         if slow_count <= 3:
-                            print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s (بطيء #{slow_count})", flush=True)
+                            print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s", flush=True)
                         if slow_count >= 6 and (now - last_change) > STALL_TIMEOUT:
-                            print(f"      🛑 {tag}: بطيء جداً — إلغاء", flush=True)
+                            print(f"      🛑 {tag}: بطيء جداً", flush=True)
                             try:
                                 proc.kill()
                                 proc.wait(timeout=5)
@@ -1155,7 +1174,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                         slow_count = 0
 
             if not file_created and (now - start) > FILE_CREATE_TIMEOUT:
-                print(f"      🚫 {tag}: لم يُنشأ ملف خلال {FILE_CREATE_TIMEOUT}s", flush=True)
                 try:
                     proc.kill()
                     proc.wait(timeout=5)
@@ -1165,7 +1183,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 return False, f"no_file_{FILE_CREATE_TIMEOUT}s", False
 
             if now - start > total_timeout:
-                print(f"      ⏰ {tag}: total timeout ({total_timeout}s), size={best_size/(1024*1024):.1f} MB", flush=True)
                 try:
                     proc.kill()
                     proc.wait(timeout=5)
@@ -1177,7 +1194,6 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 return False, f"total_timeout@{best_size}", False
 
             if now - last_change > STALL_TIMEOUT and size > 0:
-                print(f"      🛑 {tag}: stalled at {size/(1024*1024):.1f} MB", flush=True)
                 try:
                     proc.kill()
                     proc.wait(timeout=5)
@@ -1201,24 +1217,9 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
     size = _get_current_size(out_path)
     natural_exit = (exit_code == 0)
 
-    if size < 5000:
-        _print_log_tail(log_path, 400)
-
     if size >= MIN_VALID_SIZE:
         return True, size, natural_exit
     return False, f"exited@{size}", natural_exit
-
-
-def _print_log_tail(log_path, chars=400):
-    try:
-        if os.path.exists(log_path):
-            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
-            if content:
-                tail = content[-chars:].replace('\n', ' | ')
-                print(f"      📋 {tail}", flush=True)
-    except Exception:
-        pass
 
 
 def collect_iframes(ep, series_name):
@@ -1292,9 +1293,6 @@ def collect_iframes(ep, series_name):
             return result
 
 
-# ============================================================
-#  الضغط والميتا
-# ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
         return False
@@ -1414,7 +1412,7 @@ def thumb(vp, tp):
 
 async def upload(fp, caption, tp=None, override_duration=None):
     if TEST_MODE and SKIP_UPLOAD:
-        print(f"🧪 SKIP_UPLOAD: {fp} ({os.path.getsize(fp)/(1024*1024):.2f} MB)")
+        print(f"🧪 SKIP_UPLOAD: {fp}")
         return True
     if app is None or not os.path.exists(fp):
         return False
@@ -1457,9 +1455,6 @@ async def upload(fp, caption, tp=None, override_duration=None):
         return False
 
 
-# ============================================================
-#  process_episode
-# ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
     tmp_ts = os.path.join(ddir, f"temp_{ep:02d}.ts")
@@ -1485,7 +1480,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 break
             print(f"\n{'='*60}\n🎬 [{i+1}/{len(iframes)}] {it['server']}\n{'='*60}")
 
-            # ✅✅ v15.6: للـ CDP → استخدم Browser HLS مباشرة
             iframes_url = it["url"]
             print(f"   [1/1] Browser HLS attempt...")
 
@@ -1496,7 +1490,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             ck = {"dict": ck_dict, "list": ck_full}
 
             if dl_result and dl_result[1]:
-                # نجح التحميل عبر المتصفح
                 size = dl_result[0]
                 size_mb = size / (1024*1024)
                 print(f"   📦 (Browser) {size_mb:.2f} MB")
@@ -1506,7 +1499,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     actual_dur = await asyncio.to_thread(get_real_duration, tmp_ts)
                 print(f"   🎞️ المدة الحقيقية: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s)")
 
-                # حساب expected_dur من m3u8_urls[0]
                 expected_dur = 0
                 if m3u8_urls:
                     ck_dict_only = ck.get("dict", {}) if isinstance(ck, dict) else {}
@@ -1523,7 +1515,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         is_complete = True
                         reason = f"وصلنا {actual_dur}/{expected_dur}s"
                     else:
-                        reason = f"فقط {actual_dur}/{expected_dur}s ({int(actual_dur*100/max(expected_dur,1))}%)"
+                        reason = f"فقط {actual_dur}/{expected_dur}s"
                 elif actual_dur >= MIN_EPISODE_DURATION:
                     is_complete = True
                     reason = f"المدة {actual_dur}s كافية"
@@ -1541,12 +1533,11 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                             os.remove(partial_path)
                         shutil.move(tmp_ts, partial_path)
                         partials.append(("Browser", size, iframes_url, partial_path, actual_dur, expected_dur))
-                        print(f"   ♻️ partial محفوظ: {size_mb:.1f} MB / {actual_dur}s — {reason}")
+                        print(f"   ♻️ partial: {size_mb:.1f} MB / {actual_dur}s — {reason}")
                     except Exception as e:
                         print(f"   ⚠️ نقل: {e}")
             else:
-                print(f"   ❌ Browser HLS فشل — جرّب yt-dlp/ffmpeg")
-                # fallback: yt-dlp و curl_cffi
+                print(f"   ❌ Browser HLS فشل — fallback")
                 for url_idx, url in enumerate(m3u8_urls[:3] if m3u8_urls else []):
                     if exceeded() or success_if:
                         break
@@ -1560,7 +1551,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                             get_expected_duration, url, iframes_url, ck_dict_only
                         )
 
-                    print(f"\n   ⬇️ (CDP-fallback) attempt 1/{MAX_DOWNLOAD_ATTEMPTS}...")
+                    print(f"\n   ⬇️ (CDP-fb) attempt 1/{MAX_DOWNLOAD_ATTEMPTS}...")
                     t0 = time.time()
                     ok, info, natural = await asyncio.to_thread(
                         download_video, url, tmp_ts, iframes_url, ck, expected_dur
@@ -1606,7 +1597,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                     os.remove(partial_path)
                                 shutil.move(tmp_ts, partial_path)
                                 partials.append(("CDP-fb", size, iframes_url, partial_path, actual_dur, expected_dur))
-                                print(f"   ♻️ partial محفوظ: {size_mb:.1f} MB / {actual_dur}s")
+                                print(f"   ♻️ partial: {size_mb:.1f} MB / {actual_dur}s")
                             except Exception as e:
                                 print(f"   ⚠️ نقل: {e}")
                     else:
@@ -1618,7 +1609,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             if success_if:
                 break
 
-        # إذا لم نجد كامل، ابحث عن أفضل partial
         if not success_if and partials:
             print(f"\n🔍 تحليل partials ({len(partials)} مرشح):")
             scored = []
@@ -1746,14 +1736,12 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.6")
+    print("🎬 Video Downloader v15.7")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Browser HLS downloader (Cloudflare-proof) — batch={BROWSER_FETCH_BATCH}")
-    print(f"🍪 كوكيز كل النطاقات")
-    print(f"📄 Netscape cookies file")
-    print(f"🔁 حلقة استئناف: {MAX_RESUME_ROUNDS}")
-    print(f"📏 عتبة القبول: {int(DURATION_ACCEPT_RATIO*100)}% من المتوقعة")
+    print(f"🌐 Browser HLS via execute_script + polling")
+    print(f"📦 batch={BROWSER_FETCH_BATCH}")
+    print(f"📏 عتبة القبول: {int(DURATION_ACCEPT_RATIO*100)}%")
     print(f"✅✅ تحقق نهائي: ≥ {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
     print("=" * 60)
 
