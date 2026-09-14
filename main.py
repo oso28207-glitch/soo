@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v11 — Extended timeouts + strict duration + luluvdo CDN fix
+v12 — Updated tools + expected duration + natural exit + resume + retries
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -27,15 +27,17 @@ SKIP_COMPRESS = os.environ.get("SKIP_COMPRESS", "false").lower() in ("true", "1"
 # ===== الحدود الجديدة =====
 MIN_VALID_SIZE = 100 * 1024
 MIN_PARTIAL_ACCEPT = 30 * 1024 * 1024
-MIN_EPISODE_DURATION = 1500            # ✅ 25 دقيقة (بدل 5)
+MIN_EPISODE_DURATION = 900             # 15 دقيقة — الحد الأدنى للحلقة
+NATURAL_EXIT_MIN_DURATION = 300        # 5 دقائق — لو انتهى طبيعياً، يكفي
 MAX_RUNTIME_SECONDS = 165 * 60
 WAIT_MIN, WAIT_MAX = 10, 20
 
-# ✅ timeouts كافية للحلقة كاملة
-YTDLP_TIMEOUT = 2400                   # 40 دقيقة
-FFMPEG_TIMEOUT = 2400                  # 40 دقيقة
-STALL_TIMEOUT = 120                    # 2 دقيقة
+# ✅ timeouts كافية
+YTDLP_TIMEOUT = 3600                   # 60 دقيقة
+FFMPEG_TIMEOUT = 3600                  # 60 دقيقة
+STALL_TIMEOUT = 300                    # 5 دقائق
 FILE_CREATE_TIMEOUT = 45
+MAX_DOWNLOAD_ATTEMPTS = 3              # ✅ 3 محاولات مع resume
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
 
@@ -74,23 +76,26 @@ if not validate_env():
     sys.exit(1)
 
 
+# ============================================================
+#  ✅ v12: أحدث الإصدارات
+# ============================================================
 def install_requirements():
-    print("📦 Installing requirements...")
+    print("📦 Installing requirements (updated versions)...")
     reqs = [
-        "yt-dlp[default,curl-cffi]>=2024.11.18",
-        "seleniumbase>=4.30.0",
-        "beautifulsoup4>=4.12.0",
-        "curl_cffi>=0.7.0",
+        "yt-dlp[default,curl-cffi]>=2026.08.19",   # ✅ أحدث
+        "seleniumbase>=4.52.0",                     # ✅ أحدث
+        "beautifulsoup4>=4.13.0",
+        "curl_cffi>=0.15.0",                        # ✅ مستقر
+        "pyrogram>=2.0.106",                        # ✅ أحدث
+        "tgcrypto>=1.2.5",
     ]
-    if not (TEST_MODE and SKIP_UPLOAD):
-        reqs += ["pyrogram>=2.0.0", "tgcrypto>=1.2.0"]
     for r in reqs:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install",
                                    "--upgrade", r, "--quiet"])
             print(f"  ✅ {r.split('>=')[0].split('[')[0]}")
-        except Exception:
-            print(f"  ⚠️ Failed: {r}")
+        except Exception as e:
+            print(f"  ⚠️ Failed: {r} ({str(e)[:60]})")
 
 
 install_requirements()
@@ -173,6 +178,7 @@ def sanitize_cookies(cookies_dict):
 
 
 def get_all_cookies_string(cookies_dict):
+    """✅ v12: كل الكوكيز بدون استثناء"""
     clean = sanitize_cookies(cookies_dict)
     if not clean:
         return ""
@@ -181,6 +187,35 @@ def get_all_cookies_string(cookies_dict):
     if len(s) > 6000:
         s = s[:6000]
     return s
+
+
+# ============================================================
+#  ✅ v12: استخراج المدة المتوقعة من m3u8
+# ============================================================
+def get_expected_duration(m3u8_url, referer, cookies_dict):
+    """يستخرج المدة المتوقعة من m3u8 (مجموع EXTINF)."""
+    try:
+        cookie_str = get_all_cookies_string(cookies_dict)
+        headers = {
+            "Referer": referer,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        if cookie_str:
+            headers["Cookie"] = cookie_str
+
+        resp = cffi_requests.get(m3u8_url, headers=headers,
+                                  impersonate="chrome120", timeout=15)
+        if resp.status_code != 200:
+            return 0
+
+        total = 0.0
+        for line in resp.text.splitlines():
+            m = re.match(r'#EXTINF:([\d.]+)', line.strip())
+            if m:
+                total += float(m.group(1))
+        return int(total)
+    except Exception:
+        return 0
 
 
 # ============================================================
@@ -338,12 +373,7 @@ def try_vinovo_browser_fetch(iframe_url):
 
                 if result:
                     s = str(result)
-                    print(f"      📊 استجابة: {s[:150]}", flush=True)
-                    if s.startswith("HTTP_"):
-                        print(f"      ⚠️ {s}", flush=True)
-                    elif s.startswith("ERROR"):
-                        print(f"      ⚠️ {s[:100]}", flush=True)
-                    else:
+                    if not s.startswith("HTTP_") and not s.startswith("ERROR"):
                         try:
                             j = json.loads(result) if isinstance(result, str) else result
                             su = j.get("streaming_url") or j.get("url") or j.get("file")
@@ -566,7 +596,7 @@ def collect_iframes(ep, series_name):
             if not servers:
                 return result
 
-            # ✅ ترتيب: vidsonic أولاً (الأكثر نجاحاً)، ثم luluvdo، ثم الباقي
+            # ✅ ترتيب: vidsonic أولاً (الأكثر نجاحاً)، ثم luluvdo
             prio = {"vidsonic": 0, "luluvdo": 1, "vinovo": 2, "vidaraa": 3, "vids": 4, "v": 5, "playmate": 6}
             servers.sort(key=lambda s: prio.get(s.get("name", "").lower(), 99))
 
@@ -674,17 +704,18 @@ def _get_current_size(out_path):
 
 
 def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="proc"):
+    """✅ v12: يعيد (ok, info, natural_exit)"""
     log_path = out_path + f".{tag}.log"
     try:
         log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
     except Exception as e:
-        return False, f"log_open_failed: {e}"
+        return False, f"log_open_failed: {e}", False
 
     try:
         proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
     except Exception as e:
         log_file.close()
-        return False, f"spawn_failed: {e}"
+        return False, f"spawn_failed: {e}", False
 
     start = time.time()
     last_size = 0
@@ -724,7 +755,7 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                     pass
                 log_file.close()
                 _print_log_tail(log_path, 300)
-                return False, f"no_file_{FILE_CREATE_TIMEOUT}s"
+                return False, f"no_file_{FILE_CREATE_TIMEOUT}s", False
 
             if now - start > total_timeout:
                 print(f"      ⏰ {tag}: total timeout ({total_timeout}s), size={best_size/(1024*1024):.1f} MB", flush=True)
@@ -736,8 +767,8 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                 log_file.close()
                 if best_size >= MIN_PARTIAL_ACCEPT:
                     print(f"      ♻️ قبول partial ({best_size/(1024*1024):.1f} MB)", flush=True)
-                    return True, best_size
-                return False, f"total_timeout@size={best_size}"
+                    return True, best_size, False
+                return False, f"total_timeout@size={best_size}", False
 
             if now - last_change > stall_timeout and size > 0:
                 print(f"      🛑 {tag}: stalled at {size/(1024*1024):.1f} MB", flush=True)
@@ -749,23 +780,26 @@ def run_with_stall_detection(cmd, out_path, total_timeout, stall_timeout, tag="p
                 log_file.close()
                 if best_size >= MIN_PARTIAL_ACCEPT:
                     print(f"      ♻️ قبول partial ({best_size/(1024*1024):.1f} MB)", flush=True)
-                    return True, best_size
-                return False, f"stalled@size={best_size}"
+                    return True, best_size, False
+                return False, f"stalled@size={best_size}", False
 
     except Exception as e:
         try: proc.kill()
         except: pass
         log_file.close()
-        return False, f"monitor_error: {e}"
+        return False, f"monitor_error: {e}", False
 
     try: log_file.close()
     except: pass
 
+    exit_code = proc.returncode
     size = _get_current_size(out_path)
+    natural_exit = (exit_code == 0)
+
     if size >= MIN_VALID_SIZE:
-        return True, size
+        return True, size, natural_exit
     _print_log_tail(log_path, 400)
-    return False, f"exited@size={size}"
+    return False, f"exited@size={size}", natural_exit
 
 
 def _print_log_tail(log_path, chars=400):
@@ -788,15 +822,19 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--no-warnings',
         '--no-playlist',
         '--no-part',
-        '--retries', '5',
-        '--fragment-retries', '5',
-        '--socket-timeout', '30',
-        '--concurrent-fragments', '32',       # ✅ 32 بدل 16
+        '--retries', '10',                       # ✅ 10 بدل 5
+        '--fragment-retries', '10',              # ✅ 10 بدل 5
+        '--socket-timeout', '60',                # ✅ 60s بدل 30
+        '--concurrent-fragments', '32',
         '--http-chunk-size', '10485760',
         '--buffer-size', '1M',
         '--no-check-certificate',
         '--continue',
         '--hls-use-mpegts',
+        '--hls-prefer-native',                   # ✅ HLS native
+        '--no-abort-on-error',                   # ✅ استمر عند فشل جزء
+        '--file-access-retries', '10',           # ✅ إعادة محاولة الملف
+        '--extractor-retries', '5',              # ✅ إعادة محاولة الاستخراج
         '--impersonate', 'chrome',
         '--extractor-args', 'generic:impersonate',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -846,6 +884,7 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
         '-allowed_extensions', 'ALL',
         '-reconnect', '1',
         '-reconnect_streamed', '1',
+        '-reconnect_at_eof', '1',                # ✅ إعادة الاتصال عند EOF
         '-reconnect_delay_max', '10',
         '-rw_timeout', '30000000',
         '-multiple_requests', '1',
@@ -858,20 +897,22 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
 
 
 def download_video(url, out_path, referer, cookies_dict=None):
+    """✅ v12: يعيد (ok, info, natural_exit)"""
     if os.path.exists(out_path):
         try: os.remove(out_path)
         except Exception: pass
 
     print(f"   [yt-dlp] timeout={YTDLP_TIMEOUT}s...", flush=True)
     cmd = build_ytdlp_cmd(url, out_path, referer, cookies_dict)
-    ok, info = run_with_stall_detection(cmd, out_path, YTDLP_TIMEOUT, STALL_TIMEOUT, "yt-dlp")
+    ok, info, natural = run_with_stall_detection(cmd, out_path, YTDLP_TIMEOUT, STALL_TIMEOUT, "yt-dlp")
     if ok:
-        return True, info
+        return True, info, natural
     print(f"   ⚠️ yt-dlp: {info}", flush=True)
 
     if ".m3u8" not in url:
-        return False, info
+        return False, info, False
 
+    # تنظيف الملفات الجزئية
     try:
         for f in [out_path, out_path + ".part", out_path + ".ytdl"]:
             if os.path.exists(f):
@@ -881,12 +922,12 @@ def download_video(url, out_path, referer, cookies_dict=None):
 
     print(f"   [ffmpeg] timeout={FFMPEG_TIMEOUT}s...", flush=True)
     cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_dict)
-    ok, info = run_with_stall_detection(cmd, out_path, FFMPEG_TIMEOUT, STALL_TIMEOUT, "ffmpeg")
+    ok, info, natural = run_with_stall_detection(cmd, out_path, FFMPEG_TIMEOUT, STALL_TIMEOUT, "ffmpeg")
     if ok:
-        return True, info
+        return True, info, natural
     print(f"   ⚠️ ffmpeg: {info}", flush=True)
 
-    return False, info
+    return False, info, False
 
 
 # ============================================================
@@ -921,7 +962,7 @@ def compress_144p(inp, out):
 
     try:
         t0 = time.time()
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=2400)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         dt = time.time() - t0
 
         if r.returncode != 0:
@@ -1151,61 +1192,109 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 if exceeded():
                     break
 
-                print(f"\n   ⬇️ ({src})...")
-                t0 = time.time()
-                ok, info = await asyncio.to_thread(
-                    download_video, url, tmp_ts, it["url"], ck
-                )
-                dt = time.time() - t0
+                # ✅ v12: المدة المتوقعة من m3u8
+                expected_dur = 0
+                if ".m3u8" in url:
+                    expected_dur = await asyncio.to_thread(
+                        get_expected_duration, url, it["url"], ck
+                    )
+                    if expected_dur > 0:
+                        print(f"   📏 المدة المتوقعة: {expected_dur}s ({expected_dur//60}m)")
 
-                if ok and isinstance(info, (int, float)):
-                    size = int(info)
-                    size_mb = size / (1024*1024)
-                    speed = size_mb / max(dt, 0.1)
-                    print(f"   📦 ({src}) {size_mb:.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
+                # ✅ v12: محاولات متعددة مع resume
+                attempt_success = False
+                last_info = None
+                last_natural = False
 
-                    actual_dur = 0
-                    if os.path.exists(tmp_ts):
-                        _, _, actual_dur = meta(tmp_ts)
-                    print(f"   🎞️ مدة التنزيل: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s)")
-
-                    # ✅ الحد الأدنى للحلقة الكاملة
-                    if actual_dur >= MIN_EPISODE_DURATION:
-                        success_if = it["url"]
-                        dloaded = size
-                        method = src
-                        print(f"   ✅ نجاح كامل!")
+                for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+                    if exceeded():
                         break
-                    else:
-                        # partial
-                        if size > (partial_candidate[1] if partial_candidate else 0):
-                            partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}.ts")
-                            try:
-                                if os.path.exists(partial_path):
-                                    os.remove(partial_path)
-                                shutil.move(tmp_ts, partial_path)
-                                partial_candidate = (src, size, it["url"], partial_path, actual_dur)
-                                print(f"   ♻️ partial: {size_mb:.1f} MB / {actual_dur}s")
-                            except Exception as e:
-                                print(f"   ⚠️ نقل partial: {e}")
+
+                    print(f"\n   ⬇️ ({src}) attempt {attempt}/{MAX_DOWNLOAD_ATTEMPTS}...")
+                    t0 = time.time()
+                    ok, info, natural = await asyncio.to_thread(
+                        download_video, url, tmp_ts, it["url"], ck
+                    )
+                    dt = time.time() - t0
+                    last_info = info
+                    last_natural = natural
+
+                    if ok and isinstance(info, (int, float)):
+                        size = int(info)
+                        size_mb = size / (1024*1024)
+                        speed = size_mb / max(dt, 0.1)
+                        print(f"   📦 ({src}) {size_mb:.2f} MB في {dt:.1f}s ≈ {speed:.2f} MB/s")
+
+                        actual_dur = 0
+                        if os.path.exists(tmp_ts):
+                            _, _, actual_dur = meta(tmp_ts)
+                        print(f"   🎞️ مدة التنزيل: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s) | انتهى طبيعياً: {natural}")
+
+                        # ✅ v12: شروط القبول
+                        is_complete = False
+                        reason = ""
+
+                        if natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
+                            is_complete = True
+                            reason = "انتهى طبيعياً"
+                        elif actual_dur >= MIN_EPISODE_DURATION:
+                            is_complete = True
+                            reason = "المدة كافية"
+                        elif expected_dur > 0 and actual_dur >= expected_dur - 60:
+                            is_complete = True
+                            reason = f"وصلنا للمدة المتوقعة ({expected_dur}s)"
+
+                        if is_complete:
+                            success_if = it["url"]
+                            dloaded = size
+                            method = src
+                            attempt_success = True
+                            print(f"   ✅ نجاح كامل ({reason})!")
+                            break
                         else:
+                            # partial — إذا انتهى طبيعياً، احفظه كمرشح
+                            if natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
+                                if size > (partial_candidate[1] if partial_candidate else 0):
+                                    partial_path = os.path.join(ddir, f"partial_{ep:02d}_{src}.ts")
+                                    try:
+                                        if os.path.exists(partial_path):
+                                            os.remove(partial_path)
+                                        shutil.move(tmp_ts, partial_path)
+                                        partial_candidate = (src, size, it["url"], partial_path, actual_dur)
+                                        print(f"   ♻️ partial (طبيعي): {size_mb:.1f} MB / {actual_dur}s")
+                                    except Exception as e:
+                                        print(f"   ⚠️ نقل partial: {e}")
+                                    attempt_success = True
+                                    break
+                            # ✅ resume — إذا لم ينته طبيعياً، حاول مرة أخرى
+                            if not natural and attempt < MAX_DOWNLOAD_ATTEMPTS:
+                                print(f"   🔄 resume: المحاولة {attempt+1}...")
+                                continue
+                            # فشل نهائي
                             if os.path.exists(tmp_ts):
                                 try: os.remove(tmp_ts)
                                 except Exception: pass
-                elif ok and not isinstance(info, (int, float)):
-                    print(f"   ⚠️ ({src}) نجاح بدون حجم صالح: {info}")
-                    if os.path.exists(tmp_ts):
-                        try: os.remove(tmp_ts)
-                        except: pass
-                else:
-                    print(f"   ❌ ({src}) {info} في {dt:.1f}s")
-                    if os.path.exists(tmp_ts):
-                        try: os.remove(tmp_ts)
-                        except: pass
+                    elif ok and not isinstance(info, (int, float)):
+                        print(f"   ⚠️ ({src}) نجاح بدون حجم صالح: {info}")
+                        if os.path.exists(tmp_ts):
+                            try: os.remove(tmp_ts)
+                            except: pass
+                    else:
+                        print(f"   ❌ ({src}) {info} في {dt:.1f}s")
+                        if os.path.exists(tmp_ts):
+                            try: os.remove(tmp_ts)
+                            except: pass
+
+                    if attempt_success:
+                        break
+
+                if success_if:
+                    break
 
             if success_if:
                 break
 
+        # اختيار النتيجة
         if success_if:
             print(f"\n🎥 نجح كامل: {method} | {dloaded/(1024*1024):.2f} MB")
         elif partial_candidate:
@@ -1282,13 +1371,16 @@ def load_config():
 # ============================================================
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v11")
+    print("🎬 Video Downloader v12")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s")
     print(f"🛑 stall: {STALL_TIMEOUT}s | file-create: {FILE_CREATE_TIMEOUT}s")
     print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
     print(f"🎞️ الحد الأدنى للحلقة: {MIN_EPISODE_DURATION}s ({MIN_EPISODE_DURATION//60}m)")
+    print(f"✅ الخروج الطبيعي: {NATURAL_EXIT_MIN_DURATION}s ({NATURAL_EXIT_MIN_DURATION//60}m)")
+    print(f"🔄 محاولات: {MAX_DOWNLOAD_ATTEMPTS} مع resume")
+    print(f"📏 كشف المدة المتوقعة من m3u8")
     print("=" * 60)
 
     try:
