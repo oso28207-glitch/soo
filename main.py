@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.8 — Same-origin browser HLS download (fix CORS on tnmr.org)
+v15.9 — Fix: accept single/active server iframe (no change detection fail)
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -733,7 +733,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0):
 
                 if m3u8_urls:
                     print(f"      🎯 {m3u8_urls[0][:110]}", flush=True)
-                    # ✅✅ v15.8: انتقل إلى نطاق الـ CDN قبل fetch (same-origin)
                     try:
                         sb.cdp.open(m3u8_urls[0])
                         sb.cdp.sleep(3)
@@ -1262,14 +1261,26 @@ def collect_iframes(ep, series_name):
             print(f"📦 {len(servers)} سيرفر (مرتبة):")
             for s in servers:
                 print(f"   - {s['name']}")
+
             for i, srv in enumerate(servers):
                 print(f"\n🔄 [{i+1}/{len(servers)}] {srv['name']}")
                 try:
+                    # ── التقاط الـ iframe الحالي ──
                     old = None
                     try:
                         old = sb.find_element(".watch iframe").get_attribute("src")
                     except Exception:
                         pass
+
+                    # ── هل السيرفر نشط مسبقاً؟ ──
+                    is_active = False
+                    try:
+                        cls = sb.find_element(f"#{srv['id']}").get_attribute("class") or ""
+                        is_active = "active" in cls.split()
+                    except Exception:
+                        pass
+
+                    # ── محاولة الضغط ──
                     clicked = False
                     for m in ["uc_click", "js_click", "click"]:
                         try:
@@ -1278,8 +1289,8 @@ def collect_iframes(ep, series_name):
                             break
                         except Exception:
                             pass
-                    if not clicked:
-                        continue
+
+                    # ── انتظار تغيّر iframe (إن وُجد) ──
                     new = None
                     for _ in range(10):
                         time.sleep(1)
@@ -1289,12 +1300,42 @@ def collect_iframes(ep, series_name):
                                 break
                         except Exception:
                             pass
-                    if not new or new == old:
+
+                    # ── منطق القبول v15.9 ──
+                    # نستخدم old إن لم نجد new
+                    if not new:
+                        new = old
+
+                    # تجاهل الفراغ/blank
+                    if not new or "about:blank" in new:
+                        # إذا كان سيرفر نشط مسبقاً ولم نتمكن من قراءة iframe
+                        if is_active and not clicked:
+                            print(f"   ⚠️ تعذّر قراءة iframe")
+                            continue
+                        print(f"   ⚠️ iframe فارغ")
                         continue
+
+                    # تنظيف HTML entities
+                    new = new.replace("&amp;", "&")
+
+                    # إذا لم يتغيّر الـ iframe:
+                    #   - اقبله إن كان السيرفر نشط مسبقاً (سيرفر وحيد أو أول)
+                    #   - اقبله إن كان هناك سيرفر واحد فقط
+                    #   - ارفضه فقط إن كان هناك عدة سيرفرات ولم يكن نشطاً
+                    if new == old:
+                        if is_active or len(servers) == 1:
+                            print(f"   ✅ (نشط مسبقاً) {new[:90]}")
+                            result.append({"server": srv["name"], "url": new})
+                        else:
+                            print(f"   ⚠️ iframe لم يتغير — تخطي")
+                        continue
+
+                    # iframe تغيّر → قبول مباشر
                     print(f"   ✅ {new[:90]}")
                     result.append({"server": srv["name"], "url": new})
                 except Exception as e:
                     print(f"   ❌ {str(e)[:80]}")
+
             return result
         except Exception as e:
             print(f"❌ {e}")
@@ -1744,10 +1785,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.8")
+    print("🎬 Video Downloader v15.9")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 Same-origin browser HLS (ننتقل إلى tmnr.org قبل fetch)")
+    print(f"🌐 Same-origin browser HLS (ننتقل إلى CDN قبل fetch)")
     print(f"📦 batch={BROWSER_FETCH_BATCH}")
     print("=" * 60)
 
