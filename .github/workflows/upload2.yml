@@ -1,84 +1,83 @@
-name: 📺 Uploader2
+name: Telegram Video Downloader
 
 on:
   workflow_dispatch:
     inputs:
       series_name:
-        description: 'اسم المسلسل (إنجليزي)'
+        description: 'اسم المسلسل بالإنجليزية (كما في رابط الموقع، مثال: muhtemel-ask)'
         required: true
-        default: 'yasak-elma'
+        type: string
       series_name_arabic:
-        description: 'اسم المسلسل (عربي)'
+        description: 'اسم المسلسل بالعربية (للتسمية على تليغرام، مثال: احتمال حب)'
         required: true
-        default: 'التفاح الحرام'
+        type: string
       season_num:
         description: 'رقم الموسم'
         required: true
-        default: '6'
-        type: number
+        default: '1'
+        type: string
       start_episode:
-        description: 'بداية الحلقات'
+        description: 'رقم الحلقة الأولى'
         required: true
-        default: '26'
-        type: number
+        default: '1'
+        type: string
       end_episode:
-        description: 'نهاية الحلقات'
+        description: 'رقم الحلقة الأخيرة'
         required: true
-        default: '35'
-        type: number
+        default: '1'
+        type: string
+
+
+
+permissions:
+  contents: read
 
 jobs:
-  upload-series:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
+  download-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      # التحقق من وجود ffmpeg وتثبيته إذا لزم الأمر (بخيارات خفيفة)
-      - name: Install ffmpeg (if not present)
-        run: |
-          if ! command -v ffmpeg &> /dev/null; then
-            echo "ffmpeg not found, installing..."
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ffmpeg
-          else
-            echo "ffmpeg already installed"
-          fi
+      - name: Setup Chrome and chromedriver
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-chromedriver: true
 
-      # تثبيت Chrome و Chromedriver
-      - name: Install Chrome
+      - name: Verify Chrome and chromedriver
         run: |
-          sudo apt-get install -y google-chrome-stable
           google-chrome --version
+          chromedriver --version || true
+          which chromedriver || true
 
-      - name: Install Chromedriver
+      - name: Install system dependencies
         run: |
-          sudo apt-get install -y chromium-chromedriver
-          chromedriver --version
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb fonts-liberation libnss3 libatk-bridge2.0-0 libgtk-3-0
 
-      - name: Create config
+      - name: Install Python dependencies
         run: |
-          cat > series_config.json <<EOF
-          {
-            "series_name": "${{ github.event.inputs.series_name }}",
-            "series_name_arabic": "${{ github.event.inputs.series_name_arabic }}",
-            "season_num": ${{ github.event.inputs.season_num }},
-            "start_episode": ${{ github.event.inputs.start_episode }},
-            "end_episode": ${{ github.event.inputs.end_episode }}
-          }
-          EOF
+          pip install --upgrade pip
+          pip install pyrogram tgcrypto yt-dlp curl_cffi seleniumbase beautifulsoup4
 
-      - name: Run processor
+      - name: Run downloader script
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: python t.py
+          # ✅ مدخلات workflow_dispatch
+          INPUT_SERIES_NAME: ${{ github.event.inputs.series_name }}
+          INPUT_SERIES_NAME_ARABIC: ${{ github.event.inputs.series_name_arabic }}
+          INPUT_SEASON_NUM: ${{ github.event.inputs.season_num }}
+          INPUT_START_EPISODE: ${{ github.event.inputs.start_episode }}
+          INPUT_END_EPISODE: ${{ github.event.inputs.end_episode }}
+        run: python main.py
