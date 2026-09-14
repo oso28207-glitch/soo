@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.3 — Smart resume loop to defeat CDN ~90s connection drops
+v15.4 — Cross-domain cookies + fast-fail on 403
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -34,11 +34,10 @@ WAIT_MIN, WAIT_MAX = 10, 20
 
 YTDLP_TIMEOUT = 1800
 FFMPEG_TIMEOUT = 1800
-STALL_TIMEOUT = 60              # ✅ v15.3: من 45 إلى 60
+STALL_TIMEOUT = 60
 FILE_CREATE_TIMEOUT = 30
 MAX_DOWNLOAD_ATTEMPTS = 2
 
-# ✅✅ v15.3: حلقة الاستئناف
 MAX_RESUME_ROUNDS = 15
 RESUME_NO_PROGRESS_LIMIT = 3
 
@@ -142,10 +141,15 @@ async def setup_telegram():
         return False
 
 
+# ============================================================
+#  ✅✅ v15.4: كوكيز كل النطاقات
+# ============================================================
 def get_cookies_safe(sb):
+    """يجيب كل الكوكيز من كل النطاقات (لحل مشكلة tnmr.org)"""
     cookies_dict = {}
     try:
-        for c in sb.driver.get_cookies():
+        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+        for c in r.get("cookies", []):
             n, v = c.get("name", ""), c.get("value", "")
             if n and v:
                 cookies_dict[n] = v
@@ -153,14 +157,51 @@ def get_cookies_safe(sb):
         pass
     if not cookies_dict:
         try:
-            r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
-            for c in r.get("cookies", []):
+            for c in sb.driver.get_cookies():
                 n, v = c.get("name", ""), c.get("value", "")
                 if n and v:
                     cookies_dict[n] = v
         except Exception:
             pass
     return cookies_dict
+
+
+def get_cookies_full(sb):
+    """يعيد كل الكوكيز مع domain/path/expiry لصيغة Netscape"""
+    cookies = []
+    try:
+        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+        cookies = r.get("cookies", [])
+    except Exception:
+        pass
+    if not cookies:
+        try:
+            cookies = sb.driver.get_cookies()
+        except Exception:
+            pass
+    return cookies
+
+
+def save_cookies_netscape(cookies_list, path):
+    """يحفظ الكوكيز بصيغة Netscape مع كل domains"""
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write("# Netscape HTTP Cookie File\n")
+            for c in cookies_list:
+                domain = c.get("domain", "")
+                if not domain:
+                    continue
+                if not domain.startswith("."):
+                    domain = "." + domain
+                name = str(c.get("name", ""))
+                value = str(c.get("value", "")).replace("\n", "").replace("\r", "")
+                path_c = c.get("path", "/")
+                secure = "TRUE" if c.get("secure", False) else "FALSE"
+                expires = int(c.get("expiry", 0)) or 0
+                f.write(f"{domain}\tTRUE\t{path_c}\t{secure}\t{expires}\t{name}\t{value}\n")
+        return True
+    except Exception:
+        return False
 
 
 def sanitize_cookies(cookies_dict):
@@ -182,11 +223,11 @@ def get_all_cookies_string(cookies_dict):
     if not clean:
         return ""
     s = "; ".join([f"{k}={v}" for k, v in clean.items()])
-    return s[:6000]
+    return s[:8000]
 
 
 # ============================================================
-#  ✅✅ v15.3: get_expected_duration يحل master.m3u8
+#  get_expected_duration (يحل master.m3u8)
 # ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
     cookie_str = get_all_cookies_string(cookies_dict)
@@ -384,6 +425,7 @@ def extract_m3u8_cdp(iframe_url):
 
     video_duration = 0
     cookies_dict = {}
+    cookies_full = []
 
     try:
         with SB(uc=True, xvfb=True, headless=False, incognito=True,
@@ -425,7 +467,8 @@ def extract_m3u8_cdp(iframe_url):
                     sb.cdp.sleep(2)
                 sb.cdp.sleep(8)
                 cookies_dict = get_cookies_safe(sb)
-                print(f"      🍪 {len(cookies_dict)} كوكي", flush=True)
+                cookies_full = get_cookies_full(sb)
+                print(f"      🍪 {len(cookies_dict)} كوكي (كل النطاقات)", flush=True)
                 try:
                     dur = sb.cdp.execute_script("""
                         try {
@@ -469,10 +512,12 @@ def extract_m3u8_cdp(iframe_url):
 
     print(f"      📊 {len(urls)} رابط | مدة: {video_duration:.0f}s | 🍪 {len(cookies_dict)}", flush=True)
 
+    cookies_info = {"dict": cookies_dict, "list": cookies_full}
+
     if 0 < video_duration < 60:
-        return None, video_duration, cookies_dict
+        return None, video_duration, cookies_info
     if not urls:
-        return None, video_duration, cookies_dict
+        return None, video_duration, cookies_info
 
     all_m3u8 = [u for u in urls if ".m3u8" in u]
     master = [u for u in all_m3u8 if "master.m3u8" in u.lower() or "/master" in u.lower()]
@@ -483,9 +528,9 @@ def extract_m3u8_cdp(iframe_url):
 
     if ordered:
         print(f"      🎯 {ordered[0][:110]}", flush=True)
-        return ordered, video_duration, cookies_dict
+        return ordered, video_duration, cookies_info
 
-    return None, video_duration, cookies_dict
+    return None, video_duration, cookies_info
 
 
 def try_ytdlp(iframe_url):
@@ -688,9 +733,9 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                 if (now - start) > SPEED_GRACE_PERIOD and size > 0:
                     if speed < MIN_ACCEPTABLE_SPEED:
                         slow_count += 1
-                        print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s (بطيء #{slow_count})", flush=True)
-                        # ✅ v15.3: لا نُلغي بسرعة الاستئناف — نُبقي على stall timeout فقط
-                        if slow_count >= 3 and (now - last_change) > STALL_TIMEOUT:
+                        if slow_count <= 3:
+                            print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s (بطيء #{slow_count})", flush=True)
+                        if slow_count >= 6 and (now - last_change) > STALL_TIMEOUT:
                             print(f"      🛑 {tag}: بطيء جداً — إلغاء", flush=True)
                             try:
                                 proc.kill()
@@ -778,7 +823,10 @@ def _print_log_tail(log_path, chars=400):
         pass
 
 
-def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
+# ============================================================
+#  ✅✅ v15.4: build_ytdlp_cmd مع cookies file
+# ============================================================
+def build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file=None):
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
     cmd = [
         sys.executable, '-m', 'yt_dlp',
@@ -786,14 +834,14 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--retries', '20', '--fragment-retries', '50',
         '--retry-sleep', 'fragment:exp=1:20',
         '--socket-timeout', '60',
-        '--concurrent-fragments', '4',
+        '--concurrent-fragments', '8',
+        '--http-chunk-size', '5242880',
         '--no-check-certificate', '--continue',
         '--hls-use-mpegts',
-        '--hls-prefer-ffmpeg',
+        '--hls-prefer-native',
         '--no-abort-on-error',
         '--file-access-retries', '10', '--extractor-retries', '5',
         '--impersonate', 'chrome',
-        '--extractor-args', 'generic:impersonate',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '--referer', referer,
         '--add-header', f'Origin:{origin}',
@@ -802,16 +850,25 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
         '--add-header', 'Sec-Fetch-Mode:cors',
         '--add-header', 'Sec-Fetch-Dest:empty',
     ]
-    cookie_str = get_all_cookies_string(cookies_dict)
-    if cookie_str:
-        cmd += ['--add-header', f'Cookie:{cookie_str}']
+    # ✅ ملف Netscape مع كل domains
+    if cookies_file and os.path.exists(cookies_file):
+        cmd += ['--cookies', cookies_file]
+    else:
+        # fallback: header عادي
+        cookie_str = ""
+        if isinstance(cookies_info, dict):
+            cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
+        if cookie_str:
+            cmd += ['--add-header', f'Cookie:{cookie_str}']
     cmd += ['-f', 'best[height<=720]/best', '-o', out_path, url]
     return cmd
 
 
-def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
+def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_info):
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
-    cookie_str = get_all_cookies_string(cookies_dict)
+    cookie_str = ""
+    if isinstance(cookies_info, dict):
+        cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
     header_lines = [
         f"Referer: {referer}",
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -835,16 +892,12 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
 
 
 # ============================================================
-#  ✅✅ v15.3: download_with_resume — الحل الجوهري
+#  ✅✅ v15.4: download_with_resume مع fast-fail
 # ============================================================
-def download_with_resume(url, out_path, referer, cookies_dict, expected_dur=0):
-    """
-    حلقة استئناف ذكية: CDN يقطع الاتصال بعد ~90s.
-    نُعيد التشغيل مع --continue حتى MAX_RESUME_ROUNDS مرة.
-    كل مرة يتراكم ~12 MB إضافية حتى يكتمل.
-    """
+def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, cookies_file=None):
     last_size = 0
     no_progress = 0
+    first_round_failed = False
 
     for round_num in range(MAX_RESUME_ROUNDS):
         if exceeded():
@@ -861,7 +914,7 @@ def download_with_resume(url, out_path, referer, cookies_dict, expected_dur=0):
         print(f"\n   🔁 round {round_num+1}/{MAX_RESUME_ROUNDS} | "
               f"size={cur_size/(1024*1024):.1f} MB | dur={cur_dur}s", flush=True)
 
-        cmd = build_ytdlp_cmd(url, out_path, referer, cookies_dict)
+        cmd = build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file)
         ok, info, natural = run_with_adaptive_monitoring(
             cmd, out_path, YTDLP_TIMEOUT, "yt-dlp"
         )
@@ -871,6 +924,10 @@ def download_with_resume(url, out_path, referer, cookies_dict, expected_dur=0):
         if new_size <= cur_size:
             no_progress += 1
             print(f"   ⚠️ لا تقدم ({no_progress}/{RESUME_NO_PROGRESS_LIMIT})", flush=True)
+            if round_num == 0 and no_progress >= 1:
+                print(f"   🚫 فشل من أول محاولة (403 محتمل) — إيقاف", flush=True)
+                first_round_failed = True
+                break
             if no_progress >= RESUME_NO_PROGRESS_LIMIT:
                 break
         else:
@@ -887,21 +944,33 @@ def download_with_resume(url, out_path, referer, cookies_dict, expected_dur=0):
         size = os.path.getsize(out_path)
         if size >= MIN_PARTIAL_ACCEPT:
             return True, size, False
-    return False, "no progress after retries", False
+    return False, ("403-fast-fail" if first_round_failed else "no progress after retries"), False
 
 
-def download_video(url, out_path, referer, cookies_dict=None, expected_dur=0):
+def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
     if os.path.exists(out_path):
         try: os.remove(out_path)
         except Exception: pass
 
     is_m3u8 = ".m3u8" in url
 
+    # احفظ ملف كوكيز مؤقت
+    cookies_file = None
+    if cookies_info and isinstance(cookies_info, dict):
+        cookies_list = cookies_info.get("list", [])
+        if cookies_list:
+            cookies_file = out_path + ".cookies.txt"
+            save_cookies_netscape(cookies_list, cookies_file)
+
     print(f"   [yt-dlp+resume] timeout={YTDLP_TIMEOUT}s...", flush=True)
     ok, info, natural = download_with_resume(
-        url, out_path, referer, cookies_dict, expected_dur
+        url, out_path, referer, cookies_info, expected_dur, cookies_file
     )
     if ok and isinstance(info, (int, float)):
+        try:
+            if cookies_file and os.path.exists(cookies_file):
+                os.remove(cookies_file)
+        except: pass
         return True, info, natural
 
     if is_m3u8:
@@ -912,11 +981,20 @@ def download_video(url, out_path, referer, cookies_dict=None, expected_dur=0):
         except Exception:
             pass
         print(f"   [ffmpeg fallback] timeout={FFMPEG_TIMEOUT}s...", flush=True)
-        cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_dict)
+        cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_info)
         ok, info, natural = run_with_adaptive_monitoring(cmd, out_path, FFMPEG_TIMEOUT, "ffmpeg")
         if ok:
+            try:
+                if cookies_file and os.path.exists(cookies_file):
+                    os.remove(cookies_file)
+            except: pass
             return True, info, natural
         print(f"   ⚠️ ffmpeg: {info}", flush=True)
+
+    try:
+        if cookies_file and os.path.exists(cookies_file):
+            os.remove(cookies_file)
+    except: pass
 
     return False, info, False
 
@@ -981,7 +1059,6 @@ def meta(vp, accurate=False):
 
 
 def get_real_duration(vp):
-    """المدة الحقيقية عن طريق عدّ الحزم (packets) وليس PTS."""
     try:
         p = subprocess.run(
             ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
@@ -1099,9 +1176,6 @@ async def upload(fp, caption, tp=None, override_duration=None):
         return False
 
 
-# ============================================================
-#  ✅✅ v15.3: process_episode
-# ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
     tmp_ts = os.path.join(ddir, f"temp_{ep:02d}.ts")
@@ -1165,8 +1239,9 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
                     expected_dur = 0
                     if ".m3u8" in url:
+                        ck_dict = ck.get("dict", {}) if isinstance(ck, dict) else (ck or {})
                         expected_dur = await asyncio.to_thread(
-                            get_expected_duration, url, it["url"], ck
+                            get_expected_duration, url, it["url"], ck_dict
                         )
                         if expected_dur > 0:
                             print(f"   📏 المدة المتوقعة: {expected_dur}s ({expected_dur//60}m)")
@@ -1208,7 +1283,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                 is_complete = True
                                 reason = "انتهى طبيعياً"
                             else:
-                                reason = f"غير موثوق ({actual_dur}s) — طبيعي={natural} ولا مدة متوقعة"
+                                reason = f"غير موثوق ({actual_dur}s) — طبيعي={natural}"
 
                             if is_complete:
                                 success_if = it["url"]
@@ -1261,25 +1336,25 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             if with_exp:
                 best = max(with_exp, key=lambda p: (p[6], p[1]))
                 src, size, url, path, real_dur, exp, ratio = best
-                print(f"\n🏆 أفضل partial (مع مدة متوقعة): {src} | حقيقي={real_dur}s | متوقع={exp}s | نسبة={ratio:.0%}")
+                print(f"\n🏆 أفضل partial: {src} | حقيقي={real_dur}s | متوقع={exp}s | نسبة={ratio:.0%}")
 
                 if real_dur < MIN_PARTIAL_REAL_DURATION:
-                    print(f"   ❌ قصير جداً ({real_dur}s < {MIN_PARTIAL_REAL_DURATION}s)")
+                    print(f"   ❌ قصير جداً")
                     for p in scored:
                         try:
                             if os.path.exists(p[3]): os.remove(p[3])
                         except: pass
-                    return False, f"كل الـ partials مقطوعة (أفضل: {real_dur}s)"
+                    return False, f"كل الـ partials مقطوعة"
 
                 if ratio < MIN_REAL_RATIO_AFTER_COMPRESS:
-                    print(f"   ❌ النسبة {ratio:.0%} < {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
+                    print(f"   ❌ النسبة منخفضة")
                     for p in scored:
                         try:
                             if os.path.exists(p[3]): os.remove(p[3])
                         except: pass
-                    return False, f"حلقة مقطوعة ({real_dur}s من {exp}s = {ratio:.0%})"
+                    return False, f"حلقة مقطوعة ({ratio:.0%})"
 
-                print(f"♻️ قبول partial: {src} | {size/(1024*1024):.2f} MB / حقيقي {real_dur}s / نسبة {ratio:.0%}")
+                print(f"♻️ قبول partial")
                 try:
                     if os.path.exists(tmp_ts): os.remove(tmp_ts)
                     shutil.move(path, tmp_ts)
@@ -1296,15 +1371,12 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     return False, f"partial move: {e}"
 
             elif without_exp:
-                best = max(without_exp, key=lambda p: p[4])
-                src, size, url, path, real_dur, exp, ratio = best
-                print(f"\n⚠️ أفضل partial بدون مدة متوقعة: {src} | حقيقي={real_dur}s")
-                print(f"   ❌ لا يمكن التأكد من اكتمال الحلقة — رفض لتفادي رفع محتوى مقطوع")
+                print(f"\n⚠️ لا مدة متوقعة — رفض")
                 for p in scored:
                     try:
                         if os.path.exists(p[3]): os.remove(p[3])
                     except: pass
-                return False, f"لا مدة متوقعة + لا اكتمال طبيعي (أفضل: {real_dur}s)"
+                return False, f"لا مدة متوقعة"
 
         if not success_if:
             return False, "فشل من جميع السيرفرات"
@@ -1329,13 +1401,13 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             min_ok = int(expected_dur_final * MIN_REAL_RATIO_AFTER_COMPRESS)
             if real_final_dur < min_ok:
                 pct = int(real_final_dur * 100 / max(expected_dur_final, 1))
-                print(f"   ❌ رفض نهائي: {real_final_dur}s من {expected_dur_final}s ({pct}%) < {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
+                print(f"   ❌ رفض نهائي: {pct}%")
                 try:
                     if os.path.exists(fin): os.remove(fin)
                     if os.path.exists(tmp_ts): os.remove(tmp_ts)
                     if os.path.exists(thb): os.remove(thb)
                 except: pass
-                return False, f"مقطع: {real_final_dur}s/{expected_dur_final}s ({pct}%)"
+                return False, f"مقطع: {pct}%"
 
         print(f"\n🖼️ Thumbnail...")
         thumb(fin, thb)
@@ -1379,19 +1451,17 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.3")
+    print("🎬 Video Downloader v15.4")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
-    print(f"🔁 حلقة استئناف: {MAX_RESUME_ROUNDS} round (حد no-progress: {RESUME_NO_PROGRESS_LIMIT})")
-    print(f"🐌 الحد الأدنى للسرعة: {MIN_ACCEPTABLE_SPEED//1024} KB/s")
-    print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
-    print(f"🎞️ الحد الأدنى: {MIN_EPISODE_DURATION}s ({MIN_EPISODE_DURATION//60}m)")
+    print(f"🔁 حلقة استئناف: {MAX_RESUME_ROUNDS} round")
+    print(f"🍪 كوكيز كل النطاقات (Network.getAllCookies)")
+    print(f"📄 Netscape cookies file لـ yt-dlp")
+    print(f"🚫 fast-fail عند 403 من أول محاولة")
+    print(f"⚡ concurrent-fragments: 8 | chunk-size: 5MB")
     print(f"📏 عتبة القبول: {int(DURATION_ACCEPT_RATIO*100)}% من المتوقعة")
-    print(f"✅✅ تحقق نهائي: ≥ {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}% من المدة الحقيقية")
-    print(f"🛡️ حد أدنى للـ partial الحقيقي: {MIN_PARTIAL_REAL_DURATION}s")
-    print(f"🚫 رفض المقطوع بدون مدة متوقعة حتى لو انتهى")
-    print(f"🔗 محاولة كل m3u8 URLs من CDP")
+    print(f"✅✅ تحقق نهائي: ≥ {int(MIN_REAL_RATIO_AFTER_COMPRESS*100)}%")
     print("=" * 60)
 
     try:
