@@ -1,4 +1,4 @@
-name: Telegram Video Downloader
+name: jj
 
 on:
   workflow_dispatch:
@@ -80,4 +80,4 @@ jobs:
           INPUT_SEASON_NUM: ${{ github.event.inputs.season_num }}
           INPUT_START_EPISODE: ${{ github.event.inputs.start_episode }}
           INPUT_END_EPISODE: ${{ github.event.inputs.end_episode }}
-        run: python main.py
+        run: python t.py
