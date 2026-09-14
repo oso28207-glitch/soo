@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.4 — Cross-domain cookies + fast-fail on 403
+v15.5 — curl_cffi HLS downloader to bypass Cloudflare 403 on tmnr.org
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urljoin
 
 TELEGRAM_API_ID = os.environ.get("API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
@@ -52,6 +54,11 @@ MIN_REAL_RATIO_AFTER_COMPRESS = 0.85
 MIN_PARTIAL_REAL_DURATION = 600
 
 CF_SITES = ['vinovo.to', 'lulushort', 'luluvid']
+
+# ✅ v15.5: curl_cffi HLS downloader
+CURL_CFFI_WORKERS = 8
+CURL_CFFI_MAX_SEGMENTS = 10000
+CURL_CFFI_TIMEOUT = 60
 
 SCRIPT_START = time.time()
 
@@ -142,10 +149,9 @@ async def setup_telegram():
 
 
 # ============================================================
-#  ✅✅ v15.4: كوكيز كل النطاقات
+#  كوكيز كل النطاقات + Netscape file
 # ============================================================
 def get_cookies_safe(sb):
-    """يجيب كل الكوكيز من كل النطاقات (لحل مشكلة tnmr.org)"""
     cookies_dict = {}
     try:
         r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
@@ -167,7 +173,6 @@ def get_cookies_safe(sb):
 
 
 def get_cookies_full(sb):
-    """يعيد كل الكوكيز مع domain/path/expiry لصيغة Netscape"""
     cookies = []
     try:
         r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
@@ -183,7 +188,6 @@ def get_cookies_full(sb):
 
 
 def save_cookies_netscape(cookies_list, path):
-    """يحفظ الكوكيز بصيغة Netscape مع كل domains"""
     try:
         with open(path, 'w', encoding='utf-8') as f:
             f.write("# Netscape HTTP Cookie File\n")
@@ -227,7 +231,7 @@ def get_all_cookies_string(cookies_dict):
 
 
 # ============================================================
-#  get_expected_duration (يحل master.m3u8)
+#  get_expected_duration
 # ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
     cookie_str = get_all_cookies_string(cookies_dict)
@@ -631,6 +635,9 @@ def collect_iframes(ep, series_name):
             return result
 
 
+# ============================================================
+#  أدوات الملفات والمراقبة
+# ============================================================
 def _check_file_created(out_path):
     for path in [out_path, out_path + ".part", out_path + ".ytdl", out_path + ".temp"]:
         if os.path.exists(path):
@@ -824,7 +831,214 @@ def _print_log_tail(log_path, chars=400):
 
 
 # ============================================================
-#  ✅✅ v15.4: build_ytdlp_cmd مع cookies file
+#  ✅✅ v15.5: curl_cffi HLS downloader — الحل الجذري
+# ============================================================
+def _curl_cffi_get(url, referer, cookies_info, timeout=CURL_CFFI_TIMEOUT):
+    """طلب HTTP مع impersonate chrome120 وتجاوز Cloudflare."""
+    headers = {
+        "Referer": referer,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+    }
+    cookie_str = ""
+    if isinstance(cookies_info, dict):
+        cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
+    if cookie_str:
+        headers["Cookie"] = cookie_str
+
+    try:
+        r = cffi_requests.get(url, headers=headers,
+                               impersonate="chrome120", timeout=timeout,
+                               verify=False)
+        if r.status_code == 200:
+            return r.content, r.text
+        return None, f"HTTP {r.status_code}"
+    except Exception as e:
+        return None, str(e)
+
+
+def _parse_m3u8_segments(m3u8_text, base_url):
+    """يحلل m3u8 ويعيد (segments, duration, is_master, variants)"""
+    segments = []
+    total_dur = 0.0
+    variants = []
+    current_dur = 0.0
+
+    for raw in m3u8_text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#EXTINF:"):
+            m = re.match(r'#EXTINF:([\d.]+)', line)
+            if m:
+                current_dur = float(m.group(1))
+                total_dur += current_dur
+            continue
+        if line.startswith("#"):
+            continue
+        if '.m3u8' in line:
+            if line.startswith('http'):
+                variants.append(line)
+            else:
+                variants.append(urljoin(base_url, line))
+            continue
+        if line.startswith('http') or '.ts' in line or '.mp4' in line or 'seg' in line.lower():
+            if line.startswith('http'):
+                segments.append(line)
+            else:
+                segments.append(urljoin(base_url, line))
+
+    return segments, total_dur, len(variants) > 0, variants
+
+
+def download_hls_with_curl_cffi(m3u8_url, out_path, referer, cookies_info, expected_dur=0):
+    """
+    ✅ v15.5: يحمل HLS باستخدام curl_cffi مباشرة.
+    - يحمل master.m3u8 → variant → segments
+    - يحمل الـ segments بالتوازي مع impersonate chrome120
+    - يدمجها في ملف TS واحد
+    - هذا يتجاوز Cloudflare 403 الذي يفشل معه yt-dlp/ffmpeg
+    """
+    print(f"   [curl_cffi HLS] {m3u8_url[:80]}...", flush=True)
+
+    # 1) حمل master.m3u8
+    content, text = _curl_cffi_get(m3u8_url, referer, cookies_info)
+    if content is None:
+        print(f"   ❌ فشل تحميل m3u8: {text}", flush=True)
+        return False, f"m3u8_fail: {text}", False
+
+    m3u8_text = text if isinstance(text, str) else content.decode('utf-8', errors='ignore')
+    segments, total_dur, is_master, variants = _parse_m3u8_segments(m3u8_text, m3u8_url)
+
+    # 2) إذا كان master، حمل أول variant
+    if is_master and variants:
+        print(f"   📋 master → {len(variants)} variant، نجرب الأول", flush=True)
+        for v in variants[:3]:
+            v_content, v_text = _curl_cffi_get(v, referer, cookies_info)
+            if v_content is None:
+                continue
+            v_m3u8 = v_text if isinstance(v_text, str) else v_content.decode('utf-8', errors='ignore')
+            segments, total_dur, _, _ = _parse_m3u8_segments(v_m3u8, v)
+            if segments:
+                print(f"   ✅ variant: {len(segments)} segment | مدة: {total_dur:.0f}s", flush=True)
+                break
+            else:
+                variants = []
+        if not segments and not variants:
+            return False, "no_segments_in_variants", False
+    elif not segments:
+        return False, "no_segments", False
+
+    # 3) تحقق من المدة
+    if expected_dur > 0 and total_dur > 0:
+        print(f"   📏 مدة m3u8: {total_dur:.0f}s | متوقعة: {expected_dur}s", flush=True)
+        if total_dur < expected_dur * 0.5:
+            print(f"   ⚠️ مدة m3u8 أقل من 50% — قد يكون مقطعاً", flush=True)
+
+    # 4) حمل الـ segments بالتوازي
+    print(f"   ⬇️ تحميل {len(segments)} segment بـ {CURL_CFFI_WORKERS} workers...", flush=True)
+    seg_dir = tempfile.mkdtemp(prefix="hls_seg_")
+    seg_paths = {}
+    failed = 0
+    total_bytes = 0
+
+    def _download_seg(idx_url):
+        idx, url = idx_url
+        try:
+            r = cffi_requests.get(
+                url,
+                headers={
+                    "Referer": referer,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": get_all_cookies_string(cookies_info.get("dict", {})) if isinstance(cookies_info, dict) else "",
+                    "Accept": "*/*",
+                },
+                impersonate="chrome120", timeout=60, verify=False
+            )
+            if r.status_code == 200 and len(r.content) > 100:
+                seg_path = os.path.join(seg_dir, f"seg_{idx:06d}.ts")
+                with open(seg_path, 'wb') as f:
+                    f.write(r.content)
+                return (idx, seg_path, len(r.content))
+        except Exception:
+            pass
+        return (idx, None, 0)
+
+    with ThreadPoolExecutor(max_workers=CURL_CFFI_WORKERS) as ex:
+        futures = {ex.submit(_download_seg, (i, s)): i for i, s in enumerate(segments)}
+        done = 0
+        for fut in as_completed(futures):
+            idx, path, size = fut.result()
+            done += 1
+            if path:
+                seg_paths[idx] = path
+                total_bytes += size
+            else:
+                failed += 1
+            if done % 20 == 0 or done == len(segments):
+                mb = total_bytes / (1024*1024)
+                print(f"      📦 {done}/{len(segments)} | {mb:.1f} MB | فشل: {failed}", flush=True)
+
+    if not seg_paths:
+        try: shutil.rmtree(seg_dir, ignore_errors=True)
+        except: pass
+        return False, f"all_segments_failed ({failed}/{len(segments)})", False
+
+    success_rate = len(seg_paths) / max(len(segments), 1)
+    print(f"   ✅ {len(seg_paths)}/{len(segments)} segment ({success_rate:.0%}) | {total_bytes/(1024*1024):.1f} MB", flush=True)
+
+    if success_rate < 0.80:
+        print(f"   ⚠️ نسبة النجاح منخفضة ({success_rate:.0%})", flush=True)
+
+    # 5) ادمج الـ segments بالترتيب
+    sorted_segs = [seg_paths[i] for i in sorted(seg_paths.keys())]
+    concat_file = os.path.join(seg_dir, "concat.txt")
+    with open(concat_file, 'w') as f:
+        for p in sorted_segs:
+            f.write(f"file '{p}'\n")
+
+    print(f"   🔗 دمج {len(sorted_segs)} segment...", flush=True)
+    concat_cmd = [
+        'ffmpeg', '-hide_banner', '-loglevel', 'warning',
+        '-f', 'concat', '-safe', '0',
+        '-i', concat_file,
+        '-c', 'copy', '-f', 'mpegts', '-y', out_path
+    ]
+    try:
+        r = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not os.path.exists(out_path):
+            print(f"   ❌ فشل الدمج: {r.returncode}", flush=True)
+            _print_log_tail_str(r.stderr, 300)
+            try: shutil.rmtree(seg_dir, ignore_errors=True)
+            except: pass
+            return False, "concat_failed", False
+    except Exception as e:
+        try: shutil.rmtree(seg_dir, ignore_errors=True)
+        except: pass
+        return False, f"concat_error: {e}", False
+
+    final_size = os.path.getsize(out_path)
+    print(f"   ✅ ملف نهائي: {final_size/(1024*1024):.1f} MB", flush=True)
+
+    try: shutil.rmtree(seg_dir, ignore_errors=True)
+    except: pass
+
+    return True, final_size, False
+
+
+def _print_log_tail_str(s, chars=300):
+    if s:
+        tail = s[-chars:].replace('\n', ' | ')
+        print(f"      📋 {tail}", flush=True)
+
+
+# ============================================================
+#  yt-dlp + ffmpeg (كما هو)
 # ============================================================
 def build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file=None):
     origin = referer.split('/e/')[0] if '/e/' in referer else "https://u.3seq.com"
@@ -850,11 +1064,9 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file=None):
         '--add-header', 'Sec-Fetch-Mode:cors',
         '--add-header', 'Sec-Fetch-Dest:empty',
     ]
-    # ✅ ملف Netscape مع كل domains
     if cookies_file and os.path.exists(cookies_file):
         cmd += ['--cookies', cookies_file]
     else:
-        # fallback: header عادي
         cookie_str = ""
         if isinstance(cookies_info, dict):
             cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
@@ -891,9 +1103,6 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_info):
     ]
 
 
-# ============================================================
-#  ✅✅ v15.4: download_with_resume مع fast-fail
-# ============================================================
 def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, cookies_file=None):
     last_size = 0
     no_progress = 0
@@ -948,13 +1157,35 @@ def download_with_resume(url, out_path, referer, cookies_info, expected_dur=0, c
 
 
 def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
+    """
+    ✅ v15.5: ترتيب المحاولات:
+    1. curl_cffi HLS (الأفضل لتجاوز Cloudflare)
+    2. yt-dlp + resume
+    3. ffmpeg fallback
+    """
     if os.path.exists(out_path):
         try: os.remove(out_path)
         except Exception: pass
 
     is_m3u8 = ".m3u8" in url
 
-    # احفظ ملف كوكيز مؤقت
+    # ✅ 1) curl_cffi HLS (يتجاوز Cloudflare 403)
+    if is_m3u8:
+        ok, info, natural = download_hls_with_curl_cffi(
+            url, out_path, referer, cookies_info, expected_dur
+        )
+        if ok and isinstance(info, (int, float)) and info >= MIN_VALID_SIZE:
+            return True, info, natural
+        if ok:
+            print(f"   ⚠️ curl_cffi حجم صغير ({info} bytes) — نجرب yt-dlp", flush=True)
+        else:
+            print(f"   ⚠️ curl_cffi: {info}", flush=True)
+
+    # 2) yt-dlp + resume
+    if os.path.exists(out_path):
+        try: os.remove(out_path)
+        except Exception: pass
+
     cookies_file = None
     if cookies_info and isinstance(cookies_info, dict):
         cookies_list = cookies_info.get("list", [])
@@ -973,6 +1204,7 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
         except: pass
         return True, info, natural
 
+    # 3) ffmpeg fallback
     if is_m3u8:
         try:
             for f in [out_path + ".part", out_path + ".ytdl"]:
@@ -999,6 +1231,9 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0):
     return False, info, False
 
 
+# ============================================================
+#  الضغط والميتا
+# ============================================================
 def compress_144p(inp, out):
     if not os.path.exists(inp):
         return False
@@ -1176,6 +1411,9 @@ async def upload(fp, caption, tp=None, override_duration=None):
         return False
 
 
+# ============================================================
+#  process_episode
+# ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
     tmp_ts = os.path.join(ddir, f"temp_{ep:02d}.ts")
@@ -1451,12 +1689,13 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.4")
+    print("🎬 Video Downloader v15.5")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
     print(f"🔁 حلقة استئناف: {MAX_RESUME_ROUNDS} round")
     print(f"🍪 كوكيز كل النطاقات (Network.getAllCookies)")
+    print(f"🌐 curl_cffi HLS downloader ({CURL_CFFI_WORKERS} workers)")
     print(f"📄 Netscape cookies file لـ yt-dlp")
     print(f"🚫 fast-fail عند 403 من أول محاولة")
     print(f"⚡ concurrent-fragments: 8 | chunk-size: 5MB")
