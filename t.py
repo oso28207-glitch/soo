@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - shhaiid4u.net
-v16.2 — Browser-native API fetch (bypass Cloudflare 403)
+v16.3 — Multi-server fallback + browser HLS via document.body reading
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -38,9 +38,11 @@ STALL_TIMEOUT = 60
 CURL_CFFI_WORKERS = 8
 BROWSER_FETCH_BATCH = 6
 
-# ✅ سيرفرات مدعومة بـ CDP extract (من v15.8)
-LULUVDO_SITES = ['luluvdo.com', 'luluvdo.to']
-VINOVO_SITES = ['vinovo.to']
+# ✅ ترتيب أولوية السيرفرات
+SERVER_PRIORITY = [
+    "vinovo", "vidaraa", "savefiles", "luluvdo",
+    "voe", "doodstream", "streamtape", "earnvids", "ok"
+]
 
 SCRIPT_START = time.time()
 
@@ -149,222 +151,42 @@ def build_episode_url(series_slug, episode_num, season_num=1):
 
 
 # ============================================================
-#  ✅✅ v16.2: كل شيء داخل المتصفح
+#  ✅✅ v16.3: Browser HLS (قراءة m3u8 من document.body)
 # ============================================================
-def process_via_browser(page_url, out_path, debug_html_path=None):
-    """
-    1) افتح الصفحة
-    2) استخرج playerBootstrap + servers list
-    3) استدعِ API عبر fetch داخل المتصفح (same-origin مع CF clearance)
-    4) احصل على stream URL
-    5) إذا كان HLS على نفس النطاق → حمّل عبر المتصفح
-    6) إذا فشل → استخدم servers list (luluvdo مثلاً) كـ fallback
-
-    يرجع: (ok, info, method)
-    """
-    print(f"   🌐 [Browser] {page_url[:80]}", flush=True)
-    result = {
-        "ok": False,
-        "info": "غير معروف",
-        "method": None,
-        "stream_url": None,
-        "cookies_dict": {},
-        "servers": [],
-        "fallback_server_url": None,
-    }
-
-    try:
-        with SB(uc=True, xvfb=True, headless=False, incognito=True,
-                ad_block_on=True, disable_csp=True,
-                page_load_strategy="eager", locale_code="ar") as sb:
-            try:
-                sb.activate_cdp_mode()
-                sb.cdp.open(page_url)
-                sb.cdp.sleep(8)
-
-                # عنوان الصفحة
-                try:
-                    title = sb.cdp.execute_script("return document.title || ''")
-                    print(f"   📄 {str(title)[:80]}", flush=True)
-                except Exception:
-                    pass
-
-                html = sb.cdp.get_page_source()
-                if debug_html_path:
-                    try:
-                        with open(debug_html_path, 'w', encoding='utf-8') as f:
-                            f.write(html or "")
-                    except Exception:
-                        pass
-
-                # استخرج playerBootstrap + servers
-                player_api = None
-                player_fallback = None
-                servers = []
-
-                # playerBootstrap JSON
-                m = re.search(r'playerBootstrap\s*=\s*({[^;]+});', html)
-                if m:
-                    try:
-                        pb = json.loads(m.group(1))
-                        player_api = pb.get("api")
-                        player_fallback = pb.get("fallback")
-                        print(f"   ✅ playerBootstrap.api", flush=True)
-                    except Exception:
-                        pass
-
-                # data-player-api fallback
-                if not player_api:
-                    m2 = re.search(r'data-player-api="([^"]+)"', html)
-                    if m2:
-                        player_api = m2.group(1)
-
-                if not player_fallback:
-                    m3 = re.search(r'data-player-fallback="([^"]+)"', html)
-                    if m3:
-                        player_fallback = m3.group(1)
-
-                # servers array
-                m4 = re.search(r'let servers = JSON\.parse\(\'([^\']+)\'\)', html)
-                if m4:
-                    try:
-                        servers_json = m4.group(1).replace('\\"', '"').replace("\\/", "/")
-                        servers = json.loads(servers_json)
-                        # تجاهل canary
-                        servers = [s for s in servers if not s.get("__canary")]
-                        print(f"   📦 {len(servers)} سيرفر", flush=True)
-                        result["servers"] = servers
-                    except Exception as e:
-                        print(f"   ⚠️ servers parse: {e}", flush=True)
-
-                # جيب الكوكيز
-                cookies_dict = {}
-                try:
-                    r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
-                    for c in r.get("cookies", []):
-                        n, v = c.get("name", ""), c.get("value", "")
-                        if n and v:
-                            cookies_dict[n] = v
-                except Exception:
-                    pass
-                result["cookies_dict"] = cookies_dict
-                print(f"   🍪 {len(cookies_dict)} كوكي", flush=True)
-
-                # ✅✅ استدعِ API عبر fetch داخل المتصفح
-                stream_url = None
-                if player_api:
-                    print(f"   📡 API (browser fetch)...", flush=True)
-                    stream_url = _browser_fetch_json(sb, player_api, timeout=30)
-
-                if stream_url:
-                    result["stream_url"] = stream_url
-                    print(f"   ✅ stream: {stream_url[:120]}", flush=True)
-
-                    # إذا كان HLS على نفس النطاق → حمّل عبر المتصفح
-                    if ".m3u8" in stream_url or "/media-edge/" in stream_url or "/media/" in stream_url:
-                        print(f"   🌐 تحميل عبر المتصفح (same-origin)...", flush=True)
-                        ok = _browser_download_hls(sb, stream_url, out_path)
-                        if ok:
-                            result["ok"] = True
-                            result["info"] = os.path.getsize(out_path) if os.path.exists(out_path) else 0
-                            result["method"] = "Browser-HLS"
-                            return result
-                        else:
-                            print(f"   ⚠️ فشل تحميل المتصفح — جرّب سيرفرات", flush=True)
-
-                # ✅ fallback: ابحث عن luluvdo في servers
-                for srv in servers:
-                    url = srv.get("url", "")
-                    if any(x in url for x in LULUVDO_SITES):
-                        result["fallback_server_url"] = url
-                        print(f"   🔄 fallback: luluvdo {url[:80]}", flush=True)
-                        break
-
-            except Exception as e:
-                print(f"   ❌ {str(e)[:150]}", flush=True)
-    except Exception as e:
-        print(f"   ❌ {str(e)[:150]}", flush=True)
-
-    return result
-
-
-def _browser_fetch_json(sb, url, timeout=30):
-    """يجيب JSON من API عبر fetch داخل المتصفح + polling"""
-    url_json = json.dumps(url)
-    js = """
-    (function(){
-        window.__apiResp = null;
-        window.__apiRespDone = false;
-        fetch(%s, {
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest',
-            }
-        })
-            .then(r => r.text().then(t => {
-                window.__apiResp = {status: r.status, text: t};
-                window.__apiRespDone = true;
-            }))
-            .catch(e => {
-                window.__apiResp = {status: -1, error: String(e)};
-                window.__apiRespDone = true;
-            });
-    })();
-    """ % url_json
-
-    try:
-        sb.cdp.execute_script(js)
-    except Exception as e:
-        print(f"      ❌ inject: {str(e)[:80]}", flush=True)
-        return None
-
-    start = time.time()
-    while time.time() - start < timeout:
-        time.sleep(0.3)
-        try:
-            done = sb.cdp.execute_script("return window.__apiRespDone === true")
-        except Exception:
-            done = False
-        if done:
-            try:
-                res = sb.cdp.execute_script("return window.__apiResp")
-            except Exception:
-                return None
-            if not res:
-                return None
-            status = res.get("status")
-            text = res.get("text", "")
-            print(f"      📡 API status={status}", flush=True)
-            if status != 200:
-                print(f"      📋 {text[:150]}", flush=True)
-                return None
-            try:
-                data = json.loads(text)
-                # ابحث عن stream في أي حقل
-                for key in ["stream", "url", "file", "player", "embed"]:
-                    if data.get(key):
-                        return data[key]
-                print(f"      📋 keys: {list(data.keys())}", flush=True)
-                return None
-            except Exception:
-                print(f"      📋 ليست JSON: {text[:150]}", flush=True)
-                return None
-    return None
-
-
 def _browser_download_hls(sb, m3u8_url, out_path):
     """
-    يحمل HLS عبر المتصفح (fetch segments + base64).
+    ✅ v16.3: بعد cdp.open(m3u8_url)، نقرأ المحتوى مباشرة من document.body
+    (بدل fetch الذي يفشل لأن m3u8 ليست HTML).
     """
-    print(f"      🌐 fetch m3u8...", flush=True)
+    print(f"      🌐 قراءة m3u8 من الصفحة...", flush=True)
 
-    # 1) اجلب m3u8
-    m3u8_text = _browser_fetch_text(sb, m3u8_url, timeout=30)
+    # 1) اقرأ محتوى m3u8 من الصفحة
+    m3u8_text = None
+    try:
+        sb.cdp.sleep(2)
+        m3u8_text = sb.cdp.execute_script("""
+            return (document.body && document.body.textContent)
+                || (document.documentElement && document.documentElement.textContent)
+                || '';
+        """)
+        if m3u8_text and len(m3u8_text) > 20 and ('#EXTM3U' in m3u8_text or '#EXTINF' in m3u8_text):
+            print(f"      ✅ قراءة m3u8 ({len(m3u8_text)} حرف)", flush=True)
+        else:
+            print(f"      ⚠️ المحتوى لا يبدو m3u8 ({len(m3u8_text or '')} حرف)", flush=True)
+            m3u8_text = None
+    except Exception as e:
+        print(f"      ❌ قراءة: {str(e)[:100]}", flush=True)
+
+    # 2) إذا فشل، جرّب fetch
+    if not m3u8_text:
+        print(f"      🔄 محاولة fetch...", flush=True)
+        m3u8_text = _browser_fetch_text(sb, m3u8_url, timeout=30)
+
     if not m3u8_text:
         print(f"      ❌ فشل جلب m3u8", flush=True)
         return False
 
+    # 3) حلّل m3u8
     base_url = m3u8_url.rsplit('/', 1)[0]
 
     def _parse(text, b_url):
@@ -383,23 +205,33 @@ def _browser_download_hls(sb, m3u8_url, out_path):
 
     segments, variants = _parse(m3u8_text, base_url)
 
+    # 4) إذا كان master → انتقل إلى variant
     if not segments and variants:
         print(f"      📋 master → {len(variants)} variant", flush=True)
         for v in variants[:3]:
-            vt = _browser_fetch_text(sb, v, timeout=30)
-            if vt:
-                v_base = v.rsplit('/', 1)[0]
-                segments, _ = _parse(vt, v_base)
-                if segments:
-                    print(f"      ✅ variant: {len(segments)} segment", flush=True)
-                    break
+            try:
+                sb.cdp.open(v)
+                sb.cdp.sleep(2)
+                vt = sb.cdp.execute_script("""
+                    return (document.body && document.body.textContent) || '';
+                """)
+                if vt and '#EXTINF' in vt:
+                    v_base = v.rsplit('/', 1)[0]
+                    segments, _ = _parse(vt, v_base)
+                    if segments:
+                        base_url = v_base
+                        print(f"      ✅ variant: {len(segments)} segment", flush=True)
+                        break
+            except Exception:
+                continue
 
     if not segments:
         print(f"      ❌ no segments", flush=True)
         return False
 
-    print(f"      ⬇️ {len(segments)} segment عبر المتصفح...", flush=True)
+    print(f"      ⬇️ {len(segments)} segment عبر fetch same-origin...", flush=True)
 
+    # 5) حمّل الـ segments
     seg_dir = tempfile.mkdtemp(prefix="hls_seg_")
     seg_paths = {}
     failed = 0
@@ -570,11 +402,100 @@ def _browser_fetch_batch_b64(sb, urls, timeout=120):
 
 
 # ============================================================
-#  ✅✅ v16.2: fallback عبر luluvdo (باستخدام v15.8 browser HLS)
+#  process_via_browser — استخراج info من صفحة shhaiid4u
 # ============================================================
-def try_luluvdo_fallback(luluvdo_url, out_path):
-    """يفتح luluvdo، يستخرج m3u8، ويحمّل عبر المتصفح (same-origin)."""
-    print(f"   🔄 [luluvdo fallback] {luluvdo_url[:80]}", flush=True)
+def process_via_browser(page_url, out_path, debug_html_path=None):
+    print(f"   🌐 [Browser] {page_url[:80]}", flush=True)
+    result = {
+        "ok": False,
+        "info": "غير معروف",
+        "method": None,
+        "servers": [],
+        "cookies_dict": {},
+    }
+
+    try:
+        with SB(uc=True, xvfb=True, headless=False, incognito=True,
+                ad_block_on=True, disable_csp=True,
+                page_load_strategy="eager", locale_code="ar") as sb:
+            try:
+                sb.activate_cdp_mode()
+                sb.cdp.open(page_url)
+                sb.cdp.sleep(8)
+
+                try:
+                    title = sb.cdp.execute_script("return document.title || ''")
+                    print(f"   📄 {str(title)[:80]}", flush=True)
+                except Exception:
+                    pass
+
+                html = sb.cdp.get_page_source()
+                if debug_html_path:
+                    try:
+                        with open(debug_html_path, 'w', encoding='utf-8') as f:
+                            f.write(html or "")
+                    except Exception:
+                        pass
+
+                # استخرج servers array
+                servers = []
+                m4 = re.search(r'let servers = JSON\.parse\(\'([^\']+)\'\)', html)
+                if m4:
+                    try:
+                        servers_json = m4.group(1).replace('\\"', '"').replace("\\/", "/")
+                        servers = json.loads(servers_json)
+                        servers = [s for s in servers if not s.get("__canary")]
+                        print(f"   📦 {len(servers)} سيرفر", flush=True)
+                        for s in servers:
+                            print(f"      - {s.get('name')}: {s.get('url','')[:70]}", flush=True)
+                        result["servers"] = servers
+                    except Exception as e:
+                        print(f"   ⚠️ servers parse: {e}", flush=True)
+
+                # جيب الكوكيز
+                cookies_dict = {}
+                try:
+                    r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+                    for c in r.get("cookies", []):
+                        n, v = c.get("name", ""), c.get("value", "")
+                        if n and v:
+                            cookies_dict[n] = v
+                except Exception:
+                    pass
+                result["cookies_dict"] = cookies_dict
+                print(f"   🍪 {len(cookies_dict)} كوكي", flush=True)
+
+            except Exception as e:
+                print(f"   ❌ {str(e)[:150]}", flush=True)
+    except Exception as e:
+        print(f"   ❌ {str(e)[:150]}", flush=True)
+
+    return result
+
+
+# ============================================================
+#  سيرفرات fallback
+# ============================================================
+def try_server_fallback(server_name, server_url, out_path):
+    print(f"   🔄 تجربة سيرفر: {server_name} ({server_url[:70]})", flush=True)
+
+    if "vinovo.to" in server_url:
+        return _try_vinovo_server(server_url, out_path)
+
+    if "luluvdo.com" in server_url or "luluvdo.to" in server_url:
+        return _try_generic_cdp_server(server_url, out_path)
+
+    if any(x in server_url for x in ["vidaraa.cc", "streamhls.to", "voe.sx", "fastvid.cam"]):
+        return _try_generic_cdp_server(server_url, out_path)
+
+    if any(x in server_url for x in ["ok.ru", "doodstream", "dsvplay"]):
+        return _try_ytdlp_direct(server_url, out_path)
+
+    return _try_generic_cdp_server(server_url, out_path)
+
+
+def _try_generic_cdp_server(server_url, out_path):
+    print(f"      🌐 [Generic CDP] {server_url[:80]}", flush=True)
     lf = tempfile.mktemp(suffix="_m3u8.txt")
     with open(lf, "w") as f:
         f.write("")
@@ -595,24 +516,22 @@ def try_luluvdo_fallback(luluvdo_url, out_path):
                 sb.activate_cdp_mode()
                 try:
                     import mycdp
-
                     async def on_req(e):
                         try:
                             u = e.request.url
                             _log(u)
                             if ".m3u8" in u:
-                                print(f"      ✅ {u[:110]}", flush=True)
+                                print(f"         ✅ {u[:110]}", flush=True)
                         except Exception:
                             pass
-
                     sb.cdp.add_handler(mycdp.network.RequestWillBeSent, on_req)
                 except Exception:
                     pass
 
-                sb.cdp.open(luluvdo_url)
+                sb.cdp.open(server_url)
                 sb.cdp.sleep(6)
                 for _ in range(3):
-                    for sel in ["video", "button.vjs-big-play-button", ".jw-icon-display"]:
+                    for sel in ["video", "button.vjs-big-play-button", ".jw-icon-display", ".play", "[class*=play]"]:
                         try:
                             sb.cdp.click_if_visible(sel)
                         except Exception:
@@ -643,26 +562,23 @@ def try_luluvdo_fallback(luluvdo_url, out_path):
                 others = [u for u in all_m3u8 if u not in master and u not in index_files]
                 ordered = master + index_files + others
 
+                try: os.remove(lf)
+                except: pass
+
                 if not ordered:
                     print(f"      ❌ لا m3u8", flush=True)
-                    try: os.remove(lf)
-                    except: pass
                     return False
 
                 m3u8_url = ordered[0]
                 print(f"      🎯 {m3u8_url[:100]}", flush=True)
 
-                # انتقل إلى نفس النطاق (same-origin)
                 try:
                     sb.cdp.open(m3u8_url)
-                    sb.cdp.sleep(3)
+                    sb.cdp.sleep(4)
                 except Exception:
                     pass
 
-                ok = _browser_download_hls(sb, m3u8_url, out_path)
-                try: os.remove(lf)
-                except: pass
-                return ok
+                return _browser_download_hls(sb, m3u8_url, out_path)
             except Exception as e:
                 print(f"      ❌ {str(e)[:120]}", flush=True)
     except Exception as e:
@@ -671,6 +587,260 @@ def try_luluvdo_fallback(luluvdo_url, out_path):
     try: os.remove(lf)
     except: pass
     return False
+
+
+def _try_vinovo_server(server_url, out_path):
+    print(f"      [vinovo] {server_url[:80]}", flush=True)
+    try:
+        with SB(uc=True, xvfb=True, headless=False, incognito=True,
+                ad_block_on=True, disable_csp=True,
+                page_load_strategy="eager", locale_code="en") as sb:
+            try:
+                sb.activate_cdp_mode()
+                sb.cdp.open(server_url)
+                sb.cdp.sleep(6)
+
+                m = re.search(r'/e/([A-Za-z0-9]+)', server_url)
+                if not m:
+                    return False
+                file_code = m.group(1)
+                base_url = server_url.split('/e/')[0]
+
+                cookies_dict = {}
+                try:
+                    r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
+                    for c in r.get("cookies", []):
+                        n, v = c.get("name", ""), c.get("value", "")
+                        if n and v:
+                            cookies_dict[n] = v
+                except Exception:
+                    pass
+
+                token = None
+                try:
+                    html = sb.get_page_source()
+                    tm = re.search(r'name="token"\s+content="([^"]+)"', html)
+                    if tm:
+                        token = tm.group(1)
+                except Exception:
+                    pass
+
+                headers = {
+                    "Content-Type": "application/json",
+                    "Referer": server_url, "Origin": base_url,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                }
+                if token:
+                    headers["X-CSRF-TOKEN"] = token
+
+                resp = cffi_requests.post(f"{base_url}/api/stream",
+                    json={"filecode": file_code, "device": "web"},
+                    headers=headers, cookies=cookies_dict,
+                    impersonate="chrome120", timeout=20)
+
+                if resp.status_code != 200:
+                    print(f"      ❌ API {resp.status_code}", flush=True)
+                    return False
+
+                stream_url = None
+                try:
+                    data = resp.json()
+                    stream_url = data.get("streaming_url") or data.get("url") or data.get("file")
+                except Exception:
+                    mm = re.search(r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', resp.text)
+                    if mm:
+                        stream_url = mm.group(1)
+
+                if not stream_url:
+                    return False
+
+                print(f"      ✅ stream: {stream_url[:100]}", flush=True)
+
+                # جرّب curl_cffi
+                ok = _download_with_curl_simple(stream_url, out_path, server_url, cookies_dict)
+                if ok:
+                    return True
+
+                # جرّب browser HLS
+                try:
+                    sb.cdp.open(stream_url)
+                    sb.cdp.sleep(4)
+                    return _browser_download_hls(sb, stream_url, out_path)
+                except Exception:
+                    return False
+            except Exception as e:
+                print(f"      ❌ {str(e)[:120]}", flush=True)
+    except Exception as e:
+        print(f"      ❌ {str(e)[:120]}", flush=True)
+    return False
+
+
+def _try_ytdlp_direct(server_url, out_path):
+    print(f"      [yt-dlp direct] {server_url[:80]}", flush=True)
+    cmd = [
+        sys.executable, '-m', 'yt_dlp',
+        '--no-warnings', '--no-playlist', '--no-part',
+        '--retries', '20', '--fragment-retries', '50',
+        '--socket-timeout', '60',
+        '--concurrent-fragments', '8',
+        '--no-check-certificate', '--continue',
+        '--hls-use-mpegts',
+        '--impersonate', 'chrome',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '-f', 'best[height<=720]/best',
+        '-o', out_path, server_url,
+    ]
+    log_path = out_path + ".ytdlp.log"
+    try:
+        log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
+    except Exception:
+        return False
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True)
+    except Exception:
+        log_file.close()
+        return False
+
+    start = time.time()
+    last_size = 0
+    last_change = start
+    best_size = 0
+    try:
+        while proc.poll() is None:
+            time.sleep(3)
+            now = time.time()
+            size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+            if size > last_size:
+                last_size = size
+                last_change = now
+                if size > best_size:
+                    best_size = size
+            if now - last_change > STALL_TIMEOUT and size > 0:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                return best_size >= MIN_PARTIAL_ACCEPT
+            if now - start > YTDLP_TIMEOUT:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                log_file.close()
+                return best_size >= MIN_PARTIAL_ACCEPT
+        log_file.close()
+        size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+        return size >= MIN_VALID_SIZE
+    except Exception:
+        try: proc.kill()
+        except: pass
+        log_file.close()
+        return False
+
+
+def _download_with_curl_simple(url, out_path, referer, cookies_dict):
+    headers = {
+        "Referer": referer,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+    cookie_str = "; ".join([f"{k}={v}" for k, v in cookies_dict.items()])[:8000]
+    if cookie_str:
+        headers["Cookie"] = cookie_str
+
+    try:
+        r = cffi_requests.get(url, headers=headers,
+                               impersonate="chrome120", timeout=30, verify=False)
+        if r.status_code != 200:
+            return False
+        m3u8_text = r.text
+    except Exception:
+        return False
+
+    def _parse(text, b_url):
+        segs = []
+        variants = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '.m3u8' in line:
+                variants.append(urljoin(b_url + '/', line))
+                continue
+            if line.endswith('.ts') or '.ts?' in line or 'seg' in line.lower():
+                segs.append(urljoin(b_url + '/', line))
+        return segs, variants
+
+    base_url = url.rsplit('/', 1)[0]
+    segments, variants = _parse(m3u8_text, base_url)
+
+    if not segments and variants:
+        for v in variants[:3]:
+            try:
+                rv = cffi_requests.get(v, headers=headers,
+                                        impersonate="chrome120", timeout=30, verify=False)
+                if rv.status_code == 200:
+                    vb = v.rsplit('/', 1)[0]
+                    segments, _ = _parse(rv.text, vb)
+                    if segments:
+                        break
+            except Exception:
+                pass
+
+    if not segments:
+        return False
+
+    seg_dir = tempfile.mkdtemp(prefix="hls_c_")
+    seg_paths = {}
+
+    def _dl(idx_url):
+        idx, u = idx_url
+        try:
+            rr = cffi_requests.get(u, headers=headers,
+                                    impersonate="chrome120", timeout=60, verify=False)
+            if rr.status_code == 200 and len(rr.content) > 100:
+                p = os.path.join(seg_dir, f"seg_{idx:06d}.ts")
+                with open(p, 'wb') as f:
+                    f.write(rr.content)
+                return (idx, p)
+        except Exception:
+            pass
+        return (idx, None)
+
+    with ThreadPoolExecutor(max_workers=CURL_CFFI_WORKERS) as ex:
+        futures = [ex.submit(_dl, (i, s)) for i, s in enumerate(segments)]
+        for fut in as_completed(futures):
+            idx, p = fut.result()
+            if p:
+                seg_paths[idx] = p
+
+    if not seg_paths:
+        try: shutil.rmtree(seg_dir, ignore_errors=True)
+        except: pass
+        return False
+
+    sorted_segs = [seg_paths[k] for k in sorted(seg_paths.keys())]
+    concat_file = os.path.join(seg_dir, "concat.txt")
+    with open(concat_file, 'w') as f:
+        for p in sorted_segs:
+            f.write(f"file '{p}'\n")
+
+    concat_cmd = ['ffmpeg', '-hide_banner', '-loglevel', 'warning',
+                  '-f', 'concat', '-safe', '0', '-i', concat_file,
+                  '-c', 'copy', '-f', 'mpegts', '-y', out_path]
+    try:
+        r = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=600)
+        ok = r.returncode == 0 and os.path.exists(out_path)
+    except Exception:
+        ok = False
+    try: shutil.rmtree(seg_dir, ignore_errors=True)
+    except: pass
+    return ok
 
 
 # ============================================================
@@ -691,6 +861,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
 
         success = False
         dloaded = 0
+        method = None
 
         if result["ok"]:
             success = True
@@ -698,21 +869,48 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             method = result["method"]
             print(f"   ✅ نجح عبر {method} | {dloaded/(1024*1024):.2f} MB")
         else:
-            # ✅ fallback: luluvdo
-            fb = result.get("fallback_server_url")
-            if fb:
-                print(f"   🔄 محاولة luluvdo fallback...", flush=True)
-                ok = await asyncio.to_thread(try_luluvdo_fallback, fb, tmp_ts)
-                if ok:
-                    dloaded = os.path.getsize(tmp_ts) if os.path.exists(tmp_ts) else 0
-                    success = True
-                    method = "luluvdo-fallback"
-                    print(f"   ✅ نجح عبر luluvdo | {dloaded/(1024*1024):.2f} MB")
+            servers = result.get("servers", [])
+            if servers:
+                def _prio(s):
+                    name = s.get("name", "").lower()
+                    try:
+                        return SERVER_PRIORITY.index(name)
+                    except ValueError:
+                        return 99
+                servers_sorted = sorted(servers, key=_prio)
+                print(f"   📦 {len(servers_sorted)} سيرفر للمحاولة:", flush=True)
+
+                for srv in servers_sorted:
+                    if exceeded():
+                        break
+                    name = srv.get("name", "")
+                    url = srv.get("url", "")
+                    if not url:
+                        continue
+
+                    try:
+                        ok = await asyncio.to_thread(
+                            try_server_fallback, name, url, tmp_ts
+                        )
+                    except Exception as e:
+                        print(f"   ❌ {name}: {str(e)[:100]}", flush=True)
+                        ok = False
+
+                    if ok and os.path.exists(tmp_ts) and os.path.getsize(tmp_ts) >= MIN_VALID_SIZE:
+                        dloaded = os.path.getsize(tmp_ts)
+                        success = True
+                        method = f"server:{name}"
+                        print(f"   ✅ نجح عبر {name} | {dloaded/(1024*1024):.2f} MB")
+                        break
+                    else:
+                        print(f"   ❌ فشل {name}", flush=True)
+                        if os.path.exists(tmp_ts):
+                            try: os.remove(tmp_ts)
+                            except: pass
 
         if not success:
-            return False, f"فشل: {result['info']}"
+            return False, f"فشل كل السيرفرات"
 
-        # تحقق من الملف
         if not os.path.exists(tmp_ts) or os.path.getsize(tmp_ts) < MIN_VALID_SIZE:
             return False, "ملف صغير"
 
@@ -878,8 +1076,9 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v16.2 — shhaiid4u.net")
+    print("🎬 Video Downloader v16.3 — shhaiid4u.net")
     if TEST_MODE: print("🧪 TEST_MODE")
+    print(f"📦 أولوية السيرفرات: {', '.join(SERVER_PRIORITY)}")
     print("=" * 60)
 
     try:
