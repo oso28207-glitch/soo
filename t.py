@@ -154,7 +154,7 @@ def build_episode_url(series_name, episode_num):
     ep_slug = f"الحلقة-{episode_num}-مدبلجة"
     season_slug = "الموسم-الاول"  # يمكن تعديله حسب الحاجة
 
-    full_path = f"/watch/{base_slug}-{season_slug}-{ep_slug}"
+    full_path = f"/watch/مسلسل-احتمال-حب-الموسم-الاول-الحلقة-65-مدبلجة"
     return SITE_BASE + quote(full_path, safe='/-')
 
 
