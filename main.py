@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v15.2 — Fixed: master.m3u8 duration + strict rejection of truncated episodes
+v15.3 — Smart resume loop to defeat CDN ~90s connection drops
 """
 
 import os, sys, time, json, subprocess, shutil, asyncio, random, re, tempfile
@@ -34,9 +34,13 @@ WAIT_MIN, WAIT_MAX = 10, 20
 
 YTDLP_TIMEOUT = 1800
 FFMPEG_TIMEOUT = 1800
-STALL_TIMEOUT = 45
+STALL_TIMEOUT = 60              # ✅ v15.3: من 45 إلى 60
 FILE_CREATE_TIMEOUT = 30
 MAX_DOWNLOAD_ATTEMPTS = 2
+
+# ✅✅ v15.3: حلقة الاستئناف
+MAX_RESUME_ROUNDS = 15
+RESUME_NO_PROGRESS_LIMIT = 3
 
 MIN_ACCEPTABLE_SPEED = 300 * 1024
 SPEED_CHECK_INTERVAL = 20
@@ -45,7 +49,6 @@ SPEED_GRACE_PERIOD = 30
 DURATION_ACCEPT_RATIO = 0.95
 CONSENSUS_TOLERANCE = 30
 
-# ✅✅ v15.2
 MIN_REAL_RATIO_AFTER_COMPRESS = 0.85
 MIN_PARTIAL_REAL_DURATION = 600
 
@@ -183,7 +186,7 @@ def get_all_cookies_string(cookies_dict):
 
 
 # ============================================================
-#  ✅✅ v15.2: get_expected_duration يحل master.m3u8
+#  ✅✅ v15.3: get_expected_duration يحل master.m3u8
 # ============================================================
 def get_expected_duration(m3u8_url, referer, cookies_dict):
     cookie_str = get_all_cookies_string(cookies_dict)
@@ -235,14 +238,12 @@ def get_expected_duration(m3u8_url, referer, cookies_dict):
         except Exception:
             return 0
 
-    # عبر curl_cffi
     for attempt in range(2):
         d = _fetch(m3u8_url)
         if d > 0:
             return d
         time.sleep(2)
 
-    # ffprobe
     try:
         header_arg = f"Referer: {referer}\r\n"
         if cookie_str:
@@ -688,7 +689,8 @@ def run_with_adaptive_monitoring(cmd, out_path, total_timeout, tag="proc"):
                     if speed < MIN_ACCEPTABLE_SPEED:
                         slow_count += 1
                         print(f"      🐌 {tag}: سرعة {speed_kb:.0f} KB/s (بطيء #{slow_count})", flush=True)
-                        if slow_count >= 2:
+                        # ✅ v15.3: لا نُلغي بسرعة الاستئناف — نُبقي على stall timeout فقط
+                        if slow_count >= 3 and (now - last_change) > STALL_TIMEOUT:
                             print(f"      🛑 {tag}: بطيء جداً — إلغاء", flush=True)
                             try:
                                 proc.kill()
@@ -781,14 +783,15 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_dict):
     cmd = [
         sys.executable, '-m', 'yt_dlp',
         '--no-warnings', '--no-playlist', '--no-part',
-        '--retries', '10', '--fragment-retries', '10',
-        '--socket-timeout', '30',
-        '--concurrent-fragments', '32',
-        '--http-chunk-size', '10485760',
-        '--buffer-size', '1M',
+        '--retries', '20', '--fragment-retries', '50',
+        '--retry-sleep', 'fragment:exp=1:20',
+        '--socket-timeout', '60',
+        '--concurrent-fragments', '4',
         '--no-check-certificate', '--continue',
-        '--hls-use-mpegts', '--hls-prefer-native', '--no-abort-on-error',
-        '--file-access-retries', '5', '--extractor-retries', '3',
+        '--hls-use-mpegts',
+        '--hls-prefer-ffmpeg',
+        '--no-abort-on-error',
+        '--file-access-retries', '10', '--extractor-retries', '5',
         '--impersonate', 'chrome',
         '--extractor-args', 'generic:impersonate',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -831,30 +834,90 @@ def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_dict):
     ]
 
 
-def download_video(url, out_path, referer, cookies_dict=None):
+# ============================================================
+#  ✅✅ v15.3: download_with_resume — الحل الجوهري
+# ============================================================
+def download_with_resume(url, out_path, referer, cookies_dict, expected_dur=0):
+    """
+    حلقة استئناف ذكية: CDN يقطع الاتصال بعد ~90s.
+    نُعيد التشغيل مع --continue حتى MAX_RESUME_ROUNDS مرة.
+    كل مرة يتراكم ~12 MB إضافية حتى يكتمل.
+    """
+    last_size = 0
+    no_progress = 0
+
+    for round_num in range(MAX_RESUME_ROUNDS):
+        if exceeded():
+            break
+
+        cur_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+        cur_dur = 0
+        if expected_dur > 0 and cur_size > 0:
+            cur_dur = get_real_duration(out_path)
+            if cur_dur >= int(expected_dur * DURATION_ACCEPT_RATIO):
+                print(f"   ✅ اكتمل في round {round_num}: {cur_dur}/{expected_dur}s", flush=True)
+                return True, cur_size, False
+
+        print(f"\n   🔁 round {round_num+1}/{MAX_RESUME_ROUNDS} | "
+              f"size={cur_size/(1024*1024):.1f} MB | dur={cur_dur}s", flush=True)
+
+        cmd = build_ytdlp_cmd(url, out_path, referer, cookies_dict)
+        ok, info, natural = run_with_adaptive_monitoring(
+            cmd, out_path, YTDLP_TIMEOUT, "yt-dlp"
+        )
+
+        new_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+
+        if new_size <= cur_size:
+            no_progress += 1
+            print(f"   ⚠️ لا تقدم ({no_progress}/{RESUME_NO_PROGRESS_LIMIT})", flush=True)
+            if no_progress >= RESUME_NO_PROGRESS_LIMIT:
+                break
+        else:
+            no_progress = 0
+            added = (new_size - cur_size) / (1024 * 1024)
+            print(f"   ➕ أضاف {added:.1f} MB (المجموع {new_size/(1024*1024):.1f} MB)", flush=True)
+
+        if natural and ok:
+            break
+
+        time.sleep(3)
+
+    if os.path.exists(out_path):
+        size = os.path.getsize(out_path)
+        if size >= MIN_PARTIAL_ACCEPT:
+            return True, size, False
+    return False, "no progress after retries", False
+
+
+def download_video(url, out_path, referer, cookies_dict=None, expected_dur=0):
     if os.path.exists(out_path):
         try: os.remove(out_path)
         except Exception: pass
-    print(f"   [yt-dlp] timeout={YTDLP_TIMEOUT}s...", flush=True)
-    cmd = build_ytdlp_cmd(url, out_path, referer, cookies_dict)
-    ok, info, natural = run_with_adaptive_monitoring(cmd, out_path, YTDLP_TIMEOUT, "yt-dlp")
-    if ok:
+
+    is_m3u8 = ".m3u8" in url
+
+    print(f"   [yt-dlp+resume] timeout={YTDLP_TIMEOUT}s...", flush=True)
+    ok, info, natural = download_with_resume(
+        url, out_path, referer, cookies_dict, expected_dur
+    )
+    if ok and isinstance(info, (int, float)):
         return True, info, natural
-    print(f"   ⚠️ yt-dlp: {info}", flush=True)
-    if ".m3u8" not in url:
-        return False, info, False
-    try:
-        for f in [out_path, out_path + ".part", out_path + ".ytdl"]:
-            if os.path.exists(f):
-                os.remove(f)
-    except Exception:
-        pass
-    print(f"   [ffmpeg] timeout={FFMPEG_TIMEOUT}s...", flush=True)
-    cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_dict)
-    ok, info, natural = run_with_adaptive_monitoring(cmd, out_path, FFMPEG_TIMEOUT, "ffmpeg")
-    if ok:
-        return True, info, natural
-    print(f"   ⚠️ ffmpeg: {info}", flush=True)
+
+    if is_m3u8:
+        try:
+            for f in [out_path + ".part", out_path + ".ytdl"]:
+                if os.path.exists(f):
+                    os.remove(f)
+        except Exception:
+            pass
+        print(f"   [ffmpeg fallback] timeout={FFMPEG_TIMEOUT}s...", flush=True)
+        cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_dict)
+        ok, info, natural = run_with_adaptive_monitoring(cmd, out_path, FFMPEG_TIMEOUT, "ffmpeg")
+        if ok:
+            return True, info, natural
+        print(f"   ⚠️ ffmpeg: {info}", flush=True)
+
     return False, info, False
 
 
@@ -1037,7 +1100,7 @@ async def upload(fp, caption, tp=None, override_duration=None):
 
 
 # ============================================================
-#  ✅✅ v15.2: process_episode مع رفض صارم للملفات المقطوعة
+#  ✅✅ v15.3: process_episode
 # ============================================================
 async def process_episode(ep, sn, sn_ar, season, ddir):
     print(f"\n🎬 Ep {ep:02d}  [{elapsed_str()}]  ⏳ {remaining()//60}m")
@@ -1117,7 +1180,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                         print(f"\n   ⬇️ ({src}) attempt {attempt}/{MAX_DOWNLOAD_ATTEMPTS}...")
                         t0 = time.time()
                         ok, info, natural = await asyncio.to_thread(
-                            download_video, url, tmp_ts, it["url"], ck
+                            download_video, url, tmp_ts, it["url"], ck, expected_dur
                         )
                         dt = time.time() - t0
 
@@ -1132,7 +1195,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                 actual_dur = await asyncio.to_thread(get_real_duration, tmp_ts)
                             print(f"   🎞️ المدة الحقيقية: {actual_dur}s ({actual_dur//60}m{actual_dur%60}s) | طبيعي: {natural}")
 
-                            # ✅✅ v15.2: منطق قبول صارم
                             is_complete = False
                             reason = ""
 
@@ -1141,12 +1203,11 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                                     is_complete = True
                                     reason = f"وصلنا {actual_dur}/{expected_dur}s"
                                 else:
-                                    reason = f"فقط {actual_dur}/{expected_dur}s ({int(actual_dur*100/expected_dur)}%)"
+                                    reason = f"فقط {actual_dur}/{expected_dur}s ({int(actual_dur*100/max(expected_dur,1))}%)"
                             elif natural and actual_dur >= NATURAL_EXIT_MIN_DURATION:
                                 is_complete = True
                                 reason = "انتهى طبيعياً"
                             else:
-                                # ❌ لا نقبل: لا مدة متوقعة ولم ينتهِ طبيعياً
                                 reason = f"غير موثوق ({actual_dur}s) — طبيعي={natural} ولا مدة متوقعة"
 
                             if is_complete:
@@ -1184,7 +1245,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             if success_if:
                 break
 
-        # ✅✅ v15.2: تقييم partials بصرامة
         if not success_if and partials:
             print(f"\n🔍 تحليل partials ({len(partials)} مرشح):")
 
@@ -1236,7 +1296,6 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                     return False, f"partial move: {e}"
 
             elif without_exp:
-                # ⚠️ لا مدة متوقعة → نرفض لتفادي رفع محتوى مقطوع
                 best = max(without_exp, key=lambda p: p[4])
                 src, size, url, path, real_dur, exp, ratio = best
                 print(f"\n⚠️ أفضل partial بدون مدة متوقعة: {src} | حقيقي={real_dur}s")
@@ -1320,10 +1379,11 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v15.2")
+    print("🎬 Video Downloader v15.3")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
     print(f"⬇️ yt-dlp: {YTDLP_TIMEOUT}s | ffmpeg: {FFMPEG_TIMEOUT}s | stall: {STALL_TIMEOUT}s")
+    print(f"🔁 حلقة استئناف: {MAX_RESUME_ROUNDS} round (حد no-progress: {RESUME_NO_PROGRESS_LIMIT})")
     print(f"🐌 الحد الأدنى للسرعة: {MIN_ACCEPTABLE_SPEED//1024} KB/s")
     print(f"📦 قبول partial ≥ {MIN_PARTIAL_ACCEPT//(1024*1024)} MB")
     print(f"🎞️ الحد الأدنى: {MIN_EPISODE_DURATION}s ({MIN_EPISODE_DURATION//60}m)")
