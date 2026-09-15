@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Downloader & Uploader - u.3seq.com/.cam
-v16.7 — Fix: domain-aware cookie transfer + IIFE JS + index-v1-a1.m3u8 fallback
+v16.8 — Fix: Cookie object normalizer + no pre-nav headers + URL param variants
 """
 
 import os, sys, time, json, base64, subprocess, shutil, asyncio, random, re, tempfile
@@ -131,21 +131,76 @@ async def setup_telegram():
         return False
 
 
+# ============================================================
+#  ✅ v16.8: Cookie normalizer — يقبل dict/object/tuple
+# ============================================================
+def _normalize_cookie(c):
+    if isinstance(c, dict):
+        return c
+    # try attributes
+    d = {}
+    for attr in ("name", "value", "domain", "path", "secure",
+                 "httpOnly", "expiry", "sameSite", "session"):
+        try:
+            v = getattr(c, attr, None)
+            if v is not None:
+                d[attr] = v
+        except Exception:
+            pass
+    if d.get("name") and d.get("value"):
+        return d
+    # try tuple
+    try:
+        if len(c) >= 2:
+            return {"name": c[0], "value": c[1]}
+    except Exception:
+        pass
+    # try __dict__
+    try:
+        if hasattr(c, "__dict__"):
+            return dict(c.__dict__)
+    except Exception:
+        pass
+    return {}
+
+
 def get_cookies_full(sb):
-    """list of {name, value, domain, path, secure, ...}"""
-    try:
-        return sb.cdp.get_all_cookies()
-    except Exception:
-        pass
-    try:
-        r = sb.driver.execute_cdp_cmd("Network.getAllCookies", {})
-        return r.get("cookies", [])
-    except Exception:
-        pass
-    try:
-        return sb.driver.get_cookies()
-    except Exception:
-        return []
+    raw = []
+    for src in [
+        lambda: sb.cdp.get_all_cookies(),
+        lambda: sb.driver.execute_cdp_cmd("Network.getAllCookies", {}).get("cookies", []),
+        lambda: sb.driver.get_cookies(),
+    ]:
+        try:
+            r = src()
+            if r:
+                raw = r
+                break
+        except Exception:
+            continue
+
+    out = []
+    seen = set()
+    for c in raw:
+        d = _normalize_cookie(c)
+        n = d.get("name", "")
+        v = d.get("value", "")
+        if not n or not v:
+            continue
+        key = (n, v)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "name": str(n),
+            "value": str(v),
+            "domain": str(d.get("domain", "")),
+            "path": str(d.get("path", "/")),
+            "secure": bool(d.get("secure", False)),
+            "httpOnly": bool(d.get("httpOnly", False)),
+            "expiry": int(d.get("expiry", 0) or 0),
+        })
+    return out
 
 
 def get_cookies_safe(sb):
@@ -163,16 +218,16 @@ def save_cookies_netscape(cookies_list, path):
         with open(path, 'w', encoding='utf-8') as f:
             f.write("# Netscape HTTP Cookie File\n")
             for c in cookies_list:
-                domain = c.get("domain", "")
+                domain = c.get("domain", "") or ""
                 if not domain:
                     continue
                 if not domain.startswith("."):
                     domain = "." + domain
                 name = str(c.get("name", ""))
                 value = str(c.get("value", "")).replace("\n", "").replace("\r", "")
-                path_c = c.get("path", "/")
+                path_c = c.get("path", "/") or "/"
                 secure = "TRUE" if c.get("secure", False) else "FALSE"
-                expires = int(c.get("expiry", 0)) or 0
+                expires = int(c.get("expiry", 0) or 0)
                 f.write(f"{domain}\tTRUE\t{path_c}\t{secure}\t{expires}\t{name}\t{value}\n")
         return True
     except Exception:
@@ -236,28 +291,23 @@ def extract_servers(html):
 
 
 # ============================================================
-#  ✅ v16.7: إنشاء cffi session بالـ domain الصحيح
+#  cffi helpers
 # ============================================================
 def create_cffi_session(cookies_full_list):
-    """
-    ✅ v16.7: تمرير القائمة الكاملة مع domains — يحل مشكلة 403
-    """
     session = cffi_requests.Session(impersonate="chrome120")
     added = 0
     for c in cookies_full_list or []:
         try:
             name = c.get("name", "")
             value = c.get("value", "")
-            domain = c.get("domain", "")
-            path = c.get("path", "/")
+            domain = c.get("domain", "") or ""
+            path = c.get("path", "/") or "/"
             if not name or not value:
                 continue
-            # إذا domain فيه شرطة بادئة (".")، أبقها
             try:
                 session.cookies.set(name, value, domain=domain, path=path)
                 added += 1
             except Exception:
-                # fallback بدون domain
                 try:
                     session.cookies.set(name, value)
                     added += 1
@@ -265,7 +315,7 @@ def create_cffi_session(cookies_full_list):
                     pass
         except Exception:
             pass
-    print(f"      🔑 cffi session: {added} كوكي (بـ domain)", flush=True)
+    print(f"      🔑 cffi session: {added} كوكي", flush=True)
     return session
 
 
@@ -300,9 +350,6 @@ def download_segments_with_session(session, segments, out_path, referer):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
     }
 
     def _dl(idx_url):
@@ -368,38 +415,25 @@ def download_segments_with_session(session, segments, out_path, referer):
 
 
 # ============================================================
-#  ✅ v16.7: استخراج m3u8 من HTML + بناء URL variants
+#  m3u8 candidates + variants
 # ============================================================
 def extract_m3u8_candidates_from_html(html, iframe_url):
-    """
-    استخرج كل مرشحي m3u8 + حلل الـ tokens والمسارات
-    """
     candidates = []
     if not html:
         return candidates
-
-    # 1) أي رابط .m3u8 مباشر
     for m in re.finditer(r'(https?:[^\s"\'<>\\]+\.m3u8[^\s"\'<>\\]*)', html):
         candidates.append(m.group(1).replace('\\/', '/'))
-
-    # 2) file: "..."
     for m in re.finditer(r'["\']file["\']\s*:\s*["\']([^"\']+\.m3u8[^"\']*)["\']', html):
         candidates.append(m.group(1).replace('\\/', '/'))
-
-    # 3) sources:[{file:"..."}]
     for m in re.finditer(
         r'["\']sources["\']\s*:\s*\[[^\]]*?["\']file["\']\s*:\s*["\']([^"\']+\.m3u8[^"\']*)["\']',
         html, re.DOTALL):
         candidates.append(m.group(1).replace('\\/', '/'))
-
-    # 4) hlsUrl/videoUrl/...
     for name in ['videoUrl', 'fileUrl', 'streamUrl', 'hlsUrl', 'm3u8',
                  'source', 'videoSrc']:
         for m in re.finditer(
             rf'["\']?{name}["\']?\s*[:=]\s*["\']([^"\']+\.m3u8[^"\']*)["\']', html):
             candidates.append(m.group(1).replace('\\/', '/'))
-
-    # de-dup
     seen = set()
     out = []
     for u in candidates:
@@ -409,25 +443,67 @@ def extract_m3u8_candidates_from_html(html, iframe_url):
     return out
 
 
-def build_m3u8_variants(original_url):
+def extract_video_id_from_html(html):
+    """استخرج رقم الفيديو (v=) من HTML"""
+    for pat in [
+        r'\bv["\']?\s*[:=]\s*["\']?(\d{6,12})',
+        r'video_id["\']?\s*[:=]\s*["\']?(\d{6,12})',
+        r'file_id["\']?\s*[:=]\s*["\']?(\d{6,12})',
+        r'\bvid["\']?\s*[:=]\s*["\']?(\d{6,12})',
+        r'\bid["\']?\s*[:=]\s*["\']?(\d{6,12})',
+    ]:
+        m = re.search(pat, html, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def build_m3u8_variants(original_url, video_id=None):
     """
-    ✅ v16.7: من master.m3u8 → جرّب index-v1-a1.m3u8 وبدائل
+    ✅ v16.8: ولّد بدائل URL متعددة مع params مختلفة
     """
     variants = [original_url]
 
-    # افصل base + query
     if '?' in original_url:
         base, q = original_url.split('?', 1)
         qs = '?' + q
+        # استخرج token
+        tm = re.search(r'\bt=([^&]+)', qs)
+        token = tm.group(1) if tm else ''
     else:
-        base, qs = original_url, ''
+        base = original_url
+        qs = ''
+        token = ''
 
-    # جرّب أسماء ملفات بديلة
     d = base.rsplit('/', 1)[0] if '/' in base else ''
-    if d:
-        for fname in ['index-v1-a1.m3u8', 'index.m3u8', 'playlist.m3u8',
-                      'master.m3u8', 'index-v1-a1.m3u8']:
-            variants.append(f"{d}/{fname}{qs}")
+    if not d:
+        return variants
+
+    import time as _t
+    now = int(_t.time())
+    e = 43200  # 12 hours
+
+    # اسم الملف الأصلي
+    orig_fname = base.rsplit('/', 1)[-1]
+
+    # جرّب كل الأسماء + token أصلي
+    for fname in ['index-v1-a1.m3u8', 'master.m3u8', 'index.m3u8',
+                  'playlist.m3u8', 'index-f1-v1-a1.m3u8']:
+        if fname == orig_fname:
+            continue
+        if token:
+            variants.append(f"{d}/{fname}?t={token}")
+
+    # جرّب مع params إضافية
+    if token and video_id:
+        extra = f"&s={now}&e={e}&v={video_id}&i=0.3&sp=400"
+        for fname in ['index-v1-a1.m3u8', 'master.m3u8', 'index.m3u8']:
+            variants.append(f"{d}/{fname}?t={token}{extra}")
+
+    # جرّب الأصل + params إضافية
+    if token and video_id:
+        extra = f"&s={now}&e={e}&v={video_id}&i=0.3&sp=400"
+        variants.append(f"{base}?t={token}{extra}")
 
     # de-dup
     seen = set()
@@ -440,41 +516,21 @@ def build_m3u8_variants(original_url):
 
 
 # ============================================================
-#  iframe navigation (fixed JS)
+#  Navigation helpers — v16.8: no pre-nav headers
 # ============================================================
-def _set_extra_headers(sb, referer):
-    try:
-        sb.driver.execute_cdp_cmd("Network.enable", {})
-    except Exception:
-        pass
-    try:
-        sb.driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {
-            "headers": {
-                "Referer": referer,
-                "Origin": origin_of(referer),
-            }
-        })
-        print(f"      ✅ headers set", flush=True)
-        return True
-    except Exception as e:
-        print(f"      ⚠️ set_headers: {str(e)[:80]}", flush=True)
-        return False
-
-
 def _get_iframe_rect_safe(sb):
-    """✅ v16.7: IIFE — يتوقف عن خطأ JS"""
     try:
         rect = sb.cdp.execute_script("""
             (function() {
                 try {
-                    var candidates = [
+                    var cs = [
                         document.querySelector('iframe[src*="vidsp"]'),
                         document.querySelector('iframe[src*="embed"]'),
                         document.querySelector('.watch iframe'),
                         document.querySelector('iframe')
                     ];
-                    for (var i = 0; i < candidates.length; i++) {
-                        var ifr = candidates[i];
+                    for (var i = 0; i < cs.length; i++) {
+                        var ifr = cs[i];
                         if (!ifr) continue;
                         var r = ifr.getBoundingClientRect();
                         if (r.width > 50 && r.height > 50) {
@@ -492,8 +548,8 @@ def _get_iframe_rect_safe(sb):
         """)
         if rect and isinstance(rect, dict) and rect.get('w', 0) > 50:
             return rect
-    except Exception as e:
-        print(f"      ⚠️ rect: {str(e)[:80]}", flush=True)
+    except Exception:
+        pass
     return None
 
 
@@ -568,7 +624,7 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                     print(f"      ⚠️ handler: {str(e)[:80]}", flush=True)
 
                 # ═══════════════════════════════════════════
-                #  الاستراتيجية 1: parent page + click iframe
+                #  S1: parent page + natural iframe load
                 # ═══════════════════════════════════════════
                 if watch_url:
                     print(f"      🌐 [S1] فتح الصفحة الأم...", flush=True)
@@ -578,20 +634,18 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                         cookies_full = get_cookies_full(sb)
                         cookies_dict = get_cookies_safe(sb)
                         print(f"      🍪 {len(cookies_dict)} كوكي", flush=True)
-
-                        # انتظار التحميل
                         print(f"      ⏳ انتظار 15s...", flush=True)
                         sb.cdp.sleep(15)
 
-                        # محاولة النقر في iframe
+                        # click iframe
                         rect = _get_iframe_rect_safe(sb)
                         if rect:
-                            print(f"      🖱️ iframe @ ({rect['x']},{rect['y']}) {rect['w']}x{rect['h']}", flush=True)
+                            print(f"      🖱️ iframe @ ({rect['x']},{rect['y']})", flush=True)
                             for _ in range(3):
                                 _click_at(sb, rect['x'], rect['y'])
                                 sb.cdp.sleep(3)
 
-                        # انتظار m3u8
+                        # انتظر m3u8
                         for i in range(20):
                             sb.cdp.sleep(2)
                             found = [u for u in _read_log() if '.m3u8' in u]
@@ -609,27 +663,30 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                 print(f"      📊 S1: {len(m3u8_now)} m3u8", flush=True)
 
                 # ═══════════════════════════════════════════
-                #  الاستراتيجية 2: فتح iframe مباشرة عبر CDP
+                #  S2: direct iframe navigation (NO pre-headers)
                 # ═══════════════════════════════════════════
                 if not m3u8_now:
-                    print(f"      🔀 [S2] فتح iframe مباشرة عبر CDP...", flush=True)
-                    _set_extra_headers(sb, watch_url or "https://u.3seq.cam/")
+                    print(f"      🔀 [S2] فتح iframe مباشرة (بدون pre-headers)...", flush=True)
                     try:
-                        sb.cdp.open(iframe_url)
+                        sb.open(iframe_url)   # ← WebDriver, not cdp
                         sb.cdp.sleep(10)
                     except Exception as e:
-                        print(f"      ⚠️ cdp.open: {str(e)[:80]}", flush=True)
+                        print(f"      ⚠️ sb.open: {str(e)[:80]}", flush=True)
+                        try:
+                            sb.cdp.open(iframe_url)
+                            sb.cdp.sleep(10)
+                        except Exception as e2:
+                            print(f"      ⚠️ sb.cdp.open: {str(e2)[:80]}", flush=True)
 
-                    # تشخيص
                     try:
-                        cur_url = sb.cdp.get_current_url()
-                        src_len = len(sb.cdp.get_page_source() or "")
+                        cur_url = sb.get_current_url()
+                        src_len = len(sb.get_page_source() or "")
                         print(f"      🔍 URL: {cur_url[:80]}", flush=True)
                         print(f"      📄 HTML: {src_len} chars", flush=True)
-                    except Exception as e:
-                        print(f"      ⚠️ diag: {str(e)[:80]}", flush=True)
+                    except Exception:
+                        pass
 
-                    # انتظر jwplayer
+                    # wait jwplayer
                     for tick in range(10):
                         sb.cdp.sleep(2)
                         try:
@@ -667,7 +724,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                             pass
                         sb.cdp.sleep(3)
 
-                    # انتظار m3u8
                     for i in range(20):
                         sb.cdp.sleep(2)
                         found = [u for u in _read_log() if '.m3u8' in u]
@@ -698,7 +754,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
 
                 print(f"      🔍 perf: {len(all_perf_urls)}", flush=True)
 
-                # أولوية: index-* > master > غيرها
                 idx_files = [u for u in m3u8_now if 'index-' in u.lower()]
                 master = [u for u in m3u8_now if 'master' in u.lower()]
                 others = [u for u in m3u8_now if u not in idx_files and u not in master]
@@ -709,14 +764,10 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
 
                 print(f"      📋 handler={len(urls)} | perf={len(all_perf_urls)} | m3u8={len(m3u8_urls)} | 🍪 {len(cookies_dict)}", flush=True)
 
-                # ═══════════════════════════════════════════
-                #  بناء session مع domain-aware cookies
-                # ═══════════════════════════════════════════
+                # Session
                 session = create_cffi_session(cookies_full)
 
-                # ═══════════════════════════════════════════
-                #  Step 1: اجلب HTML عبر session (للحصول على tokens)
-                # ═══════════════════════════════════════════
+                # Fetch embed HTML via cffi
                 html = None
                 try:
                     ref_origin = origin_of(watch_url) or "https://u.3seq.cam"
@@ -729,7 +780,6 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                         "Sec-Fetch-Site": "cross-site",
                         "Sec-Fetch-Mode": "navigate",
                         "Sec-Fetch-Dest": "iframe",
-                        "Sec-Fetch-User": "?1",
                         "Upgrade-Insecure-Requests": "1",
                     }
                     r_html = session.get(iframe_url, headers=html_headers,
@@ -746,38 +796,37 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                 except Exception as e:
                     print(f"      ❌ embed: {str(e)[:100]}", flush=True)
 
-                # ═══════════════════════════════════════════
-                #  Step 2: جمع كل m3u8 candidates من كل المصادر
-                # ═══════════════════════════════════════════
+                # جمع candidates
                 all_candidates = list(m3u8_urls)
+                video_id = None
                 if html:
-                    html_candidates = extract_m3u8_candidates_from_html(html, iframe_url)
-                    print(f"      📋 HTML candidates: {len(html_candidates)}", flush=True)
-                    for u in html_candidates[:5]:
+                    hc = extract_m3u8_candidates_from_html(html, iframe_url)
+                    print(f"      📋 HTML candidates: {len(hc)}", flush=True)
+                    for u in hc[:5]:
                         print(f"         · {u[:120]}", flush=True)
-                    for u in html_candidates:
+                    for u in hc:
                         if u not in all_candidates:
                             all_candidates.append(u)
+                    video_id = extract_video_id_from_html(html)
+                    if video_id:
+                        print(f"      🆔 video_id: {video_id}", flush=True)
 
                 if not all_candidates:
-                    print(f"      ⚠️ لا m3u8 candidates", flush=True)
+                    print(f"      ⚠️ لا candidates", flush=True)
                     m3u8_urls = [iframe_url]
                 else:
-                    # ═══════════════════════════════════════════
-                    #  Step 3: جرّب كل candidate + variants
-                    # ═══════════════════════════════════════════
                     tried = set()
                     success = False
                     for base_url in all_candidates[:8]:
                         if success:
                             break
-                        variants = build_m3u8_variants(base_url)
-                        print(f"      🎯 candidates for: {base_url[:90]}", flush=True)
+                        variants = build_m3u8_variants(base_url, video_id)
+                        print(f"      🎯 for: {base_url[:90]}", flush=True)
                         for url in variants:
                             if success or url in tried:
                                 continue
                             tried.add(url)
-                            print(f"         → {url[:120]}", flush=True)
+                            print(f"         → {url[:130]}", flush=True)
                             try:
                                 ref_cdn = origin_of(url) or "https://s28.cdn-vids.xyz"
                                 fetch_headers = {
@@ -827,7 +876,7 @@ def extract_and_download_via_browser(iframe_url, out_path, expected_dur=0,
                                 print(f"            ❌ {str(e)[:100]}", flush=True)
 
                 if not download_result:
-                    print(f"      ⚠️ لا download_result — fallback", flush=True)
+                    print(f"      ⚠️ لا download_result", flush=True)
                     if not m3u8_urls:
                         m3u8_urls = [iframe_url]
 
@@ -878,34 +927,6 @@ def build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file=None):
             cmd += ['--add-header', f'Cookie:{cookie_str}']
     cmd += ['-f', 'best[height<=720]/best', '-o', out_path, url]
     return cmd
-
-
-def build_ffmpeg_cmd(m3u8_url, out_path, referer, cookies_info):
-    origin = origin_of(referer) or "https://u.3seq.com"
-    cookie_str = ""
-    if isinstance(cookies_info, dict):
-        cookie_str = get_all_cookies_string(cookies_info.get("dict", {}))
-    header_lines = [
-        f"Referer: {referer}",
-        f"Origin: {origin}",
-        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept: */*",
-    ]
-    if cookie_str:
-        header_lines.append(f"Cookie: {cookie_str}")
-    headers = "\r\n".join(header_lines) + "\r\n"
-    return [
-        'ffmpeg', '-hide_banner', '-loglevel', 'warning',
-        '-err_detect', 'ignore_err', '-fflags', '+discardcorrupt+genpts',
-        '-analyzeduration', '100M', '-probesize', '100M',
-        '-headers', headers,
-        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto,data',
-        '-allowed_extensions', 'ALL',
-        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_at_eof', '1',
-        '-reconnect_delay_max', '10',
-        '-rw_timeout', '30000000', '-multiple_requests', '1',
-        '-i', m3u8_url, '-c', 'copy', '-f', 'mpegts', '-y', out_path,
-    ]
 
 
 def _get_current_size(out_path):
@@ -1007,15 +1028,14 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0,
         except Exception: pass
 
     is_m3u8 = ".m3u8" in url
+    cookies_file = None
+    if cookies_info and isinstance(cookies_info, dict):
+        cookies_list = cookies_info.get("list", [])
+        if cookies_list:
+            cookies_file = out_path + ".cookies.txt"
+            save_cookies_netscape(cookies_list, cookies_file)
 
     if is_m3u8:
-        cookies_file = None
-        if cookies_info and isinstance(cookies_info, dict):
-            cookies_list = cookies_info.get("list", [])
-            if cookies_list:
-                cookies_file = out_path + ".cookies.txt"
-                save_cookies_netscape(cookies_list, cookies_file)
-
         timeout = YTDLP_TIMEOUT_IFRAME if is_iframe_fallback else YTDLP_TIMEOUT
         print(f"   [yt-dlp] timeout={timeout}s...", flush=True)
         cmd = build_ytdlp_cmd(url, out_path, referer, cookies_info, cookies_file)
@@ -1027,29 +1047,11 @@ def download_video(url, out_path, referer, cookies_info=None, expected_dur=0,
             except: pass
             return True, info, natural
 
-        # ffmpeg fallback
-        try:
-            for f in [out_path + ".part", out_path + ".ytdl"]:
-                if os.path.exists(f):
-                    os.remove(f)
-        except Exception:
-            pass
-        print(f"   [ffmpeg] timeout={FFMPEG_TIMEOUT}s...", flush=True)
-        cmd = build_ffmpeg_cmd(url, out_path, referer, cookies_info)
-        ok, info, natural = run_with_adaptive_monitoring(cmd, out_path, FFMPEG_TIMEOUT, "ffmpeg")
-        if ok:
-            try:
-                if cookies_file and os.path.exists(cookies_file):
-                    os.remove(cookies_file)
-            except: pass
-            return True, info, natural
-
-        try:
-            if cookies_file and os.path.exists(cookies_file):
-                os.remove(cookies_file)
-        except: pass
-
-    return False, info, False
+    try:
+        if cookies_file and os.path.exists(cookies_file):
+            os.remove(cookies_file)
+    except: pass
+    return False, "no_dl", False
 
 
 def collect_iframes(ep, series_name):
@@ -1325,10 +1327,10 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 if actual_dur >= MIN_EPISODE_DURATION:
                     success_if = iframes_url
                     dloaded = size
-                    method = "Browser+cffi"
+                    method = "cffi"
                     print(f"   ✅ نجاح!")
             else:
-                print(f"   ❌ فشل — fallback")
+                print(f"   ❌ fallback")
                 fallback = list(m3u8_urls) if m3u8_urls else [iframes_url]
                 for url_idx, url in enumerate(fallback[:3]):
                     if exceeded() or success_if:
@@ -1355,7 +1357,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
                 break
 
         if not success_if:
-            return False, "فشل من جميع السيرفرات"
+            return False, "فشل"
 
         print(f"\n🎥 نجح: {method} | {dloaded/(1024*1024):.2f} MB")
         print(f"\n🗜️ ضغط...")
@@ -1363,7 +1365,7 @@ async def process_episode(ep, sn, sn_ar, season, ddir):
             shutil.copy2(tmp_ts, fin)
         else:
             if not compress_144p(tmp_ts, fin):
-                print(f"   ⚠️ فشل الضغط — نسخ TS")
+                print(f"   ⚠️ فشل الضغط — نسخ")
                 shutil.copy2(tmp_ts, fin)
 
         if not os.path.exists(fin):
@@ -1414,10 +1416,10 @@ def load_config():
 
 async def main():
     print("=" * 60)
-    print("🎬 Video Downloader v16.7")
+    print("🎬 Video Downloader v16.8")
     if TEST_MODE: print("🧪 TEST_MODE")
     print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS//60}m")
-    print(f"🌐 domain-aware cookies + m3u8 variants (master→index-v1-a1)")
+    print(f"🌐 Cookie normalizer + URL param variants")
     print("=" * 60)
 
     try:
