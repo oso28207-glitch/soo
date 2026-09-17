@@ -1,12 +1,9 @@
 # ═══════════════════════════════════════════════════════════
 #  🎬 TelegramFlix — Build & Deploy
-#  يبني الموقع الثابت من data.json وينشره على GitHub Pages
 # ═══════════════════════════════════════════════════════════
 name: 🎬 Build & Deploy TelegramFlix
 
-# ═══════════════ متى يعمل؟ ═══════════════
 on:
-  # 1) عند الرفع إلى main (فقط إذا تغيّرت ملفات مهمة)
   push:
     branches: [main]
     paths:
@@ -14,42 +11,34 @@ on:
       - 'data.json'
       - 'static/**'
       - '.github/workflows/build-and-deploy.yml'
-
-  # 2) عند التشغيل اليدوي من تبويب Actions
   workflow_dispatch:
-
-  # 3) كل 6 ساعات (اختياري — للتحديث الدوري)
   schedule:
     - cron: '0 */6 * * *'
 
-# ═══════════════ الصلاحيات المطلوبة ═══════════════
 permissions:
-  contents: read       # لقراءة المستودع
-  pages: write         # للنشر على GitHub Pages
-  id-token: write      # للتحقق من الهوية
+  contents: read
+  pages: write
+  id-token: write
 
-# ═══════════════ منع تشغيل متعدد متزامن ═══════════════
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
-# ═══════════════ المهام ═══════════════
 jobs:
-  # ─── المهمة 1: البناء ───
   build:
     name: 🔨 Build Static Site
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6          # تم التحديث
 
       - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7      # تم التحديث
         with:
           python-version: '3.11'
 
       - name: 🔨 Build the site
-        run: python build_all.py --clean --force
+        run: python build_all.py --clean    # تمت إزالة --force
         env:
           BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
@@ -65,11 +54,10 @@ jobs:
           du -sh docs/ || true
 
       - name: 📤 Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5   # تم التحديث
         with:
           path: docs/
 
-  # ─── المهمة 2: النشر ───
   deploy:
     name: 🚀 Deploy to GitHub Pages
     needs: build
@@ -80,4 +68,4 @@ jobs:
     steps:
       - name: 🚀 Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5          # تم التحديث
