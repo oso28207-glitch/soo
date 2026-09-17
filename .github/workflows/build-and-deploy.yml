@@ -1,24 +1,41 @@
+# ═══════════════════════════════════════════════════════════
+#  🎬 TelegramFlix — Build & Deploy
+#  يبني الموقع الثابت من data.json وينشره على GitHub Pages
+# ═══════════════════════════════════════════════════════════
 name: 🎬 Build & Deploy TelegramFlix
 
+# ═══════════════ متى يعمل؟ ═══════════════
 on:
+  # 1) عند الرفع إلى main
   push:
     branches: [main]
     paths:
       - 'build_all.py'
       - 'data.json'
+      - 'static/**'
       - '.github/workflows/build-and-deploy.yml'
+
+  # 2) عند التشغيل اليدوي من تبويب Actions
   workflow_dispatch:
 
+  # 3) كل 6 ساعات (تحديث دوري)
+  schedule:
+    - cron: '0 */6 * * *'
+
+# ═══════════════ الصلاحيات ═══════════════
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# ═══════════════ منع التشغيل المتزامن ═══════════════
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
+# ═══════════════ المهام ═══════════════
 jobs:
+  # ─── المهمة 1: البناء ───
   build:
     name: 🔨 Build Static Site
     runs-on: ubuntu-latest
@@ -31,35 +48,49 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 🔨 Build the site
-        run: python build_all.py --clean
-        env:
-          BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-
-      - name: 🔎 Verify docs/ was created
+      - name: 🔎 Check data.json
         run: |
-          echo "=== docs/ contents ==="
-          ls -la docs/
-          echo ""
-          echo "=== Counting files ==="
-          COUNT=$(find docs -type f | wc -l)
-          echo "Total files: $COUNT"
-          if [ "$COUNT" -lt 1 ]; then
-            echo "❌ ERROR: docs/ is empty! Build failed."
+          if [ ! -f data.json ]; then
+            echo "⚠️ data.json غير موجود — سيتم إنشاء ملف فارغ تلقائياً."
+            echo '{"series": []}' > data.json
+          fi
+          echo "حجم data.json: $(wc -c < data.json) بايت"
+          python3 -c "import json; d=json.load(open('data.json')); print(f'عدد المسلسلات: {len(d.get(\"series\", []))}')"
+
+      - name: 🔨 Build the site
+        run: |
+          set -e
+          python build_all.py --clean
+          if [ ! -d docs ]; then
+            echo "❌ docs/ لم يُنشأ — فشل السكربت أعلاه. راجع السجل."
             exit 1
           fi
           if [ ! -f docs/index.html ]; then
-            echo "❌ ERROR: docs/index.html missing!"
+            echo "❌ docs/index.html مفقود."
             exit 1
           fi
-          echo "✅ docs/ looks good."
-          du -sh docs/
+          echo "✅ البناء نجح:"
+          find docs -type f | head -20
+        env:
+          BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+      - name: 📋 Show build output
+        run: |
+          echo "=== محتويات docs/ ==="
+          ls -la docs/ || true
+          echo ""
+          echo "=== عدد الملفات ==="
+          find docs -type f | wc -l
+          echo ""
+          echo "=== الحجم الكامل ==="
+          du -sh docs/ || true
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
 
+  # ─── المهمة 2: النشر ───
   deploy:
     name: 🚀 Deploy to GitHub Pages
     needs: build
