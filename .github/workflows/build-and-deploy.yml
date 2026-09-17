@@ -1,6 +1,3 @@
-# ═══════════════════════════════════════════════════════════
-#  🎬 TelegramFlix — Build & Deploy
-# ═══════════════════════════════════════════════════════════
 name: 🎬 Build & Deploy TelegramFlix
 
 on:
@@ -9,11 +6,8 @@ on:
     paths:
       - 'build_all.py'
       - 'data.json'
-      - 'static/**'
       - '.github/workflows/build-and-deploy.yml'
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'
 
 permissions:
   contents: read
@@ -30,31 +24,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout repository
-        uses: actions/checkout@v6          # تم التحديث
+        uses: actions/checkout@v4
 
       - name: 🐍 Setup Python
-        uses: actions/setup-python@v7      # تم التحديث
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 🔨 Build the site
-        run: python build_all.py --clean    # تمت إزالة --force
+        run: python build_all.py --clean
         env:
           BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
-      - name: 📋 Show build output
+      - name: 🔎 Verify docs/ was created
         run: |
           echo "=== docs/ contents ==="
-          ls -la docs/ || true
+          ls -la docs/
           echo ""
-          echo "=== File count ==="
-          find docs -type f | wc -l
-          echo ""
-          echo "=== Total size ==="
-          du -sh docs/ || true
+          echo "=== Counting files ==="
+          COUNT=$(find docs -type f | wc -l)
+          echo "Total files: $COUNT"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "❌ ERROR: docs/ is empty! Build failed."
+            exit 1
+          fi
+          if [ ! -f docs/index.html ]; then
+            echo "❌ ERROR: docs/index.html missing!"
+            exit 1
+          fi
+          echo "✅ docs/ looks good."
+          du -sh docs/
 
       - name: 📤 Upload artifact
-        uses: actions/upload-pages-artifact@v5   # تم التحديث
+        uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
 
@@ -68,4 +70,4 @@ jobs:
     steps:
       - name: 🚀 Deploy
         id: deployment
-        uses: actions/deploy-pages@v5          # تم التحديث
+        uses: actions/deploy-pages@v4
