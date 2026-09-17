@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TelegramFlix — One-file static site builder (bulletproof)."""
+"""TelegramFlix — One-file static site builder (bulletproof + arabic URLs fixed)."""
 import sys, json, html, shutil, argparse
 from pathlib import Path
 from urllib.parse import quote
@@ -84,7 +84,7 @@ var c=document.getElementById("countdown");
 var n=window.__NEXT_URL__||null;var x=false;
 var p=v;
 if(typeof Plyr!=="undefined"){p=new Plyr(v,{controls:["play-large","play","progress","current-time","duration","mute","volume","captions","settings","pip","airplay","fullscreen"],seekTime:10,keyboard:{focused:true,global:true}});}
-function go(){if(!n||(t&&!t.checked))return;var k=5;c.textContent="\\u23ed \\u0627\\u0644\\u062d\\u0644\\u0642\\u0629 \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 \\u0628\\u0639\\u062f "+k+" \\u062b\\u0627\\u0646\\u064a\\u0629...";var tm=setInterval(function(){if(x){clearInterval(tm);c.textContent="";return;}k--;if(k<=0){clearInterval(tm);window.location.href=n;}else{c.textContent="\\u23ed \\u0627\\u0644\\u062d\\u0644\\u0642\\u0629 \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 \\u0628\\u0639\\u062f "+k+" \\u062b\\u0627\\u0646\\u064a\\u0629...";}},1000);}
+function go(){if(!n||(t&&!t.checked))return;var k=5;c.textContent="\\u23ed \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 "+k+"s";var tm=setInterval(function(){if(x){clearInterval(tm);c.textContent="";return;}k--;if(k<=0){clearInterval(tm);window.location.href=n;}else{c.textContent="\\u23ed \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 "+k+"s";}},1000);}
 function stop(){x=true;c.textContent="";}
 if(p.on){p.on("ended",go);p.on("play",stop);p.on("seeking",stop);}else{v.addEventListener("ended",go);v.addEventListener("play",stop);v.addEventListener("seeking",stop);}
 if(t){t.addEventListener("change",function(){x=!t.checked;if(!t.checked)c.textContent="";});}
@@ -98,6 +98,15 @@ setInterval(function(){if(v.currentTime>0&&!v.paused)localStorage.setItem(key,St
 def log(m): print(f"[build] {m}", flush=True)
 def esc(s): return html.escape(str(s or ""), quote=True)
 def enc(s): return quote(s, safe="")
+
+def safe_name(name: str) -> str:
+    """اسم ملف آمن — يُستخدم على القرص"""
+    bad = ['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r', '\t']
+    out = str(name)
+    for ch in bad:
+        out = out.replace(ch, '_')
+    return out.strip() or "unnamed"
+
 def dur(s):
     s = int(s or 0)
     if s <= 0: return "—"
@@ -174,7 +183,8 @@ def render_index(series):
         return base("TelegramFlix", body)
     cards = []
     for s in series:
-        url = "series/" + enc(s["name"]) + ".html"
+        # ✅ الرابط مشفّر، الملف عربي
+        url = "series/" + enc(safe_name(s["name"])) + ".html"
         poster = s.get("poster_url", "")
         if not poster:
             for eps in s["seasons"].values():
@@ -248,7 +258,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
                 if prev_ep else '<span class="btn disabled">⏮ السابقة</span>')
     next_btn = (f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية ⏭</a>'
                 if next_ep else '<span class="btn disabled">التالية ⏭</span>')
-    series_url = "../series/" + enc(name) + ".html"
+    # ✅ الرابط مشفّر
+    series_url = "../series/" + enc(safe_name(name)) + ".html"
     next_json = json.dumps(f'{next_ep["message_id"]}.html' if next_ep else None)
     body = (
         f'<div class="watch-wrap"><div class="player-shell">{player}</div>'
@@ -287,8 +298,9 @@ def build(clean=False):
     (DOCS / "watch").mkdir(exist_ok=True)
     ns = nw = 0
     for s in series:
-        slug = enc(s["name"])
-        (DOCS / "series" / f"{slug}.html").write_text(render_series(s), encoding="utf-8")
+        # ✅ اكتب الملف باسم عربي حقيقي (يُفكّ ترميزه تلقائياً على GitHub Pages)
+        fname = safe_name(s["name"])
+        (DOCS / "series" / f"{fname}.html").write_text(render_series(s), encoding="utf-8")
         ns += 1
         for sk, eps in s["seasons"].items():
             for i, ep in enumerate(eps):
@@ -298,6 +310,10 @@ def build(clean=False):
                 (DOCS / "watch" / f"{ep['message_id']}.html").write_text(html_out, encoding="utf-8")
                 nw += 1
     log(f"{ns} series pages | {nw} watch pages")
+    # تحقق سريع: طباعة أسماء ملفات المسلسلات
+    for s in series[:3]:
+        log(f"  file: series/{safe_name(s['name'])}.html")
+        log(f"  link: series/{enc(safe_name(s['name']))}.html")
 
 def main():
     p = argparse.ArgumentParser()
