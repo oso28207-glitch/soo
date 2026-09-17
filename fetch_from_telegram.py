@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 fetch_from_telegram.py
-- يقرأ قناة تليجرام
-- يحوّل file_id ليكون متوافقاً مع Bot API (عبر copyMessage)
+- يقرأ القناة عبر Pyrogram (user session)
+- يحوّل file_id إلى Bot-compatible عبر forwarding إلى قناة تخزين
 - يبني data.json مع video_url (Cloudflare Worker)
 """
 import os
@@ -27,11 +27,12 @@ STRING_SESSION = (
 )
 STREAM_BASE = os.environ.get("STREAM_BASE", "").strip().rstrip("/")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+STORAGE_CHANNEL = os.environ.get("STORAGE_CHANNEL", "").strip()
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "2000"))
 OUT = Path("data.json")
 
 # ═══════════════════════════════════════════════════════════
-#  التحقق من الإعدادات
+#  التحقق
 # ═══════════════════════════════════════════════════════════
 errors = []
 API_ID = 0
@@ -49,8 +50,6 @@ if not CHANNEL:
     errors.append("CHANNEL فاضي")
 if not STRING_SESSION:
     errors.append("STRING_SESSION فارغ!")
-elif len(STRING_SESSION) < 100:
-    errors.append(f"STRING_SESSION قصير ({len(STRING_SESSION)})")
 
 if errors:
     print("❌ أخطاء:", flush=True)
@@ -61,16 +60,16 @@ if errors:
 print(f"✅ الإعدادات صحيحة (session len={len(STRING_SESSION)})", flush=True)
 if STREAM_BASE:
     print(f"🎬 Stream proxy: {STREAM_BASE}", flush=True)
-else:
-    print(f"⚠️ STREAM_BASE غير محدّد", flush=True)
-
 if BOT_TOKEN:
-    print(f"🤖 Bot API mode: مفعّل", flush=True)
-else:
-    print(f"⚠️ BOT_TOKEN غير محدّد — file_id من Pyrogram قد لا يعمل", flush=True)
+    print(f"🤖 Bot API: مفعّل", flush=True)
+    if not STORAGE_CHANNEL:
+        print(f"❌ STORAGE_CHANNEL غير محدّد! البوت يحتاج قناة تخزين.", flush=True)
+        print(f"   أنشئ قناة خاصة وأضفها كسر STORAGE_CHANNEL", flush=True)
+        sys.exit(1)
+    print(f"📦 Storage channel: {STORAGE_CHANNEL}", flush=True)
 
 # ═══════════════════════════════════════════════════════════
-#  صيغة الـ caption: "<اسم المسلسل> الموسم 3 الحلقة 5"
+#  Caption regex
 # ═══════════════════════════════════════════════════════════
 CAPTION_RE = re.compile(
     r"^\s*(?P<series>.+?)\s+"
@@ -81,46 +80,40 @@ CAPTION_RE = re.compile(
 
 
 # ═══════════════════════════════════════════════════════════
-#  جلب file_id متوافق مع Bot API عبر copyMessage
+#  forwardMessage → storage → file_id
 # ═══════════════════════════════════════════════════════════
-async def get_bot_compatible_file_id(
+async def get_bot_file_id_via_forward(
     session: aiohttp.ClientSession,
     bot_token: str,
-    chat_id: int,
+    source_chat_id: int,
     message_id: int,
-    temp_chat_id: int = None,
+    storage_chat_id: str,
 ) -> str:
     """
-    ينسخ الرسالة عبر Bot API ويستخرج file_id المتوافق مع البوت.
-    البوت يجب أن يكون Admin في chat_id.
+    ينسخ (forward) الرسالة إلى قناة التخزين، يستخرج file_id، ثم يحذفها.
     """
-    if not bot_token:
-        return ""
-
-    if temp_chat_id is None:
-        temp_chat_id = chat_id
-
     base = f"https://api.telegram.org/bot{bot_token}"
 
-    # 1) انسخ الرسالة
-    copy_url = f"{base}/copyMessage"
+    # 1) forwardMessage
     payload = {
-        "chat_id": temp_chat_id,
-        "from_chat_id": chat_id,
+        "chat_id": storage_chat_id,
+        "from_chat_id": source_chat_id,
         "message_id": message_id,
     }
     try:
-        async with session.post(copy_url, json=payload, timeout=30) as resp:
+        async with session.post(
+            f"{base}/forwardMessage",
+            json=payload,
+            timeout=30,
+        ) as resp:
             data = await resp.json()
     except Exception as e:
-        print(f"      ⚠️ copyMessage exception: {e}", flush=True)
+        print(f"      ⚠️ forward exception: {e}", flush=True)
         return ""
 
     if not data.get("ok"):
         err = data.get("description", "unknown")
-        # لا تطبع كل خطأ لتجنب الفوضى
-        if "not enough rights" in err.lower():
-            print(f"      ⚠️ البوت ليس Admin في القناة!", flush=True)
+        print(f"      ⚠️ forwardMessage failed: {err}", flush=True)
         return ""
 
     new_msg = data["result"]
@@ -128,21 +121,18 @@ async def get_bot_compatible_file_id(
 
     # 2) استخرج file_id
     file_id = ""
-    try:
-        if "video" in new_msg:
-            file_id = new_msg["video"]["file_id"]
-        elif "document" in new_msg:
-            file_id = new_msg["document"]["file_id"]
-        elif "animation" in new_msg:
-            file_id = new_msg["animation"]["file_id"]
-    except Exception:
-        file_id = ""
+    if "video" in new_msg:
+        file_id = new_msg["video"]["file_id"]
+    elif "document" in new_msg:
+        file_id = new_msg["document"]["file_id"]
+    elif "animation" in new_msg:
+        file_id = new_msg["animation"]["file_id"]
 
-    # 3) احذف الرسالة المنسوخة
+    # 3) احذف الرسالة من قناة التخزين
     try:
         await session.post(
             f"{base}/deleteMessage",
-            json={"chat_id": temp_chat_id, "message_id": new_msg_id},
+            json={"chat_id": storage_chat_id, "message_id": new_msg_id},
             timeout=15,
         )
     except Exception:
@@ -155,7 +145,7 @@ async def get_bot_compatible_file_id(
 #  Main
 # ═══════════════════════════════════════════════════════════
 async def main():
-    print("\n🔐 Connecting to Telegram...", flush=True)
+    print("\n🔐 Connecting...", flush=True)
     client = Client(
         "fetch_web",
         api_id=API_ID,
@@ -173,17 +163,14 @@ async def main():
     print(f"✅ Connected as {me.first_name}", flush=True)
 
     # ─── معلومات القناة ───
-    print(f"\n📡 جلب معلومات القناة: {CHANNEL}", flush=True)
+    print(f"\n📡 القناة المصدر: {CHANNEL}", flush=True)
     try:
         chat = await client.get_chat(CHANNEL)
         channel_id = chat.id
         channel_username = getattr(chat, "username", None) or ""
         channel_title = chat.title or "القناة"
         is_public = bool(channel_username)
-        print(f"   الاسم: {channel_title}", flush=True)
-        print(f"   ID: {channel_id}", flush=True)
-        print(f"   Username: {channel_username or '(لا يوجد)'}", flush=True)
-        print(f"   النوع: {'عامة ✅' if is_public else 'خاصة'}", flush=True)
+        print(f"   {channel_title} | ID={channel_id}", flush=True)
     except Exception as e:
         print(f"❌ فشل جلب القناة: {e}", flush=True)
         await client.stop()
@@ -192,27 +179,27 @@ async def main():
     cid_str = str(channel_id)
     short_id = cid_str[4:] if cid_str.startswith("-100") else cid_str.lstrip("-")
 
-    # ─── اختبار البوت (getMe) ───
+    # ─── اختبار البوت ───
     if BOT_TOKEN:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            async with aiohttp.ClientSession() as s:
+                async with s.get(
                     f"https://api.telegram.org/bot{BOT_TOKEN}/getMe",
                     timeout=15,
-                ) as resp:
-                    data = await resp.json()
-                    if data.get("ok"):
-                        bot = data["result"]
+                ) as r:
+                    d = await r.json()
+                    if d.get("ok"):
+                        b = d["result"]
                         print(
-                            f"🤖 Bot: {bot.get('first_name')} "
-                            f"(@{bot.get('username')})",
+                            f"🤖 Bot: {b.get('first_name')} "
+                            f"(@{b.get('username')})",
                             flush=True,
                         )
                     else:
-                        print(f"❌ BOT_TOKEN غير صالح: {data}", flush=True)
-                        BOT_TOKEN_LOCAL = ""
+                        print(f"❌ BOT_TOKEN غير صالح", flush=True)
+                        sys.exit(1)
         except Exception as e:
-            print(f"⚠️ فشل اختبار البوت: {e}", flush=True)
+            print(f"⚠️ {e}", flush=True)
 
     # ─── قراءة الرسائل ───
     series_map = {}
@@ -223,104 +210,93 @@ async def main():
 
     print(f"\n📥 قراءة السجل (limit={HISTORY_LIMIT})...", flush=True)
 
-    # جلسة aiohttp واحدة لإعادة الاستخدام
-    async with aiohttp.ClientSession() as http_session:
-        try:
-            async for msg in client.get_chat_history(CHANNEL, limit=HISTORY_LIMIT):
-                if not msg.video:
-                    continue
+    async with aiohttp.ClientSession() as http:
+        async for msg in client.get_chat_history(CHANNEL, limit=HISTORY_LIMIT):
+            if not msg.video:
+                continue
 
-                caption = (msg.caption or "").strip()
-                m = CAPTION_RE.match(caption)
-                if not m:
-                    skipped += 1
-                    continue
+            caption = (msg.caption or "").strip()
+            m = CAPTION_RE.match(caption)
+            if not m:
+                skipped += 1
+                continue
 
-                s_name = m.group("series").strip()
-                season = int(m.group("season"))
-                episode = int(m.group("episode"))
+            s_name = m.group("series").strip()
+            season = int(m.group("season"))
+            episode = int(m.group("episode"))
 
-                # ─── file_id متوافق مع البوت ───
-                file_id = ""
-                if BOT_TOKEN:
-                    file_id = await get_bot_compatible_file_id(
-                        http_session,
-                        BOT_TOKEN,
-                        channel_id,
-                        msg.id,
-                        temp_chat_id=channel_id,
-                    )
-                    if not file_id:
-                        failed_file_id += 1
-                else:
-                    # fallback: من Pyrogram
-                    try:
-                        file_id = msg.video.file_id or ""
-                    except Exception:
-                        file_id = ""
+            # ─── file_id عبر forward إلى storage ───
+            file_id = ""
+            if BOT_TOKEN and STORAGE_CHANNEL:
+                file_id = await get_bot_file_id_via_forward(
+                    http,
+                    BOT_TOKEN,
+                    channel_id,
+                    msg.id,
+                    STORAGE_CHANNEL,
+                )
+                if not file_id:
+                    failed_file_id += 1
+                # rate limit: تأخير بسيط بين الطلبات
+                await asyncio.sleep(0.5)
 
-                if file_id:
-                    with_file_id += 1
+            if file_id:
+                with_file_id += 1
 
-                # ─── video_url عبر Worker ───
-                video_url = ""
-                if STREAM_BASE and file_id:
-                    video_url = f"{STREAM_BASE}/stream?fid={file_id}"
+            # ─── video_url ───
+            video_url = ""
+            if STREAM_BASE and file_id:
+                video_url = f"{STREAM_BASE}/stream?fid={file_id}"
 
-                # ─── روابط تليجرام ───
-                if is_public:
-                    watch_url = f"https://t.me/{channel_username}/{msg.id}"
-                    embed_url = (
-                        f"https://t.me/{channel_username}/{msg.id}?embed=1&mode=tme"
-                    )
-                else:
-                    watch_url = f"https://t.me/c/{short_id}/{msg.id}"
-                    embed_url = ""
+            # ─── روابط تليجرام ───
+            if is_public:
+                watch_url = f"https://t.me/{channel_username}/{msg.id}"
+                embed_url = (
+                    f"https://t.me/{channel_username}/{msg.id}?embed=1&mode=tme"
+                )
+            else:
+                watch_url = f"https://t.me/c/{short_id}/{msg.id}"
+                embed_url = ""
 
-                ep_obj = {
-                    "episode": episode,
-                    "message_id": msg.id,
-                    "duration": msg.video.duration or 0,
-                    "thumb_url": "",
-                    "video_url": video_url,
-                    "embed_url": embed_url,
-                    "telegram_url": watch_url,
-                    "file_id": file_id,
+            ep_obj = {
+                "episode": episode,
+                "message_id": msg.id,
+                "duration": msg.video.duration or 0,
+                "thumb_url": "",
+                "video_url": video_url,
+                "embed_url": embed_url,
+                "telegram_url": watch_url,
+                "file_id": file_id,
+            }
+
+            if s_name not in series_map:
+                series_map[s_name] = {
+                    "name": s_name,
+                    "poster_url": "",
+                    "seasons": {},
                 }
 
-                if s_name not in series_map:
-                    series_map[s_name] = {
-                        "name": s_name,
-                        "poster_url": "",
-                        "seasons": {},
-                    }
+            sk = str(season)
+            if sk not in series_map[s_name]["seasons"]:
+                series_map[s_name]["seasons"][sk] = []
 
-                sk = str(season)
-                if sk not in series_map[s_name]["seasons"]:
-                    series_map[s_name]["seasons"][sk] = []
+            series_map[s_name]["seasons"][sk].append(ep_obj)
+            count += 1
 
-                series_map[s_name]["seasons"][sk].append(ep_obj)
-                count += 1
-
-                if count % 25 == 0:
-                    print(
-                        f"   ... {count} حلقة | "
-                        f"file_id: {with_file_id} ✅ / {failed_file_id} ❌",
-                        flush=True,
-                    )
-
-        except Exception as e:
-            print(f"❌ خطأ: {type(e).__name__}: {e}", flush=True)
-            await client.stop()
-            sys.exit(1)
+            if count % 25 == 0:
+                print(
+                    f"   ... {count} | "
+                    f"file_id: {with_file_id} ✅ / {failed_file_id} ❌",
+                    flush=True,
+                )
 
     await client.stop()
 
     print(f"\n📊 إحصائيات:", flush=True)
-    print(f"   حلقات صالحة: {count}", flush=True)
-    print(f"   بحقل file_id: {with_file_id}", flush=True)
+    print(f"   حلقات: {count}", flush=True)
+    print(f"   file_id: {with_file_id} ✅", flush=True)
     if failed_file_id:
-        print(f"   فشل جلب file_id: {failed_file_id}", flush=True)
+        print(f"   فشل: {failed_file_id} ❌", flush=True)
     print(f"   متجاهلة: {skipped}", flush=True)
     print(f"   مسلسلات: {len(series_map)}", flush=True)
 
