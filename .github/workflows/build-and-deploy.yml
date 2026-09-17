@@ -3,11 +3,6 @@ name: 🎬 Build & Deploy TelegramFlix
 on:
   push:
     branches: [main]
-    paths:
-      - 'build_all.py'
-      - 'fetch_from_telegram.py'
-      - 'data.json'
-      - '.github/workflows/build-and-deploy.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
@@ -40,13 +35,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install "pyrogram>=2.0.106" "tgcrypto>=1.2.5"
 
-      - name: 📥 Fetch data from Telegram
+      - name: 📥 Fetch from Telegram
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
+          STREAM_BASE: ${{ secrets.STREAM_BASE }}
           HISTORY_LIMIT: '2000'
         run: python -u fetch_from_telegram.py
 
@@ -59,7 +55,15 @@ jobs:
           d = json.load(open('data.json'))
           series = d.get('series', [])
           total = sum(sum(len(e) for e in s.get('seasons', {}).values()) for s in series)
-          print(f'Series: {len(series)}, Episodes: {total}')
+          with_url = sum(
+              1 for s in series
+              for eps in s.get('seasons', {}).values()
+              for e in eps
+              if e.get('video_url')
+          )
+          print(f'Series: {len(series)}')
+          print(f'Episodes: {total}')
+          print(f'With video_url: {with_url}')
           "
 
       - name: 🔨 Build the site
