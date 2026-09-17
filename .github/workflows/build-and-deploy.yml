@@ -1,0 +1,83 @@
+# ═══════════════════════════════════════════════════════════
+#  🎬 TelegramFlix — Build & Deploy
+#  يبني الموقع الثابت من data.json وينشره على GitHub Pages
+# ═══════════════════════════════════════════════════════════
+name: 🎬 Build & Deploy TelegramFlix
+
+# ═══════════════ متى يعمل؟ ═══════════════
+on:
+  # 1) عند الرفع إلى main (فقط إذا تغيّرت ملفات مهمة)
+  push:
+    branches: [main]
+    paths:
+      - 'build_all.py'
+      - 'data.json'
+      - 'static/**'
+      - '.github/workflows/build-and-deploy.yml'
+
+  # 2) عند التشغيل اليدوي من تبويب Actions
+  workflow_dispatch:
+
+  # 3) كل 6 ساعات (اختياري — للتحديث الدوري)
+  schedule:
+    - cron: '0 */6 * * *'
+
+# ═══════════════ الصلاحيات المطلوبة ═══════════════
+permissions:
+  contents: read       # لقراءة المستودع
+  pages: write         # للنشر على GitHub Pages
+  id-token: write      # للتحقق من الهوية
+
+# ═══════════════ منع تشغيل متعدد متزامن ═══════════════
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+# ═══════════════ المهام ═══════════════
+jobs:
+  # ─── المهمة 1: البناء ───
+  build:
+    name: 🔨 Build Static Site
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🔨 Build the site
+        run: python build_all.py --clean --force
+        env:
+          BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+      - name: 📋 Show build output
+        run: |
+          echo "=== docs/ contents ==="
+          ls -la docs/ || true
+          echo ""
+          echo "=== File count ==="
+          find docs -type f | wc -l
+          echo ""
+          echo "=== Total size ==="
+          du -sh docs/ || true
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+  # ─── المهمة 2: النشر ───
+  deploy:
+    name: 🚀 Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 🚀 Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
