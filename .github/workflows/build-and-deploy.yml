@@ -1,104 +1,60 @@
-# ═══════════════════════════════════════════════════════════
-#  🎬 TelegramFlix — Build & Deploy
-#  يبني الموقع الثابت من data.json وينشره على GitHub Pages
-# ═══════════════════════════════════════════════════════════
 name: 🎬 Build & Deploy TelegramFlix
 
-# ═══════════════ متى يعمل؟ ═══════════════
 on:
-  # 1) عند الرفع إلى main
   push:
     branches: [main]
-    paths:
-      - 'build_all.py'
-      - 'data.json'
-      - 'static/**'
-      - '.github/workflows/build-and-deploy.yml'
-
-  # 2) عند التشغيل اليدوي من تبويب Actions
   workflow_dispatch:
-
-  # 3) كل 6 ساعات (تحديث دوري)
   schedule:
     - cron: '0 */6 * * *'
 
-# ═══════════════ الصلاحيات ═══════════════
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# ═══════════════ منع التشغيل المتزامن ═══════════════
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
-# ═══════════════ المهام ═══════════════
 jobs:
-  # ─── المهمة 1: البناء ───
   build:
     name: 🔨 Build Static Site
     runs-on: ubuntu-latest
     steps:
-      - name: ⬇️ Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 🔎 Check data.json
+      - name: 📦 Install deps
         run: |
-          if [ ! -f data.json ]; then
-            echo "⚠️ data.json غير موجود — سيتم إنشاء ملف فارغ تلقائياً."
-            echo '{"series": []}' > data.json
-          fi
-          echo "حجم data.json: $(wc -c < data.json) بايت"
-          python3 -c "import json; d=json.load(open('data.json')); print(f'عدد المسلسلات: {len(d.get(\"series\", []))}')"
+          python -m pip install --upgrade pip
+          pip install pyrogram tgcrypto
+
+      - name: 📥 Fetch data from Telegram
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: python fetch_from_telegram.py
 
       - name: 🔨 Build the site
-        run: |
-          set -e
-          python build_all.py --clean
-          if [ ! -d docs ]; then
-            echo "❌ docs/ لم يُنشأ — فشل السكربت أعلاه. راجع السجل."
-            exit 1
-          fi
-          if [ ! -f docs/index.html ]; then
-            echo "❌ docs/index.html مفقود."
-            exit 1
-          fi
-          echo "✅ البناء نجح:"
-          find docs -type f | head -20
-        env:
-          BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-
-      - name: 📋 Show build output
-        run: |
-          echo "=== محتويات docs/ ==="
-          ls -la docs/ || true
-          echo ""
-          echo "=== عدد الملفات ==="
-          find docs -type f | wc -l
-          echo ""
-          echo "=== الحجم الكامل ==="
-          du -sh docs/ || true
+        run: python build_all.py --clean
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
 
-  # ─── المهمة 2: النشر ───
   deploy:
-    name: 🚀 Deploy to GitHub Pages
+    name: 🚀 Deploy
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: 🚀 Deploy
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4
