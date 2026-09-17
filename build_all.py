@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-TelegramFlix — One-file static site builder
+build_all.py
 - يقرأ data.json
 - يبني موقعاً ثابتاً كاملاً في docs/
-- يدعم أسماء ملفات عربية + روابط مشفّرة
-- يدعم Telegram Embed لتشغيل الفيديو داخل الموقع
+- يدعم روابط الفيديو عبر Cloudflare Worker (video_url)
+- يدعم Telegram Embed كاحتياطي (embed_url)
 """
 import sys
 import json
@@ -23,7 +23,7 @@ DATA = ROOT / "data.json"
 # ═══════════════════════════════════════════════════════════
 #  CSS
 # ═══════════════════════════════════════════════════════════
-CSS = '''\
+CSS = """\
 :root{--bg:#0b0b0f;--bg2:#141418;--card:#1a1a20;--hover:#23232c;--text:#f5f5f7;--muted:#9a9aa5;--accent:#e50914;--r:12px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:"Cairo","Segoe UI",sans-serif;direction:rtl;min-height:100%}
@@ -86,15 +86,14 @@ a{color:inherit;text-decoration:none}
 #countdown{color:var(--accent);font-weight:700}
 .empty{text-align:center;padding:5rem 2rem;color:var(--muted)}
 .empty code{display:inline-block;margin:.6rem;padding:.5rem .9rem;background:var(--card);border-radius:6px;color:var(--text);font-family:monospace}
-.embed-note{background:#1a1a20;padding:.8rem 1rem;border-radius:8px;color:var(--muted);font-size:.85rem;margin-bottom:1rem;border-right:3px solid var(--accent)}
 @media(max-width:720px){.container{padding:1rem}.topbar{padding:.8rem 1rem}.series-header{flex-direction:column}.series-poster{width:160px}.hero h1{font-size:1.6rem}}
-'''
+"""
 
 
 # ═══════════════════════════════════════════════════════════
 #  JavaScript
 # ═══════════════════════════════════════════════════════════
-JS = '''\
+JS = """\
 document.addEventListener("DOMContentLoaded",function(){
 var v=document.getElementById("player");
 var t=document.getElementById("autoplay-toggle");
@@ -135,7 +134,7 @@ if(v&&v.tagName==="VIDEO"){
     setInterval(function(){if(v.currentTime>0&&!v.paused)localStorage.setItem(key,String(v.currentTime));},5000);
 }
 });
-'''
+"""
 
 
 # ═══════════════════════════════════════════════════════════
@@ -150,24 +149,16 @@ def esc(s):
 
 
 def enc(s):
-    """URL-encode للاستخدام في href"""
     return quote(str(s), safe="")
 
 
-def safe_name(name: str) -> str:
-    """
-    اسم ملف آمن على القرص.
-    - يزيل الرموز الممنوعة
-    - يستبدل المسافات بـ _
-    - يحتفظ بالحروف العربية
-    """
-    bad = ['/', '\\', ':', '*', '?', '"', '<', '>', '|',
-           '\n', '\r', '\t', ' ']
+def safe_name(name):
+    bad = ["/", "\\", ":", "*", "?", '"', "<", ">", "|",
+           "\n", "\r", "\t", " "]
     out = str(name)
     for ch in bad:
-        out = out.replace(ch, '_')
-    # إزالة النقاط في البداية/النهاية
-    out = out.strip('.')
+        out = out.replace(ch, "_")
+    out = out.strip(".")
     return out.strip() or "unnamed"
 
 
@@ -179,9 +170,6 @@ def dur(s):
     return f"{m}:{sec:02d}"
 
 
-# ═══════════════════════════════════════════════════════════
-#  Static files
-# ═══════════════════════════════════════════════════════════
 def write_static():
     STATIC.mkdir(exist_ok=True)
     (STATIC / "style.css").write_text(CSS, encoding="utf-8")
@@ -189,9 +177,6 @@ def write_static():
     log(f"static written → {STATIC}")
 
 
-# ═══════════════════════════════════════════════════════════
-#  Data loading
-# ═══════════════════════════════════════════════════════════
 def load_data():
     if not DATA.exists():
         log("⚠️ data.json missing — using empty")
@@ -223,6 +208,7 @@ def normalize(data):
                 e.setdefault("video_url", "")
                 e.setdefault("embed_url", "")
                 e.setdefault("telegram_url", "")
+                e.setdefault("file_id", "")
             norm[str(ik)] = arr
         norm = dict(sorted(norm.items(), key=lambda kv: int(kv[0])))
         total = sum(len(v) for v in norm.values())
@@ -237,9 +223,6 @@ def normalize(data):
     return out
 
 
-# ═══════════════════════════════════════════════════════════
-#  HTML base
-# ═══════════════════════════════════════════════════════════
 def base(title, body, depth=0, head="", scripts=""):
     p = "../" * depth
     return (
@@ -259,16 +242,13 @@ def base(title, body, depth=0, head="", scripts=""):
     )
 
 
-# ═══════════════════════════════════════════════════════════
-#  Index page
-# ═══════════════════════════════════════════════════════════
 def render_index(series):
     if not series:
         body = (
             '<section class="hero"><h1>المكتبة فارغة</h1>'
             '<p>لم يتم العثور على مسلسلات في القناة.</p></section>'
             '<div class="empty">'
-            '<p>تأكد من أن صيغة الـ caption:</p>'
+            '<p>تأكد من صيغة الـ caption:</p>'
             '<code>اسم المسلسل الموسم 1 الحلقة 1</code>'
             '</div>'
         )
@@ -276,10 +256,7 @@ def render_index(series):
 
     cards = []
     for s in series:
-        # الملف عربي على القرص، الرابط مشفّر
         url = "series/" + enc(safe_name(s["name"])) + ".html"
-
-        # جلب صورة الغلاف
         poster = s.get("poster_url", "")
         if not poster:
             for eps in s["seasons"].values():
@@ -289,7 +266,6 @@ def render_index(series):
                         break
                 if poster:
                     break
-
         thumb = (
             f'<img loading="lazy" src="{esc(poster)}" alt="{esc(s["name"])}">'
             if poster
@@ -314,11 +290,7 @@ def render_index(series):
     return base("المسلسلات — TelegramFlix", body)
 
 
-# ═══════════════════════════════════════════════════════════
-#  Series page
-# ═══════════════════════════════════════════════════════════
 def render_series(s):
-    # صورة الغلاف
     poster = s.get("poster_url", "")
     if not poster:
         for eps in s["seasons"].values():
@@ -334,7 +306,6 @@ def render_series(s):
         if poster else ""
     )
 
-    # زر "ابدأ المشاهدة"
     start = ""
     keys = list(s["seasons"].keys())
     if keys and s["seasons"][keys[0]]:
@@ -345,7 +316,6 @@ def render_series(s):
             f'▶ ابدأ المشاهدة</a>'
         )
 
-    # بناء الحلقات لكل موسم
     sh = []
     for sk, eps in s["seasons"].items():
         ec = []
@@ -382,17 +352,14 @@ def render_series(s):
     return base(f"{s['name']} — TelegramFlix", body, depth=1)
 
 
-# ═══════════════════════════════════════════════════════════
-#  Watch page
-# ═══════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     video_url = ep.get("video_url", "")
     embed_url = ep.get("embed_url", "")
     thumb = ep.get("thumb_url", "")
-    poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
     tg_url = ep.get("telegram_url", "")
+    poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ─── الخيار 1: فيديو مباشر ───
+    # ─── الخيار 1: فيديو عبر Worker (video_url) ───
     if video_url:
         player = (
             f'<video id="player" playsinline controls preload="metadata"'
@@ -400,7 +367,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الخيار 2: Telegram Embed ───
+    # ─── الخيار 2: Telegram Embed (iframe) ───
     elif embed_url:
         player = (
             f'<iframe id="player" src="{esc(embed_url)}" '
@@ -417,12 +384,11 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
         player = (
             '<div class="no-player"><p>'
-            '⚠️ هذه قناة خاصة — البث داخل الموقع غير ممكن.<br>'
+            '⚠️ لا يوجد رابط فيديو متاح.<br>'
             f'{fb}'
             '</p></div>'
         )
 
-    # أزرار التنقل
     prev_btn = (
         f'<a class="btn" href="{prev_ep["message_id"]}.html">⏮ السابقة</a>'
         if prev_ep else '<span class="btn disabled">⏮ السابقة</span>'
@@ -433,25 +399,13 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if next_ep else '<span class="btn disabled">التالية ⏭</span>'
     )
 
-    # رابط صفحة المسلسل (مشفّر)
     series_url = "../series/" + enc(safe_name(name)) + ".html"
 
-    # زر فتح في تليجرام
     tg_btn = (
         f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">'
         f'📱 فتح في تليجرام</a>'
         if tg_url else ""
     )
-
-    # معلومات إضافية
-    note = ""
-    if embed_url:
-        note = (
-            '<div class="embed-note">'
-            '▶ الفيديو يعمل مباشرة من تليجرام. '
-            'إذا لم يظهر، اضغط "فتح في تليجرام".'
-            '</div>'
-        )
 
     next_json = json.dumps(
         f'{next_ep["message_id"]}.html' if next_ep else None
@@ -460,7 +414,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     body = (
         f'<div class="watch-wrap">'
         f'<div class="player-shell">{player}</div>'
-        f'{note}'
         f'<div class="watch-info">'
         f'<h1>{esc(name)}</h1>'
         f'<h2>الموسم {season} · الحلقة {episode}</h2>'
@@ -492,20 +445,14 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     )
 
 
-# ═══════════════════════════════════════════════════════════
-#  Build
-# ═══════════════════════════════════════════════════════════
 def build(clean=False):
-    # حذف القديم
     if clean and DOCS.exists():
         shutil.rmtree(DOCS)
     DOCS.mkdir(parents=True, exist_ok=True)
 
-    # static
     write_static()
     shutil.copytree(STATIC, DOCS / "static", dirs_exist_ok=True)
 
-    # data
     data = load_data()
     series = normalize(data)
     total = sum(s["total_episodes"] for s in series)
@@ -516,10 +463,8 @@ def build(clean=False):
             f"(@{channel_info.get('username', '')}) "
             f"public={channel_info.get('is_public')}")
 
-    # index
     (DOCS / "index.html").write_text(render_index(series), encoding="utf-8")
 
-    # 404
     (DOCS / "404.html").write_text(
         base(
             "404",
@@ -529,17 +474,13 @@ def build(clean=False):
         encoding="utf-8",
     )
 
-    # .nojekyll
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
 
-    # مجلدات
     (DOCS / "series").mkdir(exist_ok=True)
     (DOCS / "watch").mkdir(exist_ok=True)
 
-    # الصفحات
     ns = nw = 0
     for s in series:
-        # ✅ اكتب الملف باسم عربي حقيقي
         fname = safe_name(s["name"])
         (DOCS / "series" / f"{fname}.html").write_text(
             render_series(s), encoding="utf-8"
@@ -561,20 +502,15 @@ def build(clean=False):
 
     log(f"{ns} series pages | {nw} watch pages")
 
-    # معلومات تشخيصية
     for s in series[:3]:
         f_name = safe_name(s["name"])
         log(f"  file: series/{f_name}.html")
         log(f"  link: series/{enc(f_name)}.html")
 
 
-# ═══════════════════════════════════════════════════════════
-#  Main
-# ═══════════════════════════════════════════════════════════
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--clean", action="store_true",
-                        help="حذف docs/ قبل البناء")
+    parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
 
     log("=" * 40)
