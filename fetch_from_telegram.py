@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""يقرأ قناة تليجرام ويولّد data.json تلقائياً مع روابط embed."""
+"""يقرأ قناة تليجرام ويولّد data.json مع file_id للبثّ."""
 import os
 import re
 import sys
@@ -17,6 +17,8 @@ STRING_SESSION = (
     os.environ.get("STRING_SESSION", "").strip()
     or os.environ.get("STRING_SESSION2", "").strip()
 )
+# رابط Cloudflare Worker (يُمرّر من GitHub Secrets)
+STREAM_BASE = os.environ.get("STREAM_BASE", "").strip().rstrip("/")
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "2000"))
 OUT = Path("data.json")
 
@@ -47,6 +49,10 @@ if errors:
     sys.exit(1)
 
 print(f"✅ الإعدادات صحيحة (session len={len(STRING_SESSION)})", flush=True)
+if STREAM_BASE:
+    print(f"🎬 Stream proxy: {STREAM_BASE}", flush=True)
+else:
+    print(f"⚠️ STREAM_BASE غير محدّد — سيتم استخدام روابط تليجرام فقط", flush=True)
 
 # ═══════════════ صيغة caption ═══════════════
 CAPTION_RE = re.compile(
@@ -58,7 +64,7 @@ CAPTION_RE = re.compile(
 
 
 async def main():
-    print("🔐 Connecting...", flush=True)
+    print("\n🔐 Connecting...", flush=True)
     client = Client(
         "fetch_web",
         api_id=API_ID,
@@ -75,7 +81,7 @@ async def main():
     me = await client.get_me()
     print(f"✅ Connected as {me.first_name}", flush=True)
 
-    # ═══════════════ احصل على معلومات القناة ═══════════════
+    # معلومات القناة
     print(f"\n📡 جلب معلومات القناة: {CHANNEL}", flush=True)
     try:
         chat = await client.get_chat(CHANNEL)
@@ -84,14 +90,11 @@ async def main():
         channel_title = chat.title or "القناة"
         is_public = bool(channel_username)
         print(f"   الاسم: {channel_title}", flush=True)
-        print(f"   ID: {channel_id}", flush=True)
-        print(f"   Username: {channel_username or '(لا يوجد — قناة خاصة)'}", flush=True)
-        print(f"   النوع: {'عامة ✅' if is_public else 'خاصة ❌'}", flush=True)
+        print(f"   Username: {channel_username or '(لا يوجد)'}", flush=True)
     except Exception as e:
         print(f"❌ فشل جلب القناة: {e}", flush=True)
         sys.exit(1)
 
-    # استخرج الجزء الرقمي من -100... لبناء رابط t.me/c/...
     cid_str = str(channel_id)
     short_id = cid_str[4:] if cid_str.startswith("-100") else cid_str.lstrip("-")
 
@@ -116,25 +119,31 @@ async def main():
             season = int(m.group("season"))
             episode = int(m.group("episode"))
 
-            # روابط متعددة
+            # ✅ file_id — للبثّ عبر Worker
+            file_id = msg.video.file_id or ""
+
+            # رابط البثّ عبر Cloudflare Worker
+            video_url = ""
+            if STREAM_BASE and file_id:
+                video_url = f"{STREAM_BASE}/stream?fid={file_id}"
+
+            # روابط تليجرام
             if is_public:
-                # رابط عام (يفتح في متصفح)
                 watch_url = f"https://t.me/{channel_username}/{msg.id}"
-                # رابط embed (يشغّل الفيديو داخل iframe)
                 embed_url = f"https://t.me/{channel_username}/{msg.id}?embed=1&mode=tme"
             else:
-                # رابط القناة الخاصة (يفتح في تطبيق تليجرام)
                 watch_url = f"https://t.me/c/{short_id}/{msg.id}"
-                embed_url = ""  # لا يمكن embedding قناة خاصة
+                embed_url = ""
 
             ep_obj = {
                 "episode": episode,
                 "message_id": msg.id,
                 "duration": msg.video.duration or 0,
                 "thumb_url": "",
-                "video_url": "",         # لا يوجد رابط مباشر (يتطلب سيرفر)
-                "embed_url": embed_url,   # للـ iframe
+                "video_url": video_url,       # ← Worker URL
+                "embed_url": embed_url,
                 "telegram_url": watch_url,
+                "file_id": file_id,           # ← للاحتفاظ
             }
 
             if s_name not in series_map:
@@ -161,7 +170,6 @@ async def main():
     print(f"   متجاهلة: {skipped}", flush=True)
     print(f"   مسلسلات: {len(series_map)}", flush=True)
 
-    # ترتيب
     series_list = []
     for name, s in series_map.items():
         for sk in s["seasons"]:
@@ -179,6 +187,7 @@ async def main():
                     "title": channel_title,
                     "is_public": is_public,
                 },
+                "stream_base": STREAM_BASE,
                 "series": series_list,
             },
             ensure_ascii=False,
@@ -186,7 +195,7 @@ async def main():
         ),
         encoding="utf-8",
     )
-    print(f"\n✅ Wrote {count} episodes across {len(series_list)} series → {OUT}", flush=True)
+    print(f"\n✅ Wrote {count} episodes → {OUT}", flush=True)
 
 
 if __name__ == "__main__":
