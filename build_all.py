@@ -290,19 +290,43 @@ jobs:
         uses: actions/deploy-pages@v4
 """
 
-README_MD = r"""# 🎬 TelegramFlix
-
-موقع نتفلكس-ستايل لعرض المسلسلات من قناة تليجرام، يُبنى تلقائياً على GitHub Pages.
-
-## كيف يعمل؟
-
-ملف واحد فقط: `build_all.py`
-- يقرأ `data.json` الذي يحتوي بيانات المسلسلات.
-- يبني موقعاً ثابتاً كاملاً في `docs/`.
-- GitHub Actions تنشر `docs/` على GitHub Pages تلقائياً.
-
-## التشغيل المحلي
-
-```bash
-python build_all.py --clean
-# ثم افتح docs/index.html
+README_MD = (
+    "# 🎬 TelegramFlix\n\n"
+    "موقع نتفلكس-ستايل لعرض المسلسلات من قناة تليجرام، "
+    "يُبنى تلقائياً على GitHub Pages.\n\n"
+    "## كيف يعمل؟\n\n"
+    "ملف واحد فقط: `build_all.py`\n\n"
+    "- يقرأ `data.json` الذي يحتوي بيانات المسلسلات.\n"
+    "- يبني موقعاً ثابتاً كاملاً في `docs/`.\n"
+    "- GitHub Actions تنشر `docs/` على GitHub Pages تلقائياً.\n\n"
+    "## التشغيل المحلي\n\n"
+    "```bash\n"
+    "python build_all.py --clean\n"
+    "```\n\n"
+    "## التحديث\n\n"
+    "- عدّل `data.json` وأضف حلقات جديدة.\n"
+    "- ارفع التغييرات إلى `main`.\n"
+    "- سير العمل في GitHub Actions سيبني وينشر تلقائياً.\n\n"
+    "## بنية data.json\n\n"
+    "```json\n"
+    "{\n"
+    '  "series": [\n'
+    "    {\n"
+    '      "name": "اسم المسلسل",\n'
+    '      "poster_url": "",\n'
+    '      "seasons": {\n'
+    '        "1": [\n'
+    "          {\n"
+    '            "episode": 1,\n'
+    '            "message_id": 12345,\n'
+    '            "duration": 2400,\n'
+    '            "thumb_url": "",\n'
+    '            "video_url": ""\n'
+    "          }\n"
+    "        ]\n"
+    "      }\n"
+    "    }\n"
+    "  ]\n"
+    "}\n"
+    "```\n"
+)
