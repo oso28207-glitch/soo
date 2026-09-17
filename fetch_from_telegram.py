@@ -11,7 +11,7 @@ from pyrogram import Client
 API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
 CHANNEL = os.environ.get("CHANNEL", "")
-STRING_SESSION = os.environ.get("STRING_SESSION", "")
+STRING_SESSION = os.environ.get("STRING_SESSION2", "")
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "2000"))
 OUT = Path("data.json")
 
