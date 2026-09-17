@@ -3,6 +3,11 @@ name: 🎬 Build & Deploy TelegramFlix
 on:
   push:
     branches: [main]
+    paths:
+      - 'build_all.py'
+      - 'fetch_from_telegram.py'
+      - 'data.json'
+      - '.github/workflows/build-and-deploy.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
@@ -21,16 +26,19 @@ jobs:
     name: 🔨 Build Static Site
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: 📦 Install deps
+      - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyrogram tgcrypto
+          pip install "pyrogram>=2.0.106" "tgcrypto>=1.2.5"
 
       - name: 📥 Fetch data from Telegram
         env:
@@ -38,10 +46,34 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: python fetch_from_telegram.py
+          STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
+          HISTORY_LIMIT: '2000'
+        run: python -u fetch_from_telegram.py
+
+      - name: 🔎 Verify data.json
+        run: |
+          echo "=== data.json ==="
+          ls -la data.json
+          python3 -c "
+          import json
+          d = json.load(open('data.json'))
+          series = d.get('series', [])
+          total = sum(sum(len(e) for e in s.get('seasons', {}).values()) for s in series)
+          print(f'Series: {len(series)}, Episodes: {total}')
+          "
 
       - name: 🔨 Build the site
-        run: python build_all.py --clean
+        run: |
+          set -e
+          python -u build_all.py --clean
+          if [ ! -f docs/index.html ]; then
+            echo "❌ docs/index.html missing!"
+            exit 1
+          fi
+          echo "✅ Build OK"
+          find docs -type f | head -20
+        env:
+          BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -49,12 +81,13 @@ jobs:
           path: docs/
 
   deploy:
-    name: 🚀 Deploy
+    name: 🚀 Deploy to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
+      - name: 🚀 Deploy
         id: deployment
+        uses: actions/deploy-pages@v4
