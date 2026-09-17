@@ -1,0 +1,28 @@
+{
+  "series": [
+    {
+      "name": "مسلسل تجريبي",
+      "poster_url": "https://placehold.co/400x600/1a1a20/e50914?text=Series",
+      "seasons": {
+        "1": [
+          {
+            "episode": 1,
+            "message_id": 101,
+            "duration": 2400,
+            "thumb_url": "https://placehold.co/640x360/1a1a20/e50914?text=EP1",
+            "video_url": "",
+            "telegram_url": "https://t.me/c/1234567890/101"
+          },
+          {
+            "episode": 2,
+            "message_id": 102,
+            "duration": 2450,
+            "thumb_url": "https://placehold.co/640x360/1a1a20/e50914?text=EP2",
+            "video_url": "",
+            "telegram_url": "https://t.me/c/1234567890/102"
+          }
+        ]
+      }
+    }
+  ]
+}
