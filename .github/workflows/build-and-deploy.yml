@@ -44,6 +44,7 @@ jobs:
           STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
           STREAM_BASE: ${{ secrets.STREAM_BASE }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          STORAGE_CHANNEL: ${{ secrets.STORAGE_CHANNEL }}
           HISTORY_LIMIT: '2000'
         run: python -u fetch_from_telegram.py
 
