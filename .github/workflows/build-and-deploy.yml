@@ -8,7 +8,7 @@ on:
     - cron: '0 */6 * * *'
 
 permissions:
-  contents: read
+  contents: write        # ← مهم لحفظ forward_progress.json
   pages: write
   id-token: write
 
@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install "pyrogram>=2.0.106" "tgcrypto>=1.2.5" "aiohttp>=3.9"
 
-      - name: 📥 Fetch from Telegram
+      - name: 📥 Fetch from Telegram (rate-limited)
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
@@ -47,6 +47,14 @@ jobs:
           STORAGE_CHANNEL: ${{ secrets.STORAGE_CHANNEL }}
           HISTORY_LIMIT: '2000'
         run: python -u fetch_from_telegram.py
+
+      - name: 💾 Commit progress (للحفاظ على file_id)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add forward_progress.json data.json || true
+          git diff --staged --quiet || git commit -m "🤖 Update progress + data [skip ci]"
+          git push || true
 
       - name: 🔎 Verify data.json
         run: |
@@ -72,12 +80,8 @@ jobs:
         run: |
           set -e
           python -u build_all.py --clean
-          if [ ! -f docs/index.html ]; then
-            echo "❌ docs/index.html missing!"
-            exit 1
-          fi
+          [ -f docs/index.html ] || exit 1
           echo "✅ Build OK"
-          find docs -type f | head -20
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
