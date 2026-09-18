@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-build_all.py
+build_all.py — TelegramFlix + TG-WebApp-Proxy Integration
 - يقرأ data.json
-- يبني موقعاً ثابتاً كاملاً في docs/
-- يدعم روابط الفيديو عبر Cloudflare Worker (video_url)
-- يدعم Telegram Embed كاحتياطي (embed_url)
+- يبني موقعاً ثابتاً في docs/
+- كل حلقة: زر "تشغيل" يفتح TG-WebApp-Proxy مع رابط تليجرام
+- ينسخ رابط تليجرام تلقائياً إلى الحافظة
 """
 import sys
 import json
@@ -18,6 +18,12 @@ ROOT = Path(__file__).parent.resolve()
 DOCS = ROOT / "docs"
 STATIC = ROOT / "static"
 DATA = ROOT / "data.json"
+
+# ═══════════════════════════════════════════════════════════
+#  إعدادات TG-WebApp-Proxy
+# ═══════════════════════════════════════════════════════════
+# ⚠️ ضع هنا رابط TG-WebApp-Proxy الذي نشرته على Cloudflare Pages
+PROXY_URL = "https://tg-webapp-proxy.pages.dev"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -70,6 +76,19 @@ a{color:inherit;text-decoration:none}
 .player-shell{background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:1.5rem;aspect-ratio:16/9;position:relative}
 .player-shell video{width:100%;height:100%;display:block}
 .player-shell iframe{width:100%;height:100%;border:0;display:block;background:#000}
+
+/* ─── Proxy Player ─── */
+.proxy-player{
+  width:100%;height:100%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#1a1a20 0%,#0b0b0f 100%);
+  text-align:center;padding:2rem;gap:1.5rem;
+}
+.proxy-player .proxy-icon{font-size:4rem;opacity:.9}
+.proxy-player h3{font-size:1.4rem;margin:0}
+.proxy-player p{color:var(--muted);max-width:600px;line-height:1.6;margin:0}
+.proxy-player .proxy-actions{display:flex;gap:.8rem;flex-wrap:wrap;justify-content:center;margin-top:.5rem}
+.proxy-note{background:rgba(229,9,20,.08);border-right:3px solid var(--accent);padding:.8rem 1rem;border-radius:8px;color:var(--muted);font-size:.85rem;text-align:right;max-width:600px;margin-top:.5rem}
 .no-player{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);text-align:center;padding:2rem}
 .no-player a{color:var(--accent);font-weight:700;text-decoration:underline}
 .watch-info h1{font-size:1.6rem;margin-bottom:.3rem}
@@ -77,8 +96,9 @@ a{color:inherit;text-decoration:none}
 .watch-nav{display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1rem}
 .btn{display:inline-flex;align-items:center;gap:.4rem;padding:.65rem 1.2rem;background:#2a2a33;color:var(--text);border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s;font-family:inherit;text-decoration:none}
 .btn:hover{background:#3a3a45}
-.btn.primary{background:var(--accent)}
+.btn.primary{background:var(--accent);color:#fff}
 .btn.primary:hover{background:#ff2b36}
+.btn.large{padding:1rem 2rem;font-size:1.1rem;border-radius:12px}
 .btn.disabled{background:#1a1a20;color:#555;cursor:not-allowed;pointer-events:none}
 .autoplay-bar{display:flex;align-items:center;gap:1rem;padding:.8rem 1rem;background:var(--bg2);border-radius:8px;color:var(--muted);font-size:.9rem}
 .autoplay-bar label{display:flex;align-items:center;gap:.5rem;cursor:pointer}
@@ -86,7 +106,19 @@ a{color:inherit;text-decoration:none}
 #countdown{color:var(--accent);font-weight:700}
 .empty{text-align:center;padding:5rem 2rem;color:var(--muted)}
 .empty code{display:inline-block;margin:.6rem;padding:.5rem .9rem;background:var(--card);border-radius:6px;color:var(--text);font-family:monospace}
-@media(max-width:720px){.container{padding:1rem}.topbar{padding:.8rem 1rem}.series-header{flex-direction:column}.series-poster{width:160px}.hero h1{font-size:1.6rem}}
+
+/* ─── Toast ─── */
+.toast{
+  position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(100px);
+  background:#1a1a20;color:var(--text);padding:1rem 1.5rem;border-radius:12px;
+  box-shadow:0 8px 32px rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.1);
+  z-index:9999;opacity:0;transition:all .3s ease;font-weight:600;font-size:.95rem;
+  display:flex;align-items:center;gap:.6rem;
+}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.toast.success{border-color:var(--accent);background:linear-gradient(135deg,rgba(229,9,20,.15),#1a1a20)}
+
+@media(max-width:720px){.container{padding:1rem}.topbar{padding:.8rem 1rem}.series-header{flex-direction:column}.series-poster{width:160px}.hero h1{font-size:1.6rem}.proxy-player{padding:1rem}.proxy-player h3{font-size:1.1rem}}
 """
 
 
@@ -102,6 +134,7 @@ var n=window.__NEXT_URL__||null;
 var x=false;
 var p=null;
 
+/* Plyr فقط إن كان هناك عنصر video */
 if(v&&v.tagName==="VIDEO"){
     p=v;
     if(typeof Plyr!=="undefined"){
@@ -109,6 +142,7 @@ if(v&&v.tagName==="VIDEO"){
     }
 }
 
+/* ─── Autoplay next ─── */
 function go(){
     if(!n||(t&&!t.checked))return;
     var k=5;
@@ -127,6 +161,7 @@ else if(v){v.addEventListener("ended",go);v.addEventListener("play",stop);v.addE
 
 if(t){t.addEventListener("change",function(){x=!t.checked;if(!t.checked&&c)c.textContent="";});}
 
+/* ─── حفظ موضع المشاهدة ─── */
 if(v&&v.tagName==="VIDEO"){
     var key="tf_p_"+window.location.pathname;
     var s=parseFloat(localStorage.getItem(key)||"0");
@@ -134,6 +169,44 @@ if(v&&v.tagName==="VIDEO"){
     setInterval(function(){if(v.currentTime>0&&!v.paused)localStorage.setItem(key,String(v.currentTime));},5000);
 }
 });
+
+/* ═══════════════════════════════════════════════════════════
+   TG-WebApp-Proxy Launcher
+   - يفتح المشغل في تبويب جديد
+   - ينسخ رابط تليجرام إلى الحافظة (لصق يدوي)
+   ═══════════════════════════════════════════════════════════ */
+function openProxy(proxyUrl, tgUrl) {
+    /* نسخ الرابط إلى الحافظة */
+    if (navigator.clipboard && tgUrl) {
+        navigator.clipboard.writeText(tgUrl).then(function() {
+            showToast("\\u062a\\u0645 \\u0646\\u0633\\u062e \\u0631\\u0627\\u0628\\u0637 \\u0627\\u0644\\u062d\\u0644\\u0642\\u0629 \\u2014 \\u0627\\u0644\\u0635\\u0642\\u0647 \\u0641\\u064a \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644", "success");
+        }).catch(function() {
+            showToast("\\u0627\\u0641\\u062a\\u062d \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644 \\u0648\\u0627\\u0644\\u0635\\u0642 \\u0627\\u0644\\u0631\\u0627\\u0628\\u0637 \\u064a\\u062f\\u0648\\u064a\\u0627\\u064b");
+        });
+    } else if (tgUrl) {
+        showToast("\\u0627\\u0641\\u062a\\u062d \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644 \\u0648\\u0627\\u0644\\u0635\\u0642 \\u0627\\u0644\\u0631\\u0627\\u0628\\u0637 \\u064a\\u062f\\u0648\\u064a\\u0627\\u064b");
+    }
+
+    /* فتح المشغل في تبويب جديد */
+    window.open(proxyUrl, "_blank", "noopener");
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Toast notifications
+   ═══════════════════════════════════════════════════════════ */
+function showToast(msg, type) {
+    var toast = document.getElementById("global-toast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "global-toast";
+        toast.className = "toast";
+        document.body.appendChild(toast);
+    }
+    toast.className = "toast" + (type === "success" ? " success" : "");
+    toast.innerHTML = (type === "success" ? "\\u2705 " : "\\u2139\\uFE0F ") + msg;
+    setTimeout(function() { toast.classList.add("show"); }, 10);
+    setTimeout(function() { toast.classList.remove("show"); }, 4000);
+}
 """
 
 
@@ -353,13 +426,17 @@ def render_series(s):
 
 
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
+    """
+    ثلاث حالات:
+    1. video_url موجود (Worker) → <video>
+    2. لا video_url → Proxy Player (زر تشغيل TG-WebApp-Proxy)
+    """
     video_url = ep.get("video_url", "")
-    embed_url = ep.get("embed_url", "")
-    thumb = ep.get("thumb_url", "")
     tg_url = ep.get("telegram_url", "")
+    thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ─── الخيار 1: فيديو عبر Worker (video_url) ───
+    # ─── الحالة 1: فيديو مباشر (Worker) ───
     if video_url:
         player = (
             f'<video id="player" playsinline controls preload="metadata"'
@@ -367,26 +444,37 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الخيار 2: Telegram Embed (iframe) ───
-    elif embed_url:
+    # ─── الحالة 2: Proxy Player ───
+    elif tg_url:
         player = (
-            f'<iframe id="player" src="{esc(embed_url)}" '
-            f'frameborder="0" width="100%" height="100%" '
-            f'allow="autoplay; encrypted-media; fullscreen" '
-            f'allowfullscreen></iframe>'
+            '<div class="proxy-player">'
+            '<div class="proxy-icon">🎬</div>'
+            f'<h3>الحلقة {episode} — {esc(name)}</h3>'
+            '<p>اضغط الزر أدناه لتشغيل الحلقة في المشغل المتقدم. '
+            'سيتم نسخ رابط الحلقة تلقائياً — الصقه في المشغل ثم اضغط تحميل.</p>'
+            '<div class="proxy-actions">'
+            f'<button class="btn primary large" '
+            f'onclick="openProxy(\'{esc(PROXY_URL)}\', \'{esc(tg_url)}\')">'
+            '▶ تشغيل الحلقة'
+            '</button>'
+            f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">'
+            '📱 فتح في تليجرام'
+            '</a>'
+            '</div>'
+            '<div class="proxy-note">'
+            '💡 <strong>طريقة الاستخدام:</strong> '
+            '1) اضغط "تشغيل الحلقة" — سيُفتح المشغل ويُنسخ الرابط. '
+            '2) الصق الرابط في خانة "Telegram Message Link". '
+            '3) اضغط "Fetch File Info" ثم "Download".'
+            '</div>'
+            '</div>'
         )
-    # ─── الخيار 3: رابط تليجرام فقط ───
+    # ─── الحالة 3: لا يوجد رابط ───
     else:
-        fb = (
-            f'<a href="{esc(tg_url)}" target="_blank" rel="noopener">'
-            f'افتح في تطبيق تليجرام</a>'
-            if tg_url else "لا يوجد رابط متاح."
-        )
         player = (
-            '<div class="no-player"><p>'
-            '⚠️ لا يوجد رابط فيديو متاح.<br>'
-            f'{fb}'
-            '</p></div>'
+            '<div class="no-player">'
+            '<p>⚠️ لا يوجد رابط متاح لهذه الحلقة.</p>'
+            '</div>'
         )
 
     prev_btn = (
@@ -407,6 +495,17 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if tg_url else ""
     )
 
+    # Autoplay: فقط إن كان هناك فيديو مباشر
+    autoplay_html = ""
+    if video_url:
+        autoplay_html = (
+            '<div class="autoplay-bar">'
+            '<label><input type="checkbox" id="autoplay-toggle" checked> '
+            'تشغيل الحلقة التالية تلقائياً</label>'
+            '<span id="countdown"></span>'
+            '</div>'
+        )
+
     next_json = json.dumps(
         f'{next_ep["message_id"]}.html' if next_ep else None
     )
@@ -423,11 +522,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         f'{next_btn}'
         f'{tg_btn}'
         f'</div>'
-        f'<div class="autoplay-bar">'
-        f'<label><input type="checkbox" id="autoplay-toggle" checked> '
-        f'تشغيل الحلقة التالية تلقائياً</label>'
-        f'<span id="countdown"></span>'
-        f'</div></div></div>'
+        f'{autoplay_html}'
+        f'</div></div>'
         f'<script>window.__NEXT_URL__ = {next_json};</script>'
     )
 
@@ -458,6 +554,7 @@ def build(clean=False):
     total = sum(s["total_episodes"] for s in series)
     channel_info = data.get("channel", {})
     log(f"{len(series)} series | {total} episodes")
+    log(f"Proxy URL: {PROXY_URL}")
     if channel_info:
         log(f"channel: {channel_info.get('title', '?')} "
             f"(@{channel_info.get('username', '')}) "
@@ -513,8 +610,8 @@ def main():
     parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
 
-    log("=" * 40)
-    log("TelegramFlix builder")
+    log("=" * 50)
+    log("TelegramFlix builder + TG-WebApp-Proxy")
     log(f"ROOT: {ROOT}")
     log(f"data.json exists: {DATA.exists()}")
 
