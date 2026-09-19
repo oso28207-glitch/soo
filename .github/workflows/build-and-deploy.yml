@@ -8,7 +8,7 @@ on:
     - cron: '0 */6 * * *'
 
 permissions:
-  contents: write        # مهم لحفظ forward_progress.json
+  contents: write
   pages: write
   id-token: write
 
@@ -21,7 +21,7 @@ jobs:
     name: 🔨 Build Static Site
     runs-on: ubuntu-latest
     steps:
-      - name: ⬇️ Checkout
+      - name: ⬇️ Checkout (fetch full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install "pyrogram>=2.0.106" "tgcrypto>=1.2.5" "aiohttp>=3.9"
 
-      - name: 📥 Fetch from Telegram (rate-limited)
+      - name: 📥 Fetch from Telegram
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
@@ -50,17 +50,17 @@ jobs:
           HISTORY_LIMIT: '2000'
         run: python -u fetch_from_telegram.py
 
-      - name: 💾 Commit progress (with retry)
+      - name: 💾 Commit progress
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add forward_progress.json data.json || true
           git diff --staged --quiet || git commit -m "🤖 Update progress + data [skip ci]"
-          # دمج التغييرات البعيدة قبل الرفع
           git pull --rebase origin main || true
           git push origin main || {
-            echo "⚠️ push failed, retrying..."
-            git pull --rebase origin main || true
+            echo "⚠️ Retrying after fetch..."
+            git fetch origin main
+            git rebase origin/main || git rebase --abort
             git push origin main || true
           }
 
@@ -90,9 +90,6 @@ jobs:
           python -u build_all.py --clean
           [ -f docs/index.html ] || exit 1
           echo "✅ Build OK"
-          # تحقق من أن الرابط الجديد موجود
-          echo "=== Checking for correct PROXY_URL ==="
-          grep -o "tg-webapp-proxy[^\"]*" docs/watch/*.html | head -1 || echo "❌ PROXY_URL not found!"
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
