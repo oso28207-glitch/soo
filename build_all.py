@@ -1,401 +1,258 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-build_all.py — TelegramFlix + TG-WebApp-Proxy (Embed Mode)
-- يبني موقعاً ثابتاً في docs/
-- كل حلقة تعرض iframe مع وضع embed
+build_all.py — مُولّد الموقع الثابت لـ TelegramFlix
+
+يبني:
+  - index.html (الصفحة الرئيسية)
+  - series/<name>.html (صفحات المسلسلات)
+  - watch/<message_id>.html (صفحات المشاهدة)
+
+الاستخدام:
+  python build_all.py           # بناء عادي
+  python build_all.py --clean   # تنظيف ثم بناء
 """
-import sys
+
+import os
+import re
 import json
-import html
 import shutil
+import html
 import argparse
 from pathlib import Path
 from urllib.parse import quote
 
-ROOT = Path(__file__).parent.resolve()
-DOCS = ROOT / "docs"
-STATIC = ROOT / "static"
-DATA = ROOT / "data.json"
-
-# ═══════════════════════════════════════════════════════════
-#  ✅ الرابط الصحيح لـ TG-WebApp-Proxy
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# الإعدادات
+# ═══════════════════════════════════════════════════════════════
+ROOT = Path(__file__).resolve().parent
+OUT = ROOT / "docs"                    # مجلد الإخراج (GitHub Pages)
+DATA_DIR = ROOT / "data"               # مجلد بيانات JSON
+STATIC_SRC = ROOT / "static"           # ملفات CSS/JS المصدرية
 PROXY_URL = "https://tg-webapp-proxy-58b.pages.dev"
+SITE_NAME = "TelegramFlix"
+SITE_DESC = "مشاهدة المسلسلات والأفلام مباشرة عبر Telegram"
 
 
-# ═══════════════════════════════════════════════════════════
-#  CSS
-# ═══════════════════════════════════════════════════════════
-CSS = """\
-:root{--bg:#0b0b0f;--bg2:#141418;--card:#1a1a20;--hover:#23232c;--text:#f5f5f7;--muted:#9a9aa5;--accent:#e50914;--r:12px}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:"Cairo","Segoe UI",sans-serif;direction:rtl;min-height:100%}
-a{color:inherit;text-decoration:none}
-.topbar{position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:2rem;padding:1rem 2rem;background:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.6));backdrop-filter:blur(10px)}
-.logo{font-weight:800;font-size:1.6rem;color:var(--accent)}
-.logo span{color:var(--text)}
-.nav a{color:var(--muted);font-weight:600;margin-left:1.5rem}
-.nav a:hover{color:var(--text)}
-.container{padding:2rem;max-width:1500px;margin:0 auto}
-.hero{margin-bottom:2.5rem}
-.hero h1{font-size:2.4rem;margin-bottom:.4rem}
-.hero p{color:var(--muted)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.2rem}
-.card{background:var(--card);border-radius:var(--r);overflow:hidden;transition:transform .25s,background .25s}
-.card:hover{transform:translateY(-6px);background:var(--hover)}
-.card-thumb{position:relative;aspect-ratio:2/3;background:#222;overflow:hidden}
-.card-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
-.card:hover .card-thumb img{transform:scale(1.06)}
-.no-thumb{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:4rem;color:var(--muted);background:linear-gradient(135deg,#2a2a33,#1a1a20)}
-.card-overlay{position:absolute;inset:auto 0 0 0;padding:.6rem;background:linear-gradient(to top,rgba(0,0,0,.9),transparent)}
-.badge{background:var(--accent);color:#fff;font-size:.75rem;font-weight:700;padding:.2rem .55rem;border-radius:999px}
-.card-body{padding:.8rem 1rem 1rem}
-.card-body h3{font-size:1rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card-body p{color:var(--muted);font-size:.85rem;margin-top:.2rem}
-.series-header{display:flex;gap:2rem;margin-bottom:3rem;align-items:flex-start}
-.series-poster{width:220px;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;background:#222;flex-shrink:0}
-.series-poster img{width:100%;height:100%;object-fit:cover}
-.series-meta h1{font-size:2.2rem;margin-bottom:.5rem}
-.series-meta p{color:var(--muted);margin-bottom:1.2rem}
-.season{margin-bottom:2.5rem}
-.season h2{font-size:1.4rem;margin-bottom:1rem}
-.episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem}
-.episode-card{background:var(--card);border-radius:var(--r);overflow:hidden;transition:transform .2s,background .2s}
-.episode-card:hover{transform:translateY(-4px);background:var(--hover)}
-.episode-thumb{position:relative;aspect-ratio:16/9;background:#222}
-.episode-thumb img{width:100%;height:100%;object-fit:cover}
-.play-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);opacity:0;transition:opacity .25s;font-size:2rem;color:#fff}
-.episode-card:hover .play-icon{opacity:1}
-.episode-info{padding:.7rem .9rem 1rem}
-.episode-info h4{font-size:.95rem}
-.episode-info .duration{color:var(--muted);font-size:.8rem}
-.watch-wrap{max-width:1200px;margin:0 auto}
-.player-shell{background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:1.5rem;aspect-ratio:16/9;position:relative}
-.player-shell video{width:100%;height:100%;display:block}
-.player-shell iframe{width:100%;height:100%;border:0;display:block;background:#000}
-.no-player{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);text-align:center;padding:2rem}
-.no-player a{color:var(--accent);font-weight:700;text-decoration:underline}
-.watch-info h1{font-size:1.6rem;margin-bottom:.3rem}
-.watch-info h2{font-size:1.05rem;color:var(--muted);margin-bottom:1.2rem;font-weight:500}
-.watch-nav{display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1rem}
-.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.65rem 1.2rem;background:#2a2a33;color:var(--text);border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s;font-family:inherit;text-decoration:none}
-.btn:hover{background:#3a3a45}
-.btn.primary{background:var(--accent);color:#fff}
-.btn.primary:hover{background:#ff2b36}
-.btn.disabled{background:#1a1a20;color:#555;cursor:not-allowed;pointer-events:none}
-.autoplay-bar{display:flex;align-items:center;gap:1rem;padding:.8rem 1rem;background:var(--bg2);border-radius:8px;color:var(--muted);font-size:.9rem}
-.autoplay-bar label{display:flex;align-items:center;gap:.5rem;cursor:pointer}
-.autoplay-bar input{accent-color:var(--accent)}
-#countdown{color:var(--accent);font-weight:700}
-.empty{text-align:center;padding:5rem 2rem;color:var(--muted)}
-.empty code{display:inline-block;margin:.6rem;padding:.5rem .9rem;background:var(--card);border-radius:6px;color:var(--text);font-family:monospace}
-.embed-note{background:rgba(229,9,20,.08);border-right:3px solid var(--accent);padding:.8rem 1rem;border-radius:8px;color:var(--muted);font-size:.85rem;margin-bottom:1rem;line-height:1.7}
-.embed-note strong{color:var(--text)}
-@media(max-width:720px){
-  .container{padding:1rem}
-  .topbar{padding:.8rem 1rem}
-  .series-header{flex-direction:column}
-  .series-poster{width:160px}
-  .hero h1{font-size:1.6rem}
-}
-"""
-
-
-# ═══════════════════════════════════════════════════════════
-#  JavaScript
-# ═══════════════════════════════════════════════════════════
-JS = """\
-document.addEventListener("DOMContentLoaded",function(){
-var v=document.getElementById("player");
-var t=document.getElementById("autoplay-toggle");
-var c=document.getElementById("countdown");
-var n=window.__NEXT_URL__||null;
-var x=false;
-var p=null;
-if(v&&v.tagName==="VIDEO"){
-    p=v;
-    if(typeof Plyr!=="undefined"){
-        p=new Plyr(v,{controls:["play-large","play","progress","current-time","duration","mute","volume","captions","settings","pip","airplay","fullscreen"],seekTime:10,keyboard:{focused:true,global:true}});
-    }
-}
-function go(){
-    if(!n||(t&&!t.checked))return;
-    var k=5;
-    if(c)c.textContent="\\u23ed \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 "+k+"s";
-    var tm=setInterval(function(){
-        if(x){clearInterval(tm);if(c)c.textContent="";return;}
-        k--;
-        if(k<=0){clearInterval(tm);window.location.href=n;}
-        else{if(c)c.textContent="\\u23ed \\u0627\\u0644\\u062a\\u0627\\u0644\\u064a\\u0629 "+k+"s";}
-    },1000);
-}
-function stop(){x=true;if(c)c.textContent="";}
-if(p&&p.on){p.on("ended",go);p.on("play",stop);p.on("seeking",stop);}
-else if(v){v.addEventListener("ended",go);v.addEventListener("play",stop);v.addEventListener("seeking",stop);}
-if(t){t.addEventListener("change",function(){x=!t.checked;if(!t.checked&&c)c.textContent="";});}
-if(v&&v.tagName==="VIDEO"){
-    var key="tf_p_"+window.location.pathname;
-    var s=parseFloat(localStorage.getItem(key)||"0");
-    if(s>5){if(v.readyState>=1)v.currentTime=s;else v.addEventListener("loadedmetadata",function(){v.currentTime=s;});}
-    setInterval(function(){if(v.currentTime>0&&!v.paused)localStorage.setItem(key,String(v.currentTime));},5000);
-}
-});
-"""
-
-
-# ═══════════════════════════════════════════════════════════
-#  Helpers
-# ═══════════════════════════════════════════════════════════
-def log(m):
-    print(f"[build] {m}", flush=True)
-
-
+# ═══════════════════════════════════════════════════════════════
+# دوال مساعدة
+# ═══════════════════════════════════════════════════════════════
 def esc(s):
+    """تهريب HTML"""
     return html.escape(str(s or ""), quote=True)
 
 
 def enc(s):
-    return quote(str(s), safe="")
+    """ترميز URL"""
+    return quote(str(s or ""), safe="")
 
 
-def safe_name(name):
-    bad = ["/", "\\", ":", "*", "?", '"', "<", ">", "|",
-           "\n", "\r", "\t", " "]
-    out = str(name)
-    for ch in bad:
-        out = out.replace(ch, "_")
-    out = out.strip(".")
-    return out.strip() or "unnamed"
+def safe_name(s):
+    """اسم ملف آمن"""
+    s = str(s or "").strip()
+    s = re.sub(r"[^\w\u0600-\u06FF\-]+", "_", s)
+    s = re.sub(r"_+", "_", s)
+    return s.strip("_") or "untitled"
 
 
-def dur(s):
-    s = int(s or 0)
-    if s <= 0:
-        return "—"
-    m, sec = divmod(s, 60)
-    return f"{m}:{sec:02d}"
+def write_file(path, content):
+    """كتابة ملف مع إنشاء المجلدات"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
-def write_static():
-    STATIC.mkdir(exist_ok=True)
-    (STATIC / "style.css").write_text(CSS, encoding="utf-8")
-    (STATIC / "watch.js").write_text(JS, encoding="utf-8")
-    log(f"static written → {STATIC}")
+# ═══════════════════════════════════════════════════════════════
+# قوالب HTML الأساسية
+# ═══════════════════════════════════════════════════════════════
+def base(title, body, depth=0, head="", scripts="", lang="ar", dir_="rtl"):
+    """قالب HTML أساسي"""
+    prefix = "../" * depth if depth else ""
+    return f'''<!DOCTYPE html>
+<html lang="{lang}" dir="{dir_}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{esc(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{prefix}static/style.css">
+{head}
+</head>
+<body>
+<header class="topbar">
+  <a href="{prefix}index.html" class="logo">{SITE_NAME[:8]}<span>{SITE_NAME[8:]}</span></a>
+  <nav class="nav">
+    <a href="{prefix}index.html">الرئيسية</a>
+  </nav>
+</header>
+<main class="container">
+{body}
+</main>
+<footer class="footer">
+  <p>© {SITE_NAME} — جميع الحقوق محفوظة</p>
+</footer>
+{scripts}
+</body>
+</html>'''
 
 
-def load_data():
-    if not DATA.exists():
-        log("⚠️ data.json missing — using empty")
-        return {"series": [], "channel": {}}
-    try:
-        return json.loads(DATA.read_text(encoding="utf-8"))
-    except Exception as e:
-        log(f"❌ data.json parse error: {e}")
-        return {"series": [], "channel": {}}
-
-
-def normalize(data):
-    out = []
-    for s in data.get("series", []):
-        name = str(s.get("name", "")).strip() or "بدون اسم"
-        seasons = s.get("seasons", {}) or {}
-        norm = {}
-        for sk, eps in seasons.items():
-            try:
-                ik = int(sk)
-            except Exception:
-                ik = sk
-            arr = sorted(eps, key=lambda e: int(e.get("episode", 0) or 0))
-            for e in arr:
-                e.setdefault("episode", 0)
-                e.setdefault("message_id", 0)
-                e.setdefault("duration", 0)
-                e.setdefault("thumb_url", "")
-                e.setdefault("video_url", "")
-                e.setdefault("embed_url", "")
-                e.setdefault("telegram_url", "")
-                e.setdefault("file_id", "")
-            norm[str(ik)] = arr
-        norm = dict(sorted(norm.items(), key=lambda kv: int(kv[0])))
-        total = sum(len(v) for v in norm.values())
-        out.append({
-            "name": name,
-            "poster_url": s.get("poster_url", ""),
-            "seasons": norm,
-            "total_episodes": total,
-            "season_count": len(norm),
-        })
-    out.sort(key=lambda s: s["name"])
-    return out
-
-
-def base(title, body, depth=0, head="", scripts=""):
-    p = "../" * depth
-    return (
-        '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n'
-        '<meta charset="UTF-8">\n'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-        f'<title>{esc(title)}</title>\n'
-        f'<link rel="stylesheet" href="{p}static/style.css">\n'
-        '<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">\n'
-        + head + '\n</head>\n<body>\n'
-        f'<header class="topbar">'
-        f'<a href="{p}index.html" class="logo">Telegram<span>Flix</span></a>'
-        f'<nav class="nav"><a href="{p}index.html">الرئيسية</a></nav>'
-        f'</header>\n'
-        '<main class="container">\n' + body + '\n</main>\n'
-        + scripts + '\n</body>\n</html>'
-    )
-
-
-def render_index(series):
-    if not series:
-        body = (
-            '<section class="hero"><h1>المكتبة فارغة</h1>'
-            '<p>لم يتم العثور على مسلسلات في القناة.</p></section>'
-            '<div class="empty">'
-            '<p>تأكد من صيغة الـ caption:</p>'
-            '<code>اسم المسلسل الموسم 1 الحلقة 1</code>'
-            '</div>'
-        )
-        return base("TelegramFlix", body)
+# ═══════════════════════════════════════════════════════════════
+# الصفحة الرئيسية
+# ═══════════════════════════════════════════════════════════════
+def render_index(series_list):
+    """بناء الصفحة الرئيسية"""
     cards = []
-    for s in series:
-        url = "series/" + enc(safe_name(s["name"])) + ".html"
-        poster = s.get("poster_url", "")
-        if not poster:
-            for eps in s["seasons"].values():
-                for e in eps:
-                    if e.get("thumb_url"):
-                        poster = e["thumb_url"]
-                        break
-                if poster:
-                    break
-        thumb = (
-            f'<img loading="lazy" src="{esc(poster)}" alt="{esc(s["name"])}">'
-            if poster
-            else f'<div class="no-thumb">{esc(s["name"][0])}</div>'
+    for s in series_list:
+        name = s.get("name", "بدون اسم")
+        poster = s.get("poster", "")
+        count = len(s.get("episodes", []))
+        url = "series/" + enc(safe_name(name)) + ".html"
+        poster_html = (
+            f'<img src="{esc(poster)}" alt="{esc(name)}" loading="lazy">'
+            if poster else
+            '<div class="poster-placeholder">📺</div>'
         )
-        cards.append(
-            f'<a class="card" href="{url}">'
-            f'<div class="card-thumb">{thumb}'
-            f'<div class="card-overlay">'
-            f'<span class="badge">{s["total_episodes"]} حلقة</span>'
-            f'</div></div>'
-            f'<div class="card-body"><h3>{esc(s["name"])}</h3>'
-            f'<p>{s["season_count"]} موسم</p></div>'
-            f'</a>'
-        )
-    body = (
-        f'<section class="hero"><h1>مكتبة المسلسلات</h1>'
-        f'<p>{len(series)} مسلسل متاح للمشاهدة</p></section>'
-        f'<div class="grid">{"".join(cards)}</div>'
-    )
-    return base("المسلسلات — TelegramFlix", body)
+        cards.append(f'''
+    <a class="series-card" href="{url}">
+      <div class="series-poster">{poster_html}</div>
+      <div class="series-info">
+        <h3>{esc(name)}</h3>
+        <span class="series-meta">{count} حلقة</span>
+      </div>
+    </a>''')
+
+    body = f'''
+    <section class="hero">
+      <h1>{SITE_NAME}</h1>
+      <p>{SITE_DESC}</p>
+    </section>
+    <section class="series-grid">
+      {''.join(cards) if cards else '<p class="empty">لا توجد مسلسلات متاحة حالياً.</p>'}
+    </section>
+    '''
+    return base(f"{SITE_NAME} — الرئيسية", body, depth=0)
 
 
-def render_series(s):
-    poster = s.get("poster_url", "")
-    if not poster:
-        for eps in s["seasons"].values():
-            for e in eps:
-                if e.get("thumb_url"):
-                    poster = e["thumb_url"]
-                    break
-            if poster:
-                break
+# ═══════════════════════════════════════════════════════════════
+# صفحة المسلسل
+# ═══════════════════════════════════════════════════════════════
+def render_series(series):
+    """بناء صفحة المسلسل"""
+    name = series.get("name", "بدون اسم")
+    poster = series.get("poster", "")
+    episodes = series.get("episodes", [])
+
+    ep_cards = []
+    for ep in episodes:
+        ep_num = ep.get("episode", "?")
+        season = ep.get("season", 1)
+        msg_id = ep.get("message_id", "")
+        url = f"{msg_id}.html"
+        ep_cards.append(f'''
+      <a class="episode-card" href="{url}">
+        <div class="episode-num">الحلقة {esc(ep_num)}</div>
+        <div class="episode-meta">الموسم {esc(season)}</div>
+      </a>''')
+
     poster_html = (
-        f'<img src="{esc(poster)}" alt="{esc(s["name"])}">'
-        if poster else ""
+        f'<img src="{esc(poster)}" alt="{esc(name)}">'
+        if poster else
+        '<div class="poster-placeholder">📺</div>'
     )
-    start = ""
-    keys = list(s["seasons"].keys())
-    if keys and s["seasons"][keys[0]]:
-        first = s["seasons"][keys[0]][0]
-        start = (
-            f'<a class="btn primary" '
-            f'href="../watch/{first["message_id"]}.html">'
-            f'▶ ابدأ المشاهدة</a>'
-        )
-    sh = []
-    for sk, eps in s["seasons"].items():
-        ec = []
-        for e in eps:
-            thumb = (
-                f'<img loading="lazy" src="{esc(e["thumb_url"])}" '
-                f'alt="حلقة {e["episode"]}">'
-                if e.get("thumb_url") else ""
-            )
-            ec.append(
-                f'<a class="episode-card" '
-                f'href="../watch/{e["message_id"]}.html">'
-                f'<div class="episode-thumb">{thumb}'
-                f'<span class="play-icon">▶</span></div>'
-                f'<div class="episode-info">'
-                f'<h4>الحلقة {e["episode"]}</h4>'
-                f'<span class="duration">{dur(e.get("duration"))}</span>'
-                f'</div></a>'
-            )
-        sh.append(
-            f'<section class="season"><h2>الموسم {sk}</h2>'
-            f'<div class="episodes">{"".join(ec)}</div></section>'
-        )
-    body = (
-        f'<section class="series-header">'
-        f'<div class="series-poster">{poster_html}</div>'
-        f'<div class="series-meta">'
-        f'<h1>{esc(s["name"])}</h1>'
-        f'<p>{s["season_count"]} موسم · {s["total_episodes"]} حلقة</p>'
-        f'{start}</div></section>'
-        + "".join(sh)
-    )
-    return base(f"{s['name']} — TelegramFlix", body, depth=1)
+
+    body = f'''
+    <div class="series-hero">
+      <div class="series-poster-large">{poster_html}</div>
+      <div class="series-details">
+        <h1>{esc(name)}</h1>
+        <p class="series-count">{len(episodes)} حلقة</p>
+        <p class="series-desc">{esc(series.get("description", ""))}</p>
+      </div>
+    </div>
+    <h2 class="section-title">الحلقات</h2>
+    <div class="episodes-grid">
+      {''.join(ep_cards) if ep_cards else '<p class="empty">لا توجد حلقات.</p>'}
+    </div>
+    '''
+    return base(f"{name} — {SITE_NAME}", body, depth=1)
 
 
+# ═══════════════════════════════════════════════════════════════
+# صفحة المشاهدة (watch)
+# ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
+    """بناء صفحة المشاهدة مع دعم embed mode"""
     video_url = ep.get("video_url", "")
     tg_url = ep.get("telegram_url", "")
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ═══════════════════════════════════════════════════════
-    #  ✅ تجاهل Worker URLs — تفشل مع الملفات > 20MB
-    # ═══════════════════════════════════════════════════════
+    # تجاهل Worker URLs — تفشل مع الملفات > 20MB
     if video_url and "/stream?fid=" in video_url:
         video_url = ""
 
-    # ─── الحالة 1: فيديو مباشر (نادر) ───
+    # ─── اختيار المشغل ───
     if video_url:
+        # الحالة 1: فيديو مباشر
         player = (
-            f'<video id="player" playsinline controls preload="metadata"'
-            f'{poster_attr}>'
+            f'<video controls preload="metadata"{poster_attr} '
+            f'style="width:100%;height:100%;display:block;background:#000;">'
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الحالة 2: iframe → embed mode ───
+        note_html = ""
+        autoplay_html = (
+            '<label class="autoplay-toggle">'
+            '<input type="checkbox" id="autoplayNext"> تشغيل الحلقة التالية تلقائياً'
+            '</label>'
+        )
+        head = '<script src="../static/watch.js" defer></script>'
     elif tg_url:
+        # الحالة 2: iframe → embed mode
         player_url = f"{PROXY_URL}/?embed=1&url={enc(tg_url)}"
+        iframe_id = f"tg-player-{ep.get('message_id', 'x')}"
         player = (
-            f'<iframe src="{esc(player_url)}" '
+            f'<div class="player-shell" id="playerShell">'
+            f'<div class="loading-overlay" id="loadingOverlay">'
+            f'<div class="spinner"></div>'
+            f'<span>جاري التحضير...</span>'
+            f'</div>'
+            f'<iframe id="{iframe_id}" src="{esc(player_url)}" '
             f'frameborder="0" width="100%" height="100%" '
             f'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" '
             f'allowfullscreen></iframe>'
+            f'</div>'
         )
-    # ─── الحالة 3: لا يوجد رابط ───
-    else:
-        player = (
-            '<div class="no-player">'
-            '<p>⚠️ لا يوجد رابط متاح لهذه الحلقة.</p>'
+        note_html = (
+            '<div class="embed-note">'
+            '💡 <strong>ملاحظة:</strong> إذا ظهرت رسالة "لا توجد جلسة مسجّلة"، '
+            f'افتح <a href="{PROXY_URL}/" target="_blank">الصفحة الرئيسية للمشغل</a> '
+            'وسجّل الدخول مرة واحدة، ثم أعد تحميل هذه الصفحة.'
             '</div>'
         )
+        autoplay_html = ""
+        head = ""
+    else:
+        # الحالة 3: لا يوجد رابط
+        player = (
+            '<div class="no-player">'
+            '<div>⚠️ لا يوجد رابط متاح لهذه الحلقة.<br>'
+            'استخدم زر "فتح في تليجرام" أدناه.</div>'
+            '</div>'
+        )
+        note_html = ""
+        autoplay_html = ""
+        head = ""
 
+    # ─── أزرار التنقل ───
     prev_btn = (
         f'<a class="btn" href="{prev_ep["message_id"]}.html">⏮ السابقة</a>'
         if prev_ep else '<span class="btn disabled">⏮ السابقة</span>'
     )
     next_btn = (
-        f'<a class="btn primary" href="{next_ep["message_id"]}.html">'
-        f'التالية ⏭</a>'
+        f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية ⏭</a>'
         if next_ep else '<span class="btn disabled">التالية ⏭</span>'
     )
     series_url = "../series/" + enc(safe_name(name)) + ".html"
@@ -405,60 +262,104 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if tg_url else ""
     )
 
-    # ملاحظة توضيحية (فقط عندما لا يوجد فيديو مباشر)
-    note_html = ""
-    if not video_url and tg_url:
-        note_html = (
-            '<div class="embed-note">'
-            '💡 <strong>ملاحظة:</strong> إذا ظهرت رسالة '
-            '"لا توجد جلسة مسجّلة"، افتح '
-            f'<a href="{esc(PROXY_URL)}/" target="_blank" style="color:var(--accent);">الصفحة الرئيسية للمشغل</a> '
-            'وسجّل الدخول مرة واحدة، ثم أعد تحميل هذه الصفحة.'
-            '</div>'
-        )
-
-    autoplay_html = ""
-    if video_url:
-        autoplay_html = (
-            '<div class="autoplay-bar">'
-            '<label><input type="checkbox" id="autoplay-toggle" checked> '
-            'تشغيل الحلقة التالية تلقائياً</label>'
-            '<span id="countdown"></span>'
-            '</div>'
-        )
-
     next_json = json.dumps(
         f'{next_ep["message_id"]}.html' if next_ep else None
     )
 
-    body = (
-        f'<div class="watch-wrap">'
-        f'<div class="player-shell">{player}</div>'
-        f'{note_html}'
-        f'<div class="watch-info">'
-        f'<h1>{esc(name)}</h1>'
-        f'<h2>الموسم {season} · الحلقة {episode}</h2>'
-        f'<div class="watch-nav">'
-        f'{prev_btn}'
-        f'<a class="btn" href="{series_url}">📺 كل الحلقات</a>'
-        f'{next_btn}'
-        f'{tg_btn}'
-        f'</div>'
-        f'{autoplay_html}'
-        f'</div></div>'
-        f'<script>window.__NEXT_URL__ = {next_json};</script>'
-    )
+    # ─── السكريبت: postMessage للـ embed mode ───
+    if tg_url and not video_url:
+        scripts = f'''<script>
+(function() {{
+  'use strict';
+  var iframe = document.querySelector('.player-shell iframe');
+  var overlay = document.getElementById('loadingOverlay');
+  var PLAYER_ORIGIN = '{PROXY_URL}';
+  var overlayHidden = false;
 
-    head = ''
-    scripts = ''
-    if video_url:
-        head = '<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">'
-        scripts = (
-            '<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>'
-            '<script src="../static/watch.js"></script>'
-        )
+  function hideOverlay() {{
+    if (!overlayHidden && overlay) {{
+      overlayHidden = true;
+      overlay.style.display = 'none';
+    }}
+  }}
+
+  if (iframe) {{
+    iframe.addEventListener('load', function() {{
+      setTimeout(hideOverlay, 600);
+    }});
+    setTimeout(hideOverlay, 12000);
+
+    // إرسال رسالة جاهزية إلى الـ iframe
+    window.addEventListener('load', function() {{
+      if (iframe.contentWindow) {{
+        try {{
+          iframe.contentWindow.postMessage({{ type: 'tg-embed-ready' }}, PLAYER_ORIGIN);
+        }} catch (e) {{}}
+      }}
+    }});
+
+    // استقبال رسائل من الـ iframe
+    window.addEventListener('message', function(event) {{
+      if (event.origin !== PLAYER_ORIGIN) return;
+      var data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'tg-embed-request-creds') {{
+        var creds = null;
+        try {{
+          var raw = localStorage.getItem('tg_credentials');
+          if (raw) creds = JSON.parse(raw);
+        }} catch (e) {{}}
+        try {{
+          iframe.contentWindow.postMessage({{
+            type: 'tg-embed-creds',
+            credentials: creds
+          }}, PLAYER_ORIGIN);
+        }} catch (e) {{}}
+      }}
+
+      if (data.type === 'tg-embed-error') {{
+        console.warn('[Player] Error:', data.message);
+        hideOverlay();
+      }}
+
+      if (data.type === 'tg-embed-progress') {{
+        console.log('[Player] Progress:', data.text || data.percent || '');
+        hideOverlay();
+      }}
+
+      if (data.type === 'tg-embed-success') {{
+        hideOverlay();
+      }}
+    }});
+  }}
+
+  window.__NEXT_URL__ = {next_json};
+}})();
+</script>'''
+    elif video_url:
+        scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
     else:
-        scripts = '<script src="../static/watch.js"></script>'
+        scripts = ""
+
+    # ─── الجسم ───
+    body = f'''
+    <div class="watch-wrap">
+      {player}
+      {note_html}
+      <div class="watch-info">
+        <h1>{esc(name)}</h1>
+        <h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>
+        <div class="watch-nav">
+          {prev_btn}
+          <a class="btn" href="{series_url}">📺 كل الحلقات</a>
+          {next_btn}
+          {tg_btn}
+        </div>
+        {autoplay_html}
+      </div>
+    </div>
+    '''
 
     return base(
         f"الحلقة {episode} — {name}",
@@ -469,77 +370,467 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     )
 
 
-def build(clean=False):
-    if clean and DOCS.exists():
-        shutil.rmtree(DOCS)
-    DOCS.mkdir(parents=True, exist_ok=True)
-    write_static()
-    shutil.copytree(STATIC, DOCS / "static", dirs_exist_ok=True)
-    data = load_data()
-    series = normalize(data)
-    total = sum(s["total_episodes"] for s in series)
-    channel_info = data.get("channel", {})
-    log(f"{len(series)} series | {total} episodes")
-    log(f"Proxy URL: {PROXY_URL}")
-    if channel_info:
-        log(f"channel: {channel_info.get('title', '?')} "
-            f"(@{channel_info.get('username', '')}) "
-            f"public={channel_info.get('is_public')}")
-    (DOCS / "index.html").write_text(render_index(series), encoding="utf-8")
-    (DOCS / "404.html").write_text(
-        base(
-            "404",
-            '<section class="hero"><h1>404</h1>'
-            '<p><a href="index.html">العودة للرئيسية</a></p></section>'
-        ),
-        encoding="utf-8",
-    )
-    (DOCS / ".nojekyll").write_text("", encoding="utf-8")
-    (DOCS / "series").mkdir(exist_ok=True)
-    (DOCS / "watch").mkdir(exist_ok=True)
-    ns = nw = 0
-    for s in series:
-        fname = safe_name(s["name"])
-        (DOCS / "series" / f"{fname}.html").write_text(
-            render_series(s), encoding="utf-8"
-        )
-        ns += 1
-        for sk, eps in s["seasons"].items():
-            for i, ep in enumerate(eps):
-                prev_ep = eps[i - 1] if i > 0 else None
-                next_ep = eps[i + 1] if i + 1 < len(eps) else None
-                html_out = render_watch(
-                    s["name"], int(sk), ep["episode"],
-                    prev_ep, next_ep, ep
-                )
-                (DOCS / "watch" / f"{ep['message_id']}.html").write_text(
-                    html_out, encoding="utf-8"
-                )
-                nw += 1
-    log(f"{ns} series pages | {nw} watch pages")
-    for s in series[:3]:
-        f_name = safe_name(s["name"])
-        log(f"  file: series/{f_name}.html")
-        log(f"  link: series/{enc(f_name)}.html")
+# ═══════════════════════════════════════════════════════════════
+# بناء كل شيء
+# ═══════════════════════════════════════════════════════════════
+def load_series():
+    """تحميل بيانات المسلسلات من مجلد data/"""
+    series_list = []
+
+    if not DATA_DIR.exists():
+        return series_list
+
+    for json_file in sorted(DATA_DIR.glob("*.json")):
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                series_list.extend(data)
+            elif isinstance(data, dict):
+                series_list.append(data)
+        except Exception as e:
+            print(f"⚠️  خطأ في قراءة {json_file}: {e}")
+
+    return series_list
 
 
+def build_static():
+    """نسخ ملفات static"""
+    dst = OUT / "static"
+    if STATIC_SRC.exists():
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(STATIC_SRC, dst)
+        print(f"✅ نسخ static/ → {dst}")
+    else:
+        # إنشاء ملفات CSS/JS افتراضية إذا لم تكن موجودة
+        dst.mkdir(parents=True, exist_ok=True)
+        (dst / "style.css").write_text(DEFAULT_CSS, encoding="utf-8")
+        (dst / "watch.js").write_text(DEFAULT_WATCH_JS, encoding="utf-8")
+        print(f"✅ إنشاء ملفات static الافتراضية → {dst}")
+
+
+def build_site():
+    """بناء الموقع بالكامل"""
+    series_list = load_series()
+    print(f"📚 تم تحميل {len(series_list)} مسلسل")
+
+    # بناء كل مسلسل وصفحاته
+    total_eps = 0
+    for series in series_list:
+        name = series.get("name", "بدون اسم")
+        episodes = series.get("episodes", [])
+
+        # صفحة المسلسل
+        write_file(OUT / "series" / f"{safe_name(name)}.html", render_series(series))
+
+        # صفحات المشاهدة
+        for i, ep in enumerate(episodes):
+            prev_ep = episodes[i - 1] if i > 0 else None
+            next_ep = episodes[i + 1] if i < len(episodes) - 1 else None
+            ep_html = render_watch(
+                name=name,
+                season=ep.get("season", 1),
+                episode=ep.get("episode", i + 1),
+                prev_ep=prev_ep,
+                next_ep=next_ep,
+                ep=ep,
+            )
+            msg_id = ep.get("message_id", f"ep{i}")
+            write_file(OUT / "watch" / f"{msg_id}.html", ep_html)
+            total_eps += 1
+
+    # الصفحة الرئيسية
+    write_file(OUT / "index.html", render_index(series_list))
+
+    print(f"✅ تم بناء {len(series_list)} مسلسل و {total_eps} حلقة")
+
+
+# ═══════════════════════════════════════════════════════════════
+# CSS الافتراضي (إذا لم يوجد static/style.css)
+# ═══════════════════════════════════════════════════════════════
+DEFAULT_CSS = '''
+:root {
+  --bg: #0b0b0f;
+  --surface: #14141a;
+  --surface-2: #1c1c24;
+  --border: #2a2a33;
+  --text: #e8e8ef;
+  --text-dim: #8a8a95;
+  --primary: #e50914;
+  --accent: #4ea8de;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --radius: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: rgba(20, 20, 26, 0.95);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--primary);
+  text-decoration: none;
+}
+.logo span { color: var(--text); }
+.nav a {
+  color: var(--text-dim);
+  text-decoration: none;
+  margin-inline-start: 18px;
+  font-size: 0.92rem;
+  transition: color 0.2s;
+}
+.nav a:hover { color: var(--accent); }
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+/* الرئيسية */
+.hero { text-align: center; padding: 40px 0 30px; }
+.hero h1 {
+  font-size: 2.4rem;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+.hero p { color: var(--text-dim); font-size: 1rem; }
+.series-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+.series-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.25s;
+}
+.series-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(78, 168, 222, 0.15);
+}
+.series-poster {
+  aspect-ratio: 2/3;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.series-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.poster-placeholder {
+  font-size: 3rem;
+  color: var(--text-dim);
+}
+.series-info { padding: 12px; }
+.series-info h3 {
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.series-meta {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+/* صفحة المسلسل */
+.series-hero {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.series-poster-large {
+  flex: 0 0 180px;
+  aspect-ratio: 2/3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.series-poster-large img { width: 100%; height: 100%; object-fit: cover; }
+.series-details { flex: 1; }
+.series-details h1 { font-size: 1.7rem; margin-bottom: 6px; }
+.series-count { color: var(--accent); font-size: 0.9rem; margin-bottom: 10px; }
+.series-desc { color: var(--text-dim); font-size: 0.92rem; }
+.section-title { font-size: 1.2rem; margin-bottom: 14px; }
+.episodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.episode-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  text-decoration: none;
+  color: inherit;
+  text-align: center;
+  transition: all 0.2s;
+}
+.episode-card:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.episode-num { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+.episode-meta { font-size: 0.78rem; color: var(--text-dim); }
+/* صفحة المشاهدة */
+.watch-wrap { max-width: 100%; }
+.player-shell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.player-shell iframe,
+.player-shell video {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #0b0b0f;
+  color: var(--accent);
+  font-size: 0.95rem;
+  gap: 14px;
+  z-index: 10;
+  transition: opacity 0.4s;
+}
+.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+.spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid #222;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.no-player {
+  aspect-ratio: 16/9;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 20px;
+  margin-bottom: 18px;
+}
+.embed-note {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
+  padding: 0.9rem 1.2rem;
+  margin-bottom: 1.2rem;
+  color: #c8c8d8;
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+.embed-note a { color: var(--accent); font-weight: 700; }
+.embed-note strong { color: #fff; }
+.watch-info h1 { font-size: 1.5rem; margin-bottom: 4px; }
+.watch-info h2 {
+  font-size: 1rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  margin-bottom: 16px;
+}
+.watch-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.87rem;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn.primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn.primary:hover {
+  background: #c40812;
+  border-color: #c40812;
+  color: #fff;
+}
+.btn.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.autoplay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+.autoplay-toggle input {
+  accent-color: var(--accent);
+  width: auto;
+}
+.empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 20px;
+}
+.footer {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+/* الجوال */
+@media (max-width: 600px) {
+  .hero h1 { font-size: 1.8rem; }
+  .series-hero { flex-direction: column; }
+  .series-poster-large { flex: none; width: 140px; margin: 0 auto; }
+  .series-grid { grid-template-columns: repeat(2, 1fr); }
+  .watch-info h1 { font-size: 1.2rem; }
+}
+'''
+
+
+# ═══════════════════════════════════════════════════════════════
+# JS الافتراضي للمشاهدة المباشرة
+# ═══════════════════════════════════════════════════════════════
+DEFAULT_WATCH_JS = '''
+(function() {
+  'use strict';
+  var video = document.querySelector('video');
+  if (!video) return;
+
+  // حفظ موضع التشغيل
+  var key = 'tgflix_pos_' + location.pathname;
+  var saved = parseFloat(localStorage.getItem(key) || '0');
+  if (saved > 5) {
+    video.addEventListener('loadedmetadata', function() {
+      if (confirm('استئناف من ' + formatTime(saved) + '؟')) {
+        video.currentTime = saved;
+      }
+    });
+  }
+
+  // حفظ الموضع كل 5 ثوان
+  setInterval(function() {
+    if (!video.paused && video.currentTime > 0) {
+      localStorage.setItem(key, video.currentTime.toString());
+    }
+  }, 5000);
+
+  // التشغيل التلقائي للحلقة التالية
+  var autoplayToggle = document.getElementById('autoplayNext');
+  if (autoplayToggle) {
+    var autoKey = 'tgflix_autoplay';
+    autoplayToggle.checked = localStorage.getItem(autoKey) === '1';
+    autoplayToggle.addEventListener('change', function() {
+      localStorage.setItem(autoKey, this.checked ? '1' : '0');
+    });
+  }
+
+  video.addEventListener('ended', function() {
+    localStorage.removeItem(key);
+    if (autoplayToggle && autoplayToggle.checked && window.__NEXT_URL__) {
+      location.href = window.__NEXT_URL__;
+    }
+  });
+
+  function formatTime(s) {
+    var m = Math.floor(s / 60);
+    var sec = Math.floor(s % 60);
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+})();
+'''
+
+
+# ═══════════════════════════════════════════════════════════════
+# نقطة البداية
+# ═══════════════════════════════════════════════════════════════
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--clean", action="store_true")
+    parser = argparse.ArgumentParser(description="بناء موقع TelegramFlix")
+    parser.add_argument("--clean", action="store_true", help="تنظيف مجلد docs قبل البناء")
     args = parser.parse_args()
-    log("=" * 50)
-    log("TelegramFlix builder + TG-WebApp-Proxy Embed Mode")
-    log(f"ROOT: {ROOT}")
-    log(f"data.json exists: {DATA.exists()}")
-    log(f"PROXY_URL: {PROXY_URL}")
-    build(clean=args.clean)
-    log("✅ done")
+
+    if args.clean and OUT.exists():
+        shutil.rmtree(OUT)
+        print(f"🧹 تم تنظيف {OUT}")
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    build_static()
+    build_site()
+    print(f"\n✨ اكتمل البناء! الموقع في: {OUT}")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    main()
