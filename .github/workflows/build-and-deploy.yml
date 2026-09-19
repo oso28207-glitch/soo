@@ -8,7 +8,7 @@ on:
     - cron: '0 */6 * * *'
 
 permissions:
-  contents: write        # ← مهم لحفظ forward_progress.json
+  contents: write        # مهم لحفظ forward_progress.json
   pages: write
   id-token: write
 
@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
@@ -48,13 +50,19 @@ jobs:
           HISTORY_LIMIT: '2000'
         run: python -u fetch_from_telegram.py
 
-      - name: 💾 Commit progress (للحفاظ على file_id)
+      - name: 💾 Commit progress (with retry)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add forward_progress.json data.json || true
           git diff --staged --quiet || git commit -m "🤖 Update progress + data [skip ci]"
-          git push || true
+          # دمج التغييرات البعيدة قبل الرفع
+          git pull --rebase origin main || true
+          git push origin main || {
+            echo "⚠️ push failed, retrying..."
+            git pull --rebase origin main || true
+            git push origin main || true
+          }
 
       - name: 🔎 Verify data.json
         run: |
@@ -82,6 +90,9 @@ jobs:
           python -u build_all.py --clean
           [ -f docs/index.html ] || exit 1
           echo "✅ Build OK"
+          # تحقق من أن الرابط الجديد موجود
+          echo "=== Checking for correct PROXY_URL ==="
+          grep -o "tg-webapp-proxy[^\"]*" docs/watch/*.html | head -1 || echo "❌ PROXY_URL not found!"
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@v3
