@@ -413,13 +413,11 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ═══════════════════════════════════════════════════════
-    #  ✅ تجاهل Worker URLs — تفشل مع الملفات > 20MB
-    # ═══════════════════════════════════════════════════════
+    # ✅ تجاهل Worker URLs القديمة
     if video_url and "/stream?fid=" in video_url:
         video_url = ""
 
-    # ─── الحالة 1: فيديو مباشر حقيقي (نادر) ───
+    # ─── الحالة 1: فيديو مباشر (نادر) ───
     if video_url:
         player = (
             f'<video id="player" playsinline controls preload="metadata"'
@@ -427,30 +425,17 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الحالة 2: Proxy Player (الافتراضي) ───
+    # ─── الحالة 2: Player iframe (الافتراضي) ───
     elif tg_url:
+        # تمرير رابط Telegram إلى صفحة المشغل
+        player_url = f"{PROXY_URL}/player.html?url={enc(tg_url)}"
         player = (
-            '<div class="proxy-player">'
-            '<div class="proxy-icon">🎬</div>'
-            f'<h3>الحلقة {episode} — {esc(name)}</h3>'
-            '<p>اضغط الزر أدناه لتشغيل الحلقة في المشغل المتقدم. '
-            'سيتم نسخ رابط الحلقة تلقائياً — الصقه في المشغل ثم اضغط تحميل.</p>'
-            '<div class="proxy-actions">'
-            f'<button class="btn primary large" '
-            f'onclick="openProxy(\'{esc(PROXY_URL)}\', \'{esc(tg_url)}\')">'
-            '▶ تشغيل الحلقة'
-            '</button>'
-            f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">'
-            '📱 فتح في تليجرام'
-            '</a>'
-            '</div>'
-            '<div class="proxy-note">'
-            '💡 <strong>طريقة الاستخدام:</strong><br>'
-            '1) اضغط "تشغيل الحلقة" — سيُفتح المشغل ويُنسخ الرابط.<br>'
-            '2) في المشغل، الصق الرابط في خانة <strong>Telegram Message Link</strong>.<br>'
-            '3) اضغط <strong>Fetch File Info</strong> ثم <strong>Download</strong>.'
-            '</div>'
-            '</div>'
+            f'<iframe src="{esc(player_url)}" '
+            f'frameborder="0" width="100%" height="100%" '
+            f'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" '
+            f'allowfullscreen '
+            f'sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation">'
+            f'</iframe>'
         )
     # ─── الحالة 3: لا يوجد رابط ───
     else:
@@ -475,6 +460,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         f'📱 فتح في تليجرام</a>'
         if tg_url else ""
     )
+
+    # Autoplay فقط للفيديو المباشر (ليس للـ iframe)
     autoplay_html = ""
     if video_url:
         autoplay_html = (
@@ -484,9 +471,11 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             '<span id="countdown"></span>'
             '</div>'
         )
+
     next_json = json.dumps(
         f'{next_ep["message_id"]}.html' if next_ep else None
     )
+
     body = (
         f'<div class="watch-wrap">'
         f'<div class="player-shell">{player}</div>'
@@ -503,6 +492,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         f'</div></div>'
         f'<script>window.__NEXT_URL__ = {next_json};</script>'
     )
+
+    # Plyr فقط للفيديو المباشر
     head = ''
     scripts = ''
     if video_url:
@@ -513,6 +504,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
     else:
         scripts = '<script src="../static/watch.js"></script>'
+
     return base(
         f"الحلقة {episode} — {name}",
         body,
