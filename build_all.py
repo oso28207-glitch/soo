@@ -1,8 +1,8 @@
-
 #!/usr/bin/env python3
 """
-build_all.py — TelegramFlix + TG-WebApp-Proxy Integration
-النسخة النهائية v2 — محدثة بالرابط الصحيح
+build_all.py — TelegramFlix + TG-WebApp-Proxy
+- يتجاهل Worker URLs (التي تفشل مع الملفات الكبيرة)
+- يستخدم Proxy Player لكل الحلقات
 """
 import sys
 import json
@@ -23,9 +23,6 @@ DATA = ROOT / "data.json"
 PROXY_URL = "https://tg-webapp-proxy-58b.pages.dev"
 
 
-# ═══════════════════════════════════════════════════════════
-#  CSS
-# ═══════════════════════════════════════════════════════════
 CSS = """\
 :root{--bg:#0b0b0f;--bg2:#141418;--card:#1a1a20;--hover:#23232c;--text:#f5f5f7;--muted:#9a9aa5;--accent:#e50914;--r:12px}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -140,9 +137,6 @@ a{color:inherit;text-decoration:none}
 """
 
 
-# ═══════════════════════════════════════════════════════════
-#  JavaScript
-# ═══════════════════════════════════════════════════════════
 JS = """\
 document.addEventListener("DOMContentLoaded",function(){
 var v=document.getElementById("player");
@@ -207,9 +201,6 @@ function showToast(msg, type) {
 """
 
 
-# ═══════════════════════════════════════════════════════════
-#  Helpers
-# ═══════════════════════════════════════════════════════════
 def log(m):
     print(f"[build] {m}", flush=True)
 
@@ -422,7 +413,13 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ─── الحالة 1: فيديو مباشر (Worker) ───
+    # ═══════════════════════════════════════════════════════
+    #  ✅ تجاهل Worker URLs — تفشل مع الملفات > 20MB
+    # ═══════════════════════════════════════════════════════
+    if video_url and "/stream?fid=" in video_url:
+        video_url = ""
+
+    # ─── الحالة 1: فيديو مباشر حقيقي (نادر) ───
     if video_url:
         player = (
             f'<video id="player" playsinline controls preload="metadata"'
@@ -430,7 +427,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الحالة 2: Proxy Player ───
+    # ─── الحالة 2: Proxy Player (الافتراضي) ───
     elif tg_url:
         player = (
             '<div class="proxy-player">'
@@ -506,11 +503,16 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         f'</div></div>'
         f'<script>window.__NEXT_URL__ = {next_json};</script>'
     )
-    head = '<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">'
-    scripts = (
-        '<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>'
-        '<script src="../static/watch.js"></script>'
-    )
+    head = ''
+    scripts = ''
+    if video_url:
+        head = '<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">'
+        scripts = (
+            '<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>'
+            '<script src="../static/watch.js"></script>'
+        )
+    else:
+        scripts = '<script src="../static/watch.js"></script>'
     return base(
         f"الحلقة {episode} — {name}",
         body,
@@ -568,10 +570,14 @@ def build(clean=False):
                 )
                 nw += 1
     log(f"{ns} series pages | {nw} watch pages")
-    for s in series[:3]:
-        f_name = safe_name(s["name"])
-        log(f"  file: series/{f_name}.html")
-        log(f"  link: series/{enc(f_name)}.html")
+    # تأكد من أن Proxy Player موجود
+    sample = DOCS / "watch" / f"{series[0]['seasons'][list(series[0]['seasons'].keys())[0]][0]['message_id']}.html"
+    if sample.exists():
+        content = sample.read_text(encoding="utf-8")
+        if "openProxy" in content:
+            log(f"✅ Proxy Player OK in {sample.name}")
+        else:
+            log(f"❌ Proxy Player NOT found in {sample.name}")
 
 
 def main():
