@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-build_all.py — TelegramFlix + TG-WebApp-Proxy
-- يتجاهل Worker URLs (التي تفشل مع الملفات الكبيرة)
-- يستخدم iframe مع player.html لتشغيل الفيديو مباشرة
+build_all.py — TelegramFlix + TG-WebApp-Proxy (Embed Mode)
+- يبني موقعاً ثابتاً في docs/
+- كل حلقة تعرض iframe مع وضع embed
 """
 import sys
 import json
@@ -89,6 +89,8 @@ a{color:inherit;text-decoration:none}
 #countdown{color:var(--accent);font-weight:700}
 .empty{text-align:center;padding:5rem 2rem;color:var(--muted)}
 .empty code{display:inline-block;margin:.6rem;padding:.5rem .9rem;background:var(--card);border-radius:6px;color:var(--text);font-family:monospace}
+.embed-note{background:rgba(229,9,20,.08);border-right:3px solid var(--accent);padding:.8rem 1rem;border-radius:8px;color:var(--muted);font-size:.85rem;margin-bottom:1rem;line-height:1.7}
+.embed-note strong{color:var(--text)}
 @media(max-width:720px){
   .container{padding:1rem}
   .topbar{padding:.8rem 1rem}
@@ -370,9 +372,9 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الحالة 2: iframe → player.html ───
+    # ─── الحالة 2: iframe → embed mode ───
     elif tg_url:
-        player_url = f"{PROXY_URL}/player.html?url={enc(tg_url)}"
+        player_url = f"{PROXY_URL}/?embed=1&url={enc(tg_url)}"
         player = (
             f'<iframe src="{esc(player_url)}" '
             f'frameborder="0" width="100%" height="100%" '
@@ -403,6 +405,18 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if tg_url else ""
     )
 
+    # ملاحظة توضيحية (فقط عندما لا يوجد فيديو مباشر)
+    note_html = ""
+    if not video_url and tg_url:
+        note_html = (
+            '<div class="embed-note">'
+            '💡 <strong>ملاحظة:</strong> إذا ظهرت رسالة '
+            '"لا توجد جلسة مسجّلة"، افتح '
+            f'<a href="{esc(PROXY_URL)}/" target="_blank" style="color:var(--accent);">الصفحة الرئيسية للمشغل</a> '
+            'وسجّل الدخول مرة واحدة، ثم أعد تحميل هذه الصفحة.'
+            '</div>'
+        )
+
     autoplay_html = ""
     if video_url:
         autoplay_html = (
@@ -420,6 +434,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     body = (
         f'<div class="watch-wrap">'
         f'<div class="player-shell">{player}</div>'
+        f'{note_html}'
         f'<div class="watch-info">'
         f'<h1>{esc(name)}</h1>'
         f'<h2>الموسم {season} · الحلقة {episode}</h2>'
@@ -513,7 +528,7 @@ def main():
     parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
     log("=" * 50)
-    log("TelegramFlix builder + TG-WebApp-Proxy")
+    log("TelegramFlix builder + TG-WebApp-Proxy Embed Mode")
     log(f"ROOT: {ROOT}")
     log(f"data.json exists: {DATA.exists()}")
     log(f"PROXY_URL: {PROXY_URL}")
