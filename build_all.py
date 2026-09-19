@@ -2,7 +2,7 @@
 """
 build_all.py — TelegramFlix + TG-WebApp-Proxy
 - يتجاهل Worker URLs (التي تفشل مع الملفات الكبيرة)
-- يستخدم Proxy Player لكل الحلقات
+- يستخدم iframe مع player.html لتشغيل الفيديو مباشرة
 """
 import sys
 import json
@@ -23,6 +23,9 @@ DATA = ROOT / "data.json"
 PROXY_URL = "https://tg-webapp-proxy-58b.pages.dev"
 
 
+# ═══════════════════════════════════════════════════════════
+#  CSS
+# ═══════════════════════════════════════════════════════════
 CSS = """\
 :root{--bg:#0b0b0f;--bg2:#141418;--card:#1a1a20;--hover:#23232c;--text:#f5f5f7;--muted:#9a9aa5;--accent:#e50914;--r:12px}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -70,29 +73,6 @@ a{color:inherit;text-decoration:none}
 .player-shell{background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:1.5rem;aspect-ratio:16/9;position:relative}
 .player-shell video{width:100%;height:100%;display:block}
 .player-shell iframe{width:100%;height:100%;border:0;display:block;background:#000}
-.proxy-player{
-  width:100%;height:100%;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,#1a1a20 0%,#0b0b0f 100%);
-  text-align:center;padding:2rem;gap:1.2rem;
-}
-.proxy-player .proxy-icon{font-size:4rem;opacity:.9}
-.proxy-player h3{font-size:1.4rem;margin:0;font-weight:700}
-.proxy-player p{color:var(--muted);max-width:620px;line-height:1.7;margin:0;font-size:.95rem}
-.proxy-player .proxy-actions{display:flex;gap:.8rem;flex-wrap:wrap;justify-content:center;margin-top:.3rem}
-.proxy-note{
-  background:rgba(229,9,20,.08);
-  border-right:3px solid var(--accent);
-  padding:.9rem 1.1rem;
-  border-radius:8px;
-  color:var(--muted);
-  font-size:.85rem;
-  text-align:right;
-  max-width:620px;
-  margin-top:.5rem;
-  line-height:1.7;
-}
-.proxy-note strong{color:var(--text)}
 .no-player{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);text-align:center;padding:2rem}
 .no-player a{color:var(--accent);font-weight:700;text-decoration:underline}
 .watch-info h1{font-size:1.6rem;margin-bottom:.3rem}
@@ -102,7 +82,6 @@ a{color:inherit;text-decoration:none}
 .btn:hover{background:#3a3a45}
 .btn.primary{background:var(--accent);color:#fff}
 .btn.primary:hover{background:#ff2b36}
-.btn.large{padding:1rem 2rem;font-size:1.05rem;border-radius:12px}
 .btn.disabled{background:#1a1a20;color:#555;cursor:not-allowed;pointer-events:none}
 .autoplay-bar{display:flex;align-items:center;gap:1rem;padding:.8rem 1rem;background:var(--bg2);border-radius:8px;color:var(--muted);font-size:.9rem}
 .autoplay-bar label{display:flex;align-items:center;gap:.5rem;cursor:pointer}
@@ -110,33 +89,19 @@ a{color:inherit;text-decoration:none}
 #countdown{color:var(--accent);font-weight:700}
 .empty{text-align:center;padding:5rem 2rem;color:var(--muted)}
 .empty code{display:inline-block;margin:.6rem;padding:.5rem .9rem;background:var(--card);border-radius:6px;color:var(--text);font-family:monospace}
-.toast{
-  position:fixed;bottom:2rem;left:50%;
-  transform:translateX(-50%) translateY(120px);
-  background:#1a1a20;color:var(--text);
-  padding:1rem 1.4rem;border-radius:12px;
-  box-shadow:0 8px 32px rgba(0,0,0,.6);
-  border:1px solid rgba(255,255,255,.1);
-  z-index:9999;opacity:0;transition:all .35s cubic-bezier(.4,0,.2,1);
-  font-weight:600;font-size:.95rem;
-  display:flex;align-items:center;gap:.6rem;
-  max-width:90vw;
-}
-.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-.toast.success{border-color:var(--accent);background:linear-gradient(135deg,rgba(229,9,20,.18),#1a1a20)}
 @media(max-width:720px){
   .container{padding:1rem}
   .topbar{padding:.8rem 1rem}
   .series-header{flex-direction:column}
   .series-poster{width:160px}
   .hero h1{font-size:1.6rem}
-  .proxy-player{padding:1rem}
-  .proxy-player h3{font-size:1.1rem}
-  .proxy-player .proxy-icon{font-size:3rem}
 }
 """
 
 
+# ═══════════════════════════════════════════════════════════
+#  JavaScript
+# ═══════════════════════════════════════════════════════════
 JS = """\
 document.addEventListener("DOMContentLoaded",function(){
 var v=document.getElementById("player");
@@ -173,34 +138,12 @@ if(v&&v.tagName==="VIDEO"){
     setInterval(function(){if(v.currentTime>0&&!v.paused)localStorage.setItem(key,String(v.currentTime));},5000);
 }
 });
-function openProxy(proxyUrl, tgUrl) {
-    if (navigator.clipboard && tgUrl) {
-        navigator.clipboard.writeText(tgUrl).then(function() {
-            showToast("\\u062a\\u0645 \\u0646\\u0633\\u062e \\u0631\\u0627\\u0628\\u0637 \\u0627\\u0644\\u062d\\u0644\\u0642\\u0629 \\u2014 \\u0627\\u0644\\u0635\\u0642\\u0647 \\u0641\\u064a \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644", "success");
-        }).catch(function() {
-            showToast("\\u0627\\u0641\\u062a\\u062d \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644 \\u0648\\u0627\\u0644\\u0635\\u0642 \\u0627\\u0644\\u0631\\u0627\\u0628\\u0637 \\u064a\\u062f\\u0648\\u064a\\u0627\\u064b");
-        });
-    } else if (tgUrl) {
-        showToast("\\u0627\\u0641\\u062a\\u062d \\u0627\\u0644\\u0645\\u0634\\u063a\\u0644 \\u0648\\u0627\\u0644\\u0635\\u0642 \\u0627\\u0644\\u0631\\u0627\\u0628\\u0637 \\u064a\\u062f\\u0648\\u064a\\u0627\\u064b");
-    }
-    window.open(proxyUrl, "_blank", "noopener");
-}
-function showToast(msg, type) {
-    var toast = document.getElementById("global-toast");
-    if (!toast) {
-        toast = document.createElement("div");
-        toast.id = "global-toast";
-        toast.className = "toast";
-        document.body.appendChild(toast);
-    }
-    toast.className = "toast" + (type === "success" ? " success" : "");
-    toast.innerHTML = (type === "success" ? "\\u2705 " : "\\u2139\\uFE0F ") + msg;
-    setTimeout(function() { toast.classList.add("show"); }, 10);
-    setTimeout(function() { toast.classList.remove("show"); }, 4000);
-}
 """
 
 
+# ═══════════════════════════════════════════════════════════
+#  Helpers
+# ═══════════════════════════════════════════════════════════
 def log(m):
     print(f"[build] {m}", flush=True)
 
@@ -413,7 +356,9 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ✅ تجاهل Worker URLs القديمة
+    # ═══════════════════════════════════════════════════════
+    #  ✅ تجاهل Worker URLs — تفشل مع الملفات > 20MB
+    # ═══════════════════════════════════════════════════════
     if video_url and "/stream?fid=" in video_url:
         video_url = ""
 
@@ -425,17 +370,14 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<source src="{esc(video_url)}" type="video/mp4">'
             f'</video>'
         )
-    # ─── الحالة 2: Player iframe (الافتراضي) ───
+    # ─── الحالة 2: iframe → player.html ───
     elif tg_url:
-        # تمرير رابط Telegram إلى صفحة المشغل
         player_url = f"{PROXY_URL}/player.html?url={enc(tg_url)}"
         player = (
             f'<iframe src="{esc(player_url)}" '
             f'frameborder="0" width="100%" height="100%" '
             f'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" '
-            f'allowfullscreen '
-            f'sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation">'
-            f'</iframe>'
+            f'allowfullscreen></iframe>'
         )
     # ─── الحالة 3: لا يوجد رابط ───
     else:
@@ -461,7 +403,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if tg_url else ""
     )
 
-    # Autoplay فقط للفيديو المباشر (ليس للـ iframe)
     autoplay_html = ""
     if video_url:
         autoplay_html = (
@@ -493,7 +434,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         f'<script>window.__NEXT_URL__ = {next_json};</script>'
     )
 
-    # Plyr فقط للفيديو المباشر
     head = ''
     scripts = ''
     if video_url:
@@ -562,14 +502,10 @@ def build(clean=False):
                 )
                 nw += 1
     log(f"{ns} series pages | {nw} watch pages")
-    # تأكد من أن Proxy Player موجود
-    sample = DOCS / "watch" / f"{series[0]['seasons'][list(series[0]['seasons'].keys())[0]][0]['message_id']}.html"
-    if sample.exists():
-        content = sample.read_text(encoding="utf-8")
-        if "openProxy" in content:
-            log(f"✅ Proxy Player OK in {sample.name}")
-        else:
-            log(f"❌ Proxy Player NOT found in {sample.name}")
+    for s in series[:3]:
+        f_name = safe_name(s["name"])
+        log(f"  file: series/{f_name}.html")
+        log(f"  link: series/{enc(f_name)}.html")
 
 
 def main():
