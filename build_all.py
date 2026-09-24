@@ -16,7 +16,7 @@ DATA_FILE  = ROOT / "data.json"
 STATIC_SRC = ROOT / "static"
 
 # ★★★ عنوان Worker البث (بعد النشر على Cloudflare) ★★★
-STREAM_WORKER = "https://tg-stream.YOUR-SUBDOMAIN.workers.dev"
+STREAM_WORKER = "https://tg-stream.sonasnsn.workers.dev"
 
 # عنوان proxy احتياطي للملفات > 20MB (اختياري)
 FALLBACK_PROXY = "https://tg-webapp-proxy-58b.pages.dev"
