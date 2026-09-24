@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-يدعم Range Requests و الملفات الكبيرة (حتى 2GB)
+متوافق مع Railway / Render / Fly.io / VPS
 """
 
 import os
@@ -15,13 +15,20 @@ from pyrogram.file_id import FileId
 from pyrogram.raw.functions.upload import GetFile
 from pyrogram.raw.types import InputDocumentFileLocation, InputPhotoFileLocation
 
-API_ID = int(os.getenv("API_ID", "0"))
-API_HASH = os.getenv("API_HASH", "")
-STRING_SESSION = os.getenv("STRING_SESSION", "")
+# ═══════════════════════════════════════════════════════════════
+# الإعدادات
+# ═══════════════════════════════════════════════════════════════
+API_ID = int(os.environ.get("API_ID", "0"))
+API_HASH = os.environ.get("API_HASH", "").strip()
+STRING_SESSION = os.environ.get("STRING_SESSION", "").strip()
 
 if not all([API_ID, API_HASH, STRING_SESSION]):
-    raise RuntimeError("❌ يجب ضبط API_ID و API_HASH و STRING_SESSION")
+    print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
+    raise SystemExit(1)
 
+# ═══════════════════════════════════════════════════════════════
+# FastAPI
+# ═══════════════════════════════════════════════════════════════
 app = FastAPI(title="Telegram Stream Server")
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +38,9 @@ app.add_middleware(
     expose_headers=["Content-Length", "Content-Range", "Accept-Ranges"],
 )
 
+# ═══════════════════════════════════════════════════════════════
+# MTProto Client
+# ═══════════════════════════════════════════════════════════════
 client = Client(
     "stream_session",
     api_id=API_ID,
@@ -44,17 +54,29 @@ client = Client(
 @app.on_event("startup")
 async def startup():
     await client.start()
-    print("✅ MTProto client started")
+    me = await client.get_me()
+    print(f"✅ MTProto client started as @{me.username or me.id}")
 
 
 @app.on_event("shutdown")
 async def shutdown():
     await client.stop()
+    print("👋 MTProto client stopped")
 
 
+# ═══════════════════════════════════════════════════════════════
+# Endpoints
+# ═══════════════════════════════════════════════════════════════
 @app.get("/")
 async def root():
-    return {"service": "Telegram Stream Server", "status": "ok"}
+    return {
+        "service": "Telegram Stream Server",
+        "status": "ok",
+        "endpoints": {
+            "health": "/health",
+            "stream": "/stream?fid=FILE_ID",
+        },
+    }
 
 
 @app.get("/health")
@@ -65,9 +87,9 @@ async def health():
 @app.head("/stream")
 @app.get("/stream")
 async def stream(request: Request, fid: str):
-    """بث ملف عبر MTProto مع دعم Range"""
+    """بث ملف عبر MTProto مع دعم Range Requests"""
     if not fid:
-        raise HTTPException(400, "missing fid")
+        raise HTTPException(400, "missing fid parameter")
 
     try:
         file_id = FileId.decode(fid)
@@ -78,6 +100,7 @@ async def stream(request: Request, fid: str):
     if not file_size:
         raise HTTPException(400, "unknown file size")
 
+    # ─── تحليل Range ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -91,6 +114,7 @@ async def stream(request: Request, fid: str):
 
     length = end - start + 1
 
+    # ─── تحديد موقع الملف ───
     if file_id.file_type in ("video", "document", "audio", "animation"):
         location = InputDocumentFileLocation(
             id=file_id.media_id,
@@ -108,19 +132,20 @@ async def stream(request: Request, fid: str):
     else:
         raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
 
-    CHUNK = 1024 * 1024
+    # ─── مولّد البث ───
+    CHUNK_SIZE = 1024 * 1024  # 1 MB
 
-    async def gen():
+    async def generate():
         offset = start
         remaining = length
         while remaining > 0:
-            chunk_size = min(CHUNK, remaining)
+            chunk = min(CHUNK_SIZE, remaining)
             try:
                 result = await client.invoke(
-                    GetFile(location=location, offset=offset, limit=chunk_size)
+                    GetFile(location=location, offset=offset, limit=chunk)
                 )
             except Exception as e:
-                print(f"⚠️ chunk error at {offset}: {e}")
+                print(f"⚠️ Chunk error at offset {offset}: {e}")
                 break
             data = result.bytes
             if not data:
@@ -129,20 +154,37 @@ async def stream(request: Request, fid: str):
             offset += len(data)
             remaining -= len(data)
 
+    # ─── الترويسات ───
     headers = {
         "Content-Type": file_id.mime_type or "video/mp4",
         "Accept-Ranges": "bytes",
         "Content-Length": str(length),
         "Cache-Control": "public, max-age=86400",
     }
+
     if range_header:
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-        return StreamingResponse(gen(), status_code=206, headers=headers)
+        return StreamingResponse(generate(), status_code=206, headers=headers)
 
-    return StreamingResponse(gen(), headers=headers)
+    return StreamingResponse(generate(), headers=headers)
 
 
+# ═══════════════════════════════════════════════════════════════
+# نقطة البداية — تقرأ PORT تلقائياً من البيئة
+# ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+
+    # ★ Railway و Render يمرران PORT كمتغير بيئة
+    port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+
+    print(f"🚀 Starting Telegram Stream Server on {host}:{port}")
+
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True,
+    )
