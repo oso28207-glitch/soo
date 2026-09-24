@@ -1,485 +1,494 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-fetch_from_telegram.py — v2 (Rate-limit aware)
-- يحترم حدود Telegram (retry_after)
-- يتباطأ تلقائياً عند الوصول للحد
-- يحفظ التقدم للاستئناف
-- يعيد المحاولة عند الفشل
+fetch_from_telegram.py — جالب بيانات المسلسلات من قناة Telegram
+
+يقرأ الرسائل من قناة المصدر، يحلّل الـ captions، ويبني:
+  - data.json              (قائمة المسلسلات والحلقات مع file_id)
+  - forward_progress.json  (لتتبع التقدم واستئناف العمل)
+
+المتغيرات البيئية:
+  API_ID            — من https://my.telegram.org/apps
+  API_HASH          — من https://my.telegram.org/apps
+  CHANNEL           — قناة المصدر (مثل: shoofcima)
+  STRING_SESSION    — جلسة Pyrogram (StringSession)
+  STRING_SESSION2   — جلسة احتياطية (اختياري)
+  STORAGE_CHANNEL   — قناة التخزين (مثل: -1001234567890)
+  STREAM_BASE       — عنوان خادم البث (اختياري)
+  BOT_TOKEN         — توكن البوت (اختياري)
+  HISTORY_LIMIT     — حد الرسائل (افتراضي: 5000)
+  MAX_FILE_MB       — أقصى حجم ملف (افتراضي: 2000)
 """
+
 import os
 import re
-import sys
 import json
 import time
 import asyncio
+import logging
 from pathlib import Path
+from typing import Optional
 
 from pyrogram import Client
-import aiohttp
+from pyrogram.errors import FloodWait, RPCError
+from pyrogram.enums import MessageMediaType
 
-# ═══════════════════════════════════════════════════════════
-#  الإعدادات
-# ═══════════════════════════════════════════════════════════
-API_ID_RAW = os.environ.get("API_ID", "").strip()
-API_HASH = os.environ.get("API_HASH", "").strip()
-CHANNEL = os.environ.get("CHANNEL", "").strip()
-STRING_SESSION = (
-    os.environ.get("STRING_SESSION", "").strip()
-    or os.environ.get("STRING_SESSION2", "").strip()
+# ═══════════════════════════════════════════════════════════════
+# الإعدادات
+# ═══════════════════════════════════════════════════════════════
+ROOT = Path(__file__).resolve().parent
+DATA_FILE = ROOT / "data.json"
+PROGRESS_FILE = ROOT / "forward_progress.json"
+
+API_ID = os.getenv("API_ID")
+API_HASH = os.getenv("API_HASH")
+CHANNEL = os.getenv("CHANNEL", "")
+STRING_SESSION = os.getenv("STRING_SESSION", "")
+STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
+STORAGE_CHANNEL = os.getenv("STORAGE_CHANNEL", "")
+STREAM_BASE = os.getenv("STREAM_BASE", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "5000"))
+MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "2000"))
+
+# إعدادات معدّل الطلبات (Rate Limiting)
+BASE_DELAY = 4.0           # تأخير أساسي بين الرسائل (ثوانٍ)
+MAX_DELAY = 30.0           # أقصى تأخير
+MAX_RETRIES = 5            # عدد محاولات الإعادة
+SAFETY_BUFFER = 5.0        # هامش أمان فوق retry_after
+
+# ═══════════════════════════════════════════════════════════════
+# إعداد السجل (Logging)
+# ═══════════════════════════════════════════════════════════════
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
 )
-STREAM_BASE = os.environ.get("STREAM_BASE", "").strip().rstrip("/")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-STORAGE_CHANNEL = os.environ.get("STORAGE_CHANNEL", "").strip()
-HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "2000"))
-OUT = Path("data.json")
-PROGRESS_FILE = Path("forward_progress.json")  # لحفظ التقدم
-
-# ═══════════════════════════════════════════════════════════
-#  Rate Limiting
-# ═══════════════════════════════════════════════════════════
-MIN_DELAY = 4.0              # ثانية بين كل طلب (آمن: ~15/دقيقة)
-MAX_DELAY = 30.0             # حد أقصى للتأخير التلقائي
-RETRY_MAX = 5                # محاولات إعادة عند الفشل
-RATE_LIMIT_SAFETY = 5        # ثواني إضافية فوق retry_after
-
-# ═══════════════════════════════════════════════════════════
-#  التحقق
-# ═══════════════════════════════════════════════════════════
-errors = []
-API_ID = 0
-if not API_ID_RAW:
-    errors.append("API_ID فاضي")
-else:
-    try:
-        API_ID = int(API_ID_RAW)
-    except ValueError:
-        errors.append(f"API_ID ليس رقماً: {API_ID_RAW!r}")
-
-if not API_HASH or len(API_HASH) != 32:
-    errors.append(f"API_HASH غير صالح (الطول={len(API_HASH)})")
-if not CHANNEL:
-    errors.append("CHANNEL فاضي")
-if not STRING_SESSION:
-    errors.append("STRING_SESSION فارغ!")
-
-if errors:
-    print("❌ أخطاء:", flush=True)
-    for e in errors:
-        print(f"   • {e}", flush=True)
-    sys.exit(1)
-
-print(f"✅ الإعدادات صحيحة (session len={len(STRING_SESSION)})", flush=True)
-if STREAM_BASE:
-    print(f"🎬 Stream proxy: {STREAM_BASE}", flush=True)
-if BOT_TOKEN:
-    print(f"🤖 Bot API: مفعّل", flush=True)
-    if STORAGE_CHANNEL:
-        print(f"📦 Storage channel: {STORAGE_CHANNEL}", flush=True)
-    else:
-        print(f"❌ STORAGE_CHANNEL غير محدّد!", flush=True)
-        sys.exit(1)
-
-# ═══════════════════════════════════════════════════════════
-#  Caption regex
-# ═══════════════════════════════════════════════════════════
-CAPTION_RE = re.compile(
-    r"^\s*(?P<series>.+?)\s+"
-    r"(?:الموسم|season|s)\s*[:\-]?\s*(?P<season>\d+)\s+"
-    r"(?:الحلقة|episode|ep|e)\s*[:\-]?\s*(?P<episode>\d+)\s*$",
-    re.IGNORECASE | re.UNICODE,
-)
+log = logging.getLogger("fetch")
 
 
-# ═══════════════════════════════════════════════════════════
-#  حفظ/قراءة التقدم
-# ═══════════════════════════════════════════════════════════
-def load_progress():
-    """يقرأ file_id المحفوظة مسبقاً"""
-    if not PROGRESS_FILE.exists():
-        return {}
-    try:
-        data = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
-        return data.get("file_ids", {})  # {message_id: file_id}
-    except Exception:
-        return {}
+# ═══════════════════════════════════════════════════════════════
+# أنماط تحليل الـ Captions
+# ═══════════════════════════════════════════════════════════════
+# أمثلة على الـ captions المتوقعة:
+#   "المسلسل: اتنين غيرنا\nالموسم: 1\nالحلقة: 5"
+#   "مسلسل المصيدة — الموسم 2 الحلقة 15"
+#   "اتنين غيرنا S01E05"
+
+PATTERNS = {
+    "series_ar": re.compile(r"(?:المسلسل|مسلسل|اسم\s*المسلسل)\s*[:\-]?\s*(.+?)(?:\n|$)", re.I),
+    "series_en": re.compile(r"^([^\n—\-:]+?)(?:\s*[—\-:]|\s*$)", re.I),
+    "season_ar": re.compile(r"(?:الموسم|موسم)\s*[:\-]?\s*(\d+)", re.I),
+    "season_en": re.compile(r"\bS(\d{1,2})\b", re.I),
+    "season_word": re.compile(r"\b(?:Season|sez)\s*(\d{1,2})\b", re.I),
+    "episode_ar": re.compile(r"(?:الحلقة|حلقة)\s*[:\-]?\s*(\d+)", re.I),
+    "episode_en": re.compile(r"\bE(\d{1,3})\b", re.I),
+    "episode_word": re.compile(r"\b(?:Episode|الحلقه)\s*[:\-]?\s*(\d{1,3})\b", re.I),
+}
+
+# أنماط لتنظيف اسم المسلسل
+CLEANUP_PATTERNS = [
+    re.compile(r"مشاهدة\s+مسلسل\s+"),
+    re.compile(r"مسلسل\s+"),
+    re.compile(r"\s*الحلقة\s*\d+.*$"),
+    re.compile(r"\s*الموسم\s*\d+.*$"),
+    re.compile(r"\s*S\d+E\d+.*$"),
+    re.compile(r"\.mp4$"),
+    re.compile(r"\.mkv$"),
+    re.compile(r"\.avi$"),
+    re.compile(r"\[[^\]]*\]"),
+    re.compile(r"\([^)]*\)"),
+    re.compile(r"_+"),
+]
 
 
-def save_progress(file_ids: dict):
-    """يحفظ file_id لاستخدامها في التشغيل التالي"""
-    try:
-        PROGRESS_FILE.write_text(
-            json.dumps(
-                {"file_ids": file_ids, "saved_at": time.time()},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-    except Exception as e:
-        print(f"⚠️ فشل حفظ التقدم: {e}", flush=True)
+def clean_series_name(name: str) -> str:
+    """تنظيف اسم المسلسل من الكلمات الزائدة"""
+    if not name:
+        return ""
+    name = name.strip()
+    for pat in CLEANUP_PATTERNS:
+        name = pat.sub("", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "غير معروف"
 
 
-# ═══════════════════════════════════════════════════════════
-#  forwardMessage مع احترام retry_after
-# ═══════════════════════════════════════════════════════════
-class RateLimiter:
-    """يتتبع التأخير الديناميكي بين الطلبات"""
-    def __init__(self):
-        self.delay = MIN_DELAY
-        self.last_request = 0.0
-        self.total_requests = 0
-
-    def get_delay_until(self):
-        """وقت الانتظار حتى الطلب التالي"""
-        elapsed = time.time() - self.last_request
-        wait = max(0, self.delay - elapsed)
-        return wait
-
-    def mark(self):
-        self.last_request = time.time()
-        self.total_requests += 1
-
-    def slow_down(self, extra):
-        """يزيد التأخير بعد rate limit"""
-        self.delay = min(MAX_DELAY, self.delay + extra)
-        print(f"      ⏸️ زيادة التأخير إلى {self.delay:.1f}s", flush=True)
-
-    def speed_up(self):
-        """يعود تدريجياً للتأخير الأدنى بعد نجاح متتالي"""
-        if self.delay > MIN_DELAY:
-            self.delay = max(MIN_DELAY, self.delay - 0.5)
-
-
-async def get_bot_file_id_with_retry(
-    session: aiohttp.ClientSession,
-    bot_token: str,
-    source_chat_id: int,
-    message_id: int,
-    storage_chat_id: str,
-    limiter: RateLimiter,
-    cached_file_id: str = "",
-) -> str:
+def parse_caption(caption: str) -> Optional[dict]:
     """
-    ينسخ الرسالة إلى قناة التخزين، يستخرج file_id، ثم يحذفها.
-    - يحترم retry_after من Telegram
-    - يعيد المحاولة تلقائياً عند الفشل
-    - يستخدم cached_file_id إن وُجد
+    يحلّل الـ caption ويستخرج: اسم المسلسل، الموسم، رقم الحلقة
     """
-    # إذا كانت محفوظة، استخدمها مباشرة
-    if cached_file_id:
-        return cached_file_id
+    if not caption:
+        return None
 
-    base = f"https://api.telegram.org/bot{bot_token}"
+    caption = caption.strip()
 
-    for attempt in range(1, RETRY_MAX + 1):
-        # احترم التأخير الأساسي
-        wait = limiter.get_delay_until()
-        if wait > 0:
-            await asyncio.sleep(wait)
-
-        # forwardMessage
-        payload = {
-            "chat_id": storage_chat_id,
-            "from_chat_id": source_chat_id,
-            "message_id": message_id,
-        }
-        try:
-            async with session.post(
-                f"{base}/forwardMessage",
-                json=payload,
-                timeout=30,
-            ) as resp:
-                data = await resp.json()
-        except Exception as e:
-            print(f"      ⚠️ exception: {e}", flush=True)
-            await asyncio.sleep(MIN_DELAY)
-            continue
-
-        limiter.mark()
-
-        # ─── معالجة الردود ───
-        if data.get("ok"):
-            new_msg = data["result"]
-            new_msg_id = new_msg["message_id"]
-
-            # استخرج file_id
-            file_id = ""
-            if "video" in new_msg:
-                file_id = new_msg["video"]["file_id"]
-            elif "document" in new_msg:
-                file_id = new_msg["document"]["file_id"]
-            elif "animation" in new_msg:
-                file_id = new_msg["animation"]["file_id"]
-
-            # احذف الرسالة
+    # ─── الموسم ───
+    season = 1
+    for key in ("season_ar", "season_en", "season_word"):
+        m = PATTERNS[key].search(caption)
+        if m:
             try:
-                async with session.post(
-                    f"{base}/deleteMessage",
-                    json={"chat_id": storage_chat_id, "message_id": new_msg_id},
-                    timeout=15,
-                ) as r:
-                    pass
-            except Exception:
+                season = int(m.group(1))
+                break
+            except (ValueError, IndexError):
                 pass
 
-            # نجاح → تسريع تدريجي
-            limiter.speed_up()
-            return file_id
-
-        # ─── Rate limit ───
-        err = data.get("description", "")
-        m = re.search(r"retry after (\d+)", err)
+    # ─── رقم الحلقة ───
+    episode = None
+    for key in ("episode_ar", "episode_en", "episode_word"):
+        m = PATTERNS[key].search(caption)
         if m:
-            retry_after = int(m.group(1))
-            wait_time = retry_after + RATE_LIMIT_SAFETY
-            print(
-                f"      🚫 Rate limit (محاولة {attempt}/{RETRY_MAX})"
-                f" — انتظار {wait_time}s...",
-                flush=True,
-            )
-            limiter.slow_down(extra=2.0)
-            await asyncio.sleep(wait_time)
-            continue
+            try:
+                episode = int(m.group(1))
+                break
+            except (ValueError, IndexError):
+                pass
 
-        # ─── أخطاء أخرى ───
-        if "not enough rights" in err.lower():
-            print(f"      ❌ البوت ليس Admin!", flush=True)
-            return ""
-        if "message to forward not found" in err.lower():
-            return ""
-        if "chat not found" in err.lower():
-            print(f"      ❌ قناة التخزين غير موجودة!", flush=True)
-            return ""
+    if episode is None:
+        return None
 
-        print(f"      ⚠️ فشل: {err[:100]}", flush=True)
-        await asyncio.sleep(MIN_DELAY)
-        return ""
+    # ─── اسم المسلسل ───
+    name = ""
+    m = PATTERNS["series_ar"].search(caption)
+    if m:
+        name = m.group(1)
+    else:
+        m = PATTERNS["series_en"].search(caption)
+        if m:
+            name = m.group(1)
 
-    # استنفدت المحاولات
-    print(f"      ❌ استنفدت المحاولات للرسالة {message_id}", flush=True)
-    return ""
+    name = clean_series_name(name)
+    if not name or name == "غير معروف":
+        return None
+
+    return {"name": name, "season": season, "episode": episode}
 
 
-# ═══════════════════════════════════════════════════════════
-#  Main
-# ═══════════════════════════════════════════════════════════
-async def main():
-    # ─── اقرأ التقدم السابق ───
-    cached_ids = load_progress()
-    if cached_ids:
-        print(f"💾 تم العثور على {len(cached_ids)} file_id محفوظة", flush=True)
-
-    print("\n🔐 Connecting to Telegram...", flush=True)
-    client = Client(
-        "fetch_web",
-        api_id=API_ID,
-        api_hash=API_HASH,
-        session_string=STRING_SESSION,
-        in_memory=True,
-    )
-    try:
-        await client.start()
-    except Exception as e:
-        print(f"❌ فشل الاتصال: {type(e).__name__}: {e}", flush=True)
-        sys.exit(1)
-
-    me = await client.get_me()
-    print(f"✅ Connected as {me.first_name}", flush=True)
-
-    # ─── معلومات القناة ───
-    print(f"\n📡 القناة المصدر: {CHANNEL}", flush=True)
-    try:
-        chat = await client.get_chat(CHANNEL)
-        channel_id = chat.id
-        channel_username = getattr(chat, "username", None) or ""
-        channel_title = chat.title or "القناة"
-        is_public = bool(channel_username)
-        print(f"   {channel_title} | ID={channel_id}", flush=True)
-    except Exception as e:
-        print(f"❌ فشل جلب القناة: {e}", flush=True)
-        await client.stop()
-        sys.exit(1)
-
-    cid_str = str(channel_id)
-    short_id = cid_str[4:] if cid_str.startswith("-100") else cid_str.lstrip("-")
-
-    # ─── اختبار البوت ───
-    if BOT_TOKEN:
+# ═══════════════════════════════════════════════════════════════
+# التخزين والتقدم
+# ═══════════════════════════════════════════════════════════════
+def load_progress() -> dict:
+    """تحميل حالة التقدم من الملف"""
+    if PROGRESS_FILE.exists():
         try:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/getMe",
-                    timeout=15,
-                ) as r:
-                    d = await r.json()
-                    if d.get("ok"):
-                        b = d["result"]
-                        print(
-                            f"🤖 Bot: {b.get('first_name')} "
-                            f"(@{b.get('username')})",
-                            flush=True,
-                        )
-                    else:
-                        print(f"❌ BOT_TOKEN غير صالح", flush=True)
-                        sys.exit(1)
+            return json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"⚠️ {e}", flush=True)
+            log.warning(f"⚠️ فشل قراءة {PROGRESS_FILE}: {e}")
+    return {"last_message_id": 0, "forwarded_ids": [], "series_map": {}}
 
-    # ─── قراءة الرسائل ───
-    series_map = {}
-    count = 0
-    skipped = 0
-    with_file_id = 0
-    from_cache = 0
-    failed_file_id = 0
 
-    limiter = RateLimiter()
-    start_time = time.time()
-
-    # افتح ملف التخزين المؤقت
-    new_cached_ids = dict(cached_ids)
-
-    print(f"\n📥 قراءة السجل (limit={HISTORY_LIMIT})...", flush=True)
-    print(f"⏱️ التأخير الأساسي: {MIN_DELAY}s بين الطلبات\n", flush=True)
-
-    async with aiohttp.ClientSession() as http:
-        async for msg in client.get_chat_history(CHANNEL, limit=HISTORY_LIMIT):
-            if not msg.video:
-                continue
-
-            caption = (msg.caption or "").strip()
-            m = CAPTION_RE.match(caption)
-            if not m:
-                skipped += 1
-                continue
-
-            s_name = m.group("series").strip()
-            season = int(m.group("season"))
-            episode = int(m.group("episode"))
-
-            # ─── file_id مع التخزين المؤقت ───
-            file_id = ""
-            if BOT_TOKEN and STORAGE_CHANNEL:
-                # إن كانت محفوظة مسبقاً، استخدمها
-                cached = cached_ids.get(str(msg.id), "")
-                if cached:
-                    file_id = cached
-                    from_cache += 1
-                else:
-                    file_id = await get_bot_file_id_with_retry(
-                        http, BOT_TOKEN, channel_id, msg.id,
-                        STORAGE_CHANNEL, limiter,
-                    )
-                    if file_id:
-                        new_cached_ids[str(msg.id)] = file_id
-
-                    # احفظ التقدم كل 25 حلقة
-                    if count % 25 == 0 and count > 0:
-                        save_progress(new_cached_ids)
-
-                if file_id and not cached:
-                    with_file_id += 1
-                elif not file_id:
-                    failed_file_id += 1
-
-            # ─── video_url ───
-            video_url = ""
-            if STREAM_BASE and file_id:
-                video_url = f"{STREAM_BASE}/stream?fid={file_id}"
-
-            # ─── روابط تليجرام ───
-            if is_public:
-                watch_url = f"https://t.me/{channel_username}/{msg.id}"
-                embed_url = (
-                    f"https://t.me/{channel_username}/{msg.id}?embed=1&mode=tme"
-                )
-            else:
-                watch_url = f"https://t.me/c/{short_id}/{msg.id}"
-                embed_url = ""
-
-            ep_obj = {
-                "episode": episode,
-                "message_id": msg.id,
-                "duration": msg.video.duration or 0,
-                "thumb_url": "",
-                "video_url": video_url,
-                "embed_url": embed_url,
-                "telegram_url": watch_url,
-                "file_id": file_id,
-            }
-
-            if s_name not in series_map:
-                series_map[s_name] = {
-                    "name": s_name,
-                    "poster_url": "",
-                    "seasons": {},
-                }
-
-            sk = str(season)
-            if sk not in series_map[s_name]["seasons"]:
-                series_map[s_name]["seasons"][sk] = []
-
-            series_map[s_name]["seasons"][sk].append(ep_obj)
-            count += 1
-
-            # ─── سجل التقدم كل 25 ───
-            if count % 25 == 0:
-                elapsed = time.time() - start_time
-                rate = count / elapsed if elapsed > 0 else 0
-                print(
-                    f"   ... {count} | "
-                    f"✅ جديد: {with_file_id} | "
-                    f"💾 محفوظ: {from_cache} | "
-                    f"❌ فشل: {failed_file_id} | "
-                    f"⏱️ {elapsed:.0f}s (~{rate:.2f}/s)",
-                    flush=True,
-                )
-
-    # احفظ التقدم النهائي
-    save_progress(new_cached_ids)
-    await client.stop()
-
-    elapsed = time.time() - start_time
-    print(f"\n📊 إحصائيات:", flush=True)
-    print(f"   حلقات: {count}", flush=True)
-    print(f"   ✅ file_id جديدة: {with_file_id}", flush=True)
-    print(f"   💾 من التخزين المؤقت: {from_cache}", flush=True)
-    if failed_file_id:
-        print(f"   ❌ فشل: {failed_file_id}", flush=True)
-    print(f"   متجاهلة: {skipped}", flush=True)
-    print(f"   مسلسلات: {len(series_map)}", flush=True)
-    print(f"   ⏱️ الوقت: {elapsed:.0f}s ({elapsed/60:.1f} دقيقة)", flush=True)
-    print(f"   💾 إجمالي file_id محفوظة: {len(new_cached_ids)}", flush=True)
-
-    # ─── ترتيب ───
-    series_list = []
-    for name, s in series_map.items():
-        for sk in s["seasons"]:
-            s["seasons"][sk].sort(key=lambda e: e["episode"])
-        s["seasons"] = dict(
-            sorted(s["seasons"].items(), key=lambda kv: int(kv[0]))
-        )
-        series_list.append(s)
-    series_list.sort(key=lambda s: s["name"])
-
-    OUT.write_text(
-        json.dumps(
-            {
-                "channel": {
-                    "id": channel_id,
-                    "username": channel_username,
-                    "title": channel_title,
-                    "is_public": is_public,
-                },
-                "stream_base": STREAM_BASE,
-                "series": series_list,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+def save_progress(progress: dict):
+    """حفظ حالة التقدم"""
+    PROGRESS_FILE.write_text(
+        json.dumps(progress, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"\n✅ Wrote {count} episodes → {OUT}", flush=True)
+
+
+def load_existing_data() -> dict:
+    """تحميل data.json الحالي (للاستئناف)"""
+    if DATA_FILE.exists():
+        try:
+            return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        except Exception as e:
+            log.warning(f"⚠️ فشل قراءة {DATA_FILE}: {e}")
+    return {"channel": CHANNEL, "stream_base": STREAM_BASE, "series": []}
+
+
+def save_data(data: dict):
+    """حفظ data.json"""
+    DATA_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    size_kb = DATA_FILE.stat().st_size / 1024
+    log.info(f"💾 حفظ {DATA_FILE.name} ({size_kb:.1f} KB)")
+
+
+def find_or_create_series(data: dict, name: str) -> dict:
+    """يبحث عن مسلسل بالاسم أو ينشئ واحداً جديداً"""
+    for s in data["series"]:
+        if s.get("name") == name:
+            return s
+    new_series = {
+        "name": name,
+        "poster_url": "",
+        "description": "",
+        "seasons": {},
+    }
+    data["series"].append(new_series)
+    return new_series
+
+
+def add_episode(series: dict, season: int, episode: dict):
+    """يضيف حلقة إلى المسلسل (يتجنب التكرار بـ message_id)"""
+    season_key = str(season)
+    if season_key not in series["seasons"]:
+        series["seasons"][season_key] = []
+
+    existing = series["seasons"][season_key]
+    msg_id = episode.get("message_id")
+
+    # تجنب التكرار
+    for ep in existing:
+        if ep.get("message_id") == msg_id:
+            # تحديث البيانات إن وُجدت
+            ep.update(episode)
+            return False
+
+    existing.append(episode)
+    # ترتيب حسب رقم الحلقة
+    existing.sort(key=lambda e: int(e.get("episode", 0)))
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════
+# استخراج معلومات الملف من الرسالة
+# ═══════════════════════════════════════════════════════════════
+def extract_media_info(msg) -> Optional[dict]:
+    """
+    يستخرج معلومات الفيديو/المستند من رسالة Pyrogram
+    يعيد: {file_id, file_unique_id, size, duration, mime_type, file_name, thumb_url}
+    """
+    media = None
+    media_type = None
+
+    if msg.video:
+        media = msg.video
+        media_type = "video"
+    elif msg.document:
+        media = msg.document
+        media_type = "document"
+    elif msg.animation:
+        media = msg.animation
+        media_type = "animation"
+    elif msg.audio:
+        media = msg.audio
+        media_type = "audio"
+
+    if not media:
+        return None
+
+    # التحقق من حجم الملف
+    size_bytes = getattr(media, "file_size", 0) or 0
+    size_mb = size_bytes / (1024 * 1024)
+    if size_mb > MAX_FILE_MB:
+        log.warning(f"⚠️ الملف {size_mb:.1f}MB يتجاوز الحد ({MAX_FILE_MB}MB)")
+        return None
+
+    info = {
+        "file_id": getattr(media, "file_id", ""),
+        "file_unique_id": getattr(media, "file_unique_id", ""),
+        "file_size": size_bytes,
+        "file_name": getattr(media, "file_name", "") or "",
+        "mime_type": getattr(media, "mime_type", "") or "video/mp4",
+        "duration": getattr(media, "duration", 0) or 0,
+        "width": getattr(media, "width", 0) or 0,
+        "height": getattr(media, "height", 0) or 0,
+        "thumb_url": "",
+        "media_type": media_type,
+    }
+
+    return info
+
+
+# ═══════════════════════════════════════════════════════════════
+# معالجة رسالة واحدة
+# ═══════════════════════════════════════════════════════════════
+async def process_message(client: Client, msg, data: dict, progress: dict) -> bool:
+    """
+    يعالج رسالة واحدة: يحلل الـ caption، يستخرج معلومات الملف،
+    ويضيفها إلى data.json
+    يعيد True إذا تمت الإضافة بنجاح
+    """
+    # تجاهل الرسائل الفارغة
+    if not msg or not msg.caption:
+        return False
+
+    # تحليل الـ caption
+    parsed = parse_caption(msg.caption)
+    if not parsed:
+        return False
+
+    # استخراج معلومات الملف
+    media_info = extract_media_info(msg)
+    if not media_info:
+        return False
+
+    # تجاهل الملفات الصغيرة جداً (< 1MB)
+    if media_info["file_size"] < 1024 * 1024:
+        return False
+
+    # بناء كائن الحلقة
+    tg_url = f"https://t.me/{CHANNEL}/{msg.id}" if not CHANNEL.startswith("-") \
+             else f"https://t.me/c/{CHANNEL.replace('-100', '')}/{msg.id}"
+
+    episode = {
+        "message_id": str(msg.id),
+        "episode": parsed["episode"],
+        "season": parsed["season"],
+        "duration": media_info["duration"],
+        "telegram_url": tg_url,
+        "video_url": "",  # يُبنى في build_all.py من file_id
+        "file_id": media_info["file_id"],
+        "file_unique_id": media_info["file_unique_id"],
+        "file_size": media_info["file_size"],
+        "mime_type": media_info["mime_type"],
+        "file_name": media_info["file_name"],
+        "thumb_url": media_info["thumb_url"],
+        "date": msg.date.isoformat() if msg.date else "",
+    }
+
+    # إضافة إلى المسلسل
+    series = find_or_create_series(data, parsed["name"])
+    added = add_episode(series, parsed["season"], episode)
+
+    if added:
+        log.info(
+            f"✅ [{parsed['name']}] S{parsed['season']:02d}E{parsed['episode']:02d} "
+            f"({media_info['file_size'] / 1024 / 1024:.1f}MB)"
+        )
+
+    return added
+
+
+# ═══════════════════════════════════════════════════════════════
+# الجلب الرئيسي
+# ═══════════════════════════════════════════════════════════════
+async def fetch_history(client: Client, data: dict, progress: dict):
+    """يجلب الرسائل من القناة ويعالجها"""
+    log.info(f"📥 جلب حتى {HISTORY_LIMIT} رسالة من @{CHANNEL}")
+
+    count = 0
+    added = 0
+    skipped = 0
+    errors = 0
+    last_id = 0
+
+    try:
+        async for msg in client.get_chat_history(CHANNEL, limit=HISTORY_LIMIT):
+            count += 1
+            last_id = msg.id
+
+            # تأخير لتجنب FloodWait
+            await asyncio.sleep(BASE_DELAY / 4)
+
+            try:
+                if await process_message(client, msg, data, progress):
+                    added += 1
+                else:
+                    skipped += 1
+            except FloodWait as e:
+                wait = min(e.value + SAFETY_BUFFER, MAX_DELAY)
+                log.warning(f"⏳ FloodWait: {e.value}s — انتظار {wait:.1f}s")
+                await asyncio.sleep(wait)
+            except Exception as e:
+                errors += 1
+                log.error(f"❌ خطأ في الرسالة {msg.id}: {e}")
+
+            # طباعة تقدم كل 50 رسالة
+            if count % 50 == 0:
+                log.info(f"📊 تقدم: {count} رسالة | {added} مضافة | {skipped} متجاهلة | {errors} أخطاء")
+
+            # حفظ دوري كل 100 رسالة
+            if count % 100 == 0:
+                progress["last_message_id"] = last_id
+                save_data(data)
+                save_progress(progress)
+
+    except FloodWait as e:
+        wait = min(e.value + SAFETY_BUFFER, MAX_DELAY)
+        log.warning(f"⏳ FloodWait عام: {e.value}s")
+        await asyncio.sleep(wait)
+    except Exception as e:
+        log.error(f"❌ خطأ في get_chat_history: {e}")
+
+    progress["last_message_id"] = last_id
+
+    log.info(f"\n📊 الإحصائيات:")
+    log.info(f"   إجمالي الرسائل: {count}")
+    log.info(f"   حلقات مضافة: {added}")
+    log.info(f"   متجاهلة: {skipped}")
+    log.info(f"   أخطاء: {errors}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# إنشاء العميل
+# ═══════════════════════════════════════════════════════════════
+def create_client() -> Client:
+    """ينشئ عميل Pyrogram مع أفضل جلسة متاحة"""
+    session = STRING_SESSION or STRING_SESSION2
+    if not session:
+        raise ValueError("❌ يجب ضبط STRING_SESSION أو STRING_SESSION2")
+
+    if not API_ID or not API_HASH:
+        raise ValueError("❌ يجب ضبط API_ID و API_HASH")
+
+    client = Client(
+        name="fetch_session",
+        api_id=int(API_ID),
+        api_hash=API_HASH,
+        session_string=session,
+        in_memory=True,
+        workers=4,
+    )
+    return client
+
+
+# ═══════════════════════════════════════════════════════════════
+# الدالة الرئيسية
+# ═══════════════════════════════════════════════════════════════
+async def main():
+    log.info("🚀 بدء جلب البيانات من Telegram")
+
+    # التحقق من المتغيرات
+    if not CHANNEL:
+        raise ValueError("❌ يجب ضبط CHANNEL")
+
+    # تحميل البيانات والتقدم
+    data = load_existing_data()
+    data["channel"] = CHANNEL
+    data["stream_base"] = STREAM_BASE
+    progress = load_progress()
+
+    log.info(f"📂 مسلسلات محمّلة: {len(data['series'])}")
+    total_episodes = sum(
+        len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
+    )
+    log.info(f"🎬 حلقات محمّلة: {total_episodes}")
+
+    # إنشاء العميل والاتصال
+    client = create_client()
+
+    async with client:
+        me = await client.get_me()
+        log.info(f"✅ متصل كـ @{me.username or me.id}")
+
+        # جلب الرسائل
+        await fetch_history(client, data, progress)
+
+    # الحفظ النهائي
+    save_data(data)
+    save_progress(progress)
+
+    # إحصائيات نهائية
+    total_series = len(data["series"])
+    total_eps = sum(
+        len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
+    )
+    with_file_id = sum(
+        1
+        for s in data["series"]
+        for eps in s.get("seasons", {}).values()
+        for ep in eps
+        if ep.get("file_id")
+    )
+
+    log.info(f"\n✨ اكتمل الجلب:")
+    log.info(f"   مسلسلات: {total_series}")
+    log.info(f"   حلقات: {total_eps}")
+    log.info(f"   مع file_id: {with_file_id}")
 
 
 if __name__ == "__main__":
