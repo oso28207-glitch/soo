@@ -1,10 +1,5 @@
 {
-  "channel": {
-    "id": -1003538733863,
-    "username": "shoofcima",
-    "title": "ShoofCima",
-    "is_public": true
-  },
+  "channel": "@shoofcima",
   "stream_base": "https://telegram-stream.sonasnsn.workers.dev",
   "series": [
     {
@@ -181,6 +176,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEg2qsbFCRnqWKJqvIpPLhP3aF7B4qAALSIQACW-4YUa0Pq9N099c0PQQ"
           },
           {
+            "message_id": "1155",
+            "episode": 1,
+            "season": 1,
+            "duration": 1742,
+            "telegram_url": "https://t.me/@shoofcima/1155",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEg2q1c3HYuF805_qdhjJuOY2PpLmcAALSIQACW-4YUdH-KeyH7wngHgQ",
+            "file_unique_id": "AgAD0iEAAlvuGFE",
+            "file_size": 30612313,
+            "mime_type": "video/mp4",
+            "file_name": "final_01.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T17:45:17"
+          },
+          {
             "episode": 2,
             "message_id": 1156,
             "duration": 1835,
@@ -189,6 +199,21 @@
             "embed_url": "https://t.me/shoofcima/1156?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1156",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEhGqsbE-Ix_OHzueG_nkqtOGcS3zpAALYIQACW-4YUeYYM5KXK6dRPQQ"
+          },
+          {
+            "message_id": "1156",
+            "episode": 2,
+            "season": 1,
+            "duration": 1835,
+            "telegram_url": "https://t.me/@shoofcima/1156",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEhGq1c3Hx2z05dLL_qup6IVi-7qXOAALYIQACW-4YURSy1CM6yW-aHgQ",
+            "file_unique_id": "AgAD2CEAAlvuGFE",
+            "file_size": 28318972,
+            "mime_type": "video/mp4",
+            "file_name": "final_02.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T17:53:48"
           },
           {
             "episode": 3,
@@ -201,6 +226,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEhWqsbE-B2bGqE6aCsEYXlFgbW2b9AALcIQACW-4YUSRFuAQpXmfqPQQ"
           },
           {
+            "message_id": "1157",
+            "episode": 3,
+            "season": 1,
+            "duration": 1798,
+            "telegram_url": "https://t.me/@shoofcima/1157",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEhWq1c3FCn0WdKcrieOL4SYNJWadbAALcIQACW-4YURvuDODsje8DHgQ",
+            "file_unique_id": "AgAD3CEAAlvuGFE",
+            "file_size": 26586080,
+            "mime_type": "video/mp4",
+            "file_name": "final_03.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T18:03:23"
+          },
+          {
             "episode": 4,
             "message_id": 1158,
             "duration": 1791,
@@ -209,6 +249,21 @@
             "embed_url": "https://t.me/shoofcima/1158?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1158",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEhmqsbE91gIBane66YFCYGj4tZrWhAALgIQACW-4YUZdq3u_HSOtxPQQ"
+          },
+          {
+            "message_id": "1158",
+            "episode": 4,
+            "season": 1,
+            "duration": 1791,
+            "telegram_url": "https://t.me/@shoofcima/1158",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEhmq1c3HOuTDriHKTwOqDcCbWk1Q_AALgIQACW-4YUa5rM1WqKXwDHgQ",
+            "file_unique_id": "AgAD4CEAAlvuGFE",
+            "file_size": 27364936,
+            "mime_type": "video/mp4",
+            "file_name": "final_04.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T18:10:44"
           },
           {
             "episode": 5,
@@ -221,6 +276,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEh2qsbE_DJxcxctyzOUMhuddkn4qMAALvIQACW-4YUS--ST1M9o-PPQQ"
           },
           {
+            "message_id": "1159",
+            "episode": 5,
+            "season": 1,
+            "duration": 1820,
+            "telegram_url": "https://t.me/@shoofcima/1159",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEh2q1c3EGe_iX-8xf1hRuFZUiKxFKAALvIQACW-4YUYCXjHqX_ofFHgQ",
+            "file_unique_id": "AgAD7yEAAlvuGFE",
+            "file_size": 29213971,
+            "mime_type": "video/mp4",
+            "file_name": "final_05.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T18:51:39"
+          },
+          {
             "episode": 6,
             "message_id": 1160,
             "duration": 1654,
@@ -229,6 +299,21 @@
             "embed_url": "https://t.me/shoofcima/1160?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1160",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEiGqsbE-x0g5Mu_VrBtiybVfBrT5IAAICIgACW-4YURJ5F0mnRGYRPQQ"
+          },
+          {
+            "message_id": "1160",
+            "episode": 6,
+            "season": 1,
+            "duration": 1654,
+            "telegram_url": "https://t.me/@shoofcima/1160",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEiGq1c3ECN3rwBKin4sPh8CRB7rcCAAICIgACW-4YUe1Uy6hVd9lQHgQ",
+            "file_unique_id": "AgADAiIAAlvuGFE",
+            "file_size": 29436735,
+            "mime_type": "video/mp4",
+            "file_name": "final_06.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T19:35:25"
           },
           {
             "episode": 7,
@@ -241,6 +326,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEiWqsbE8buGQXm5SGNxRyF5w9GOuNAAIgIgACW-4YUcRDCaHJM7B5PQQ"
           },
           {
+            "message_id": "1161",
+            "episode": 7,
+            "season": 1,
+            "duration": 1726,
+            "telegram_url": "https://t.me/@shoofcima/1161",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEiWq1c3HwCRQjAzQ6v5aNGV0G9pnCAAIgIgACW-4YUYDImKYJ-T6dHgQ",
+            "file_unique_id": "AgADICIAAlvuGFE",
+            "file_size": 28589358,
+            "mime_type": "video/mp4",
+            "file_name": "final_07.mp4",
+            "thumb_url": "",
+            "date": "2026-09-10T20:21:05"
+          },
+          {
             "episode": 8,
             "message_id": 1162,
             "duration": 1797,
@@ -249,6 +349,21 @@
             "embed_url": "https://t.me/shoofcima/1162?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1162",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEimqsbE_uKcmRtj8q-fUu7ZWjWE_LAAIGHgACW-4gUdyDjZeixxASPQQ"
+          },
+          {
+            "message_id": "1162",
+            "episode": 8,
+            "season": 1,
+            "duration": 1797,
+            "telegram_url": "https://t.me/@shoofcima/1162",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEimq1c3HeS0LXBFnOLK88CLzuGP60AAIGHgACW-4gUQuNmrs2r75qHgQ",
+            "file_unique_id": "AgADBh4AAlvuIFE",
+            "file_size": 29331459,
+            "mime_type": "video/mp4",
+            "file_name": "final_08.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T15:08:51"
           },
           {
             "episode": 9,
@@ -261,6 +376,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEi2qsbE7rxrSEOd0RgPCIkojk1CRzAAITHgACW-4gUaRlLPAW6oYFPQQ"
           },
           {
+            "message_id": "1163",
+            "episode": 9,
+            "season": 1,
+            "duration": 1550,
+            "telegram_url": "https://t.me/@shoofcima/1163",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEi2q1c3EoQAh4_c1m54nKeu0qJxlZAAITHgACW-4gUcM0VAZAf7EzHgQ",
+            "file_unique_id": "AgADEx4AAlvuIFE",
+            "file_size": 23431279,
+            "mime_type": "video/mp4",
+            "file_name": "final_09.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T15:48:18"
+          },
+          {
             "episode": 10,
             "message_id": 1164,
             "duration": 1612,
@@ -269,6 +399,21 @@
             "embed_url": "https://t.me/shoofcima/1164?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1164",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEjGqsbE5Sb5kQ73vnFmwv5zQJEnIaAAIdHgACW-4gUd2-wh1hif2JPQQ"
+          },
+          {
+            "message_id": "1164",
+            "episode": 10,
+            "season": 1,
+            "duration": 1612,
+            "telegram_url": "https://t.me/@shoofcima/1164",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEjGq1c3EmDseG_o7qkMKQj31crtEwAAIdHgACW-4gUS5hCgp9Q6ahHgQ",
+            "file_unique_id": "AgADHR4AAlvuIFE",
+            "file_size": 24792015,
+            "mime_type": "video/mp4",
+            "file_name": "final_10.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T16:25:46"
           },
           {
             "episode": 11,
@@ -281,6 +426,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEjWqsbE5UU5ufUDxYXhx1eCKBSP2mAAIfHgACW-4gUcMzZxunDTcWPQQ"
           },
           {
+            "message_id": "1165",
+            "episode": 11,
+            "season": 1,
+            "duration": 1967,
+            "telegram_url": "https://t.me/@shoofcima/1165",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEjWq1c3EoybehSs_eAmDIC6bozsX0AAIfHgACW-4gUZ8aVQwWie5VHgQ",
+            "file_unique_id": "AgADHx4AAlvuIFE",
+            "file_size": 31923061,
+            "mime_type": "video/mp4",
+            "file_name": "final_11.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T16:40:35"
+          },
+          {
             "episode": 12,
             "message_id": 1166,
             "duration": 1898,
@@ -289,6 +449,21 @@
             "embed_url": "https://t.me/shoofcima/1166?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1166",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEjmqsbE6CU1KCZV023B4yZDxZbJr0AAIgHgACW-4gUdPP2maBRMKjPQQ"
+          },
+          {
+            "message_id": "1166",
+            "episode": 12,
+            "season": 1,
+            "duration": 1898,
+            "telegram_url": "https://t.me/@shoofcima/1166",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEjmq1c3E2L4EpYGvlBL3Kbe4LIXHKAAIgHgACW-4gUbJ3SCtOhlepHgQ",
+            "file_unique_id": "AgADIB4AAlvuIFE",
+            "file_size": 32230348,
+            "mime_type": "video/mp4",
+            "file_name": "final_12.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T16:54:02"
           },
           {
             "episode": 13,
@@ -301,6 +476,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEj2qsbE4I3WpziYztUFu2k-t7KGn6AAIhHgACW-4gUTQUZGb8IoytPQQ"
           },
           {
+            "message_id": "1167",
+            "episode": 13,
+            "season": 1,
+            "duration": 1899,
+            "telegram_url": "https://t.me/@shoofcima/1167",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEj2q1c3E8_QjO1UlGRbEFj5v4tl3HAAIhHgACW-4gUfusrh2aOuqsHgQ",
+            "file_unique_id": "AgADIR4AAlvuIFE",
+            "file_size": 29721684,
+            "mime_type": "video/mp4",
+            "file_name": "final_13.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T17:12:59"
+          },
+          {
             "episode": 14,
             "message_id": 1168,
             "duration": 1895,
@@ -309,6 +499,21 @@
             "embed_url": "https://t.me/shoofcima/1168?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1168",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEkGqsbE7q-uafkbYH1V-qKOeKTSPMAAImHgACW-4gUWsxaPZy3d7sPQQ"
+          },
+          {
+            "message_id": "1168",
+            "episode": 14,
+            "season": 1,
+            "duration": 1895,
+            "telegram_url": "https://t.me/@shoofcima/1168",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEkGq1c3GElS2-U6Msyg4_kc_Fio0sAAImHgACW-4gURR5XAQ9sRZQHgQ",
+            "file_unique_id": "AgADJh4AAlvuIFE",
+            "file_size": 30813021,
+            "mime_type": "video/mp4",
+            "file_name": "final_14.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T17:30:42"
           },
           {
             "episode": 15,
@@ -321,6 +526,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEkWqsbE0bSZExLdEuh_TpegSqcL2GAAIsHgACW-4gUXg6fCQuc97VPQQ"
           },
           {
+            "message_id": "1169",
+            "episode": 15,
+            "season": 1,
+            "duration": 1892,
+            "telegram_url": "https://t.me/@shoofcima/1169",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEkWq1c3GIDHG6wd8CVpoGYUo_xcNvAAIsHgACW-4gUSZASEk3h-29HgQ",
+            "file_unique_id": "AgADLB4AAlvuIFE",
+            "file_size": 31351100,
+            "mime_type": "video/mp4",
+            "file_name": "final_15.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T17:46:17"
+          },
+          {
             "episode": 16,
             "message_id": 1170,
             "duration": 1780,
@@ -329,6 +549,21 @@
             "embed_url": "https://t.me/shoofcima/1170?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1170",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEkmqsbE3Z0s_aAAEwXLvSAAEF8V0AAVQxAAIvHgACW-4gUbYaCdj-tf_dPQQ"
+          },
+          {
+            "message_id": "1170",
+            "episode": 16,
+            "season": 1,
+            "duration": 1780,
+            "telegram_url": "https://t.me/@shoofcima/1170",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEkmq1c3Gw6Nx75uBAzJ6Whrc34T3yAAIvHgACW-4gUZ8nifrZgnbKHgQ",
+            "file_unique_id": "AgADLx4AAlvuIFE",
+            "file_size": 27120591,
+            "mime_type": "video/mp4",
+            "file_name": "final_16.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T17:51:36"
           },
           {
             "episode": 19,
@@ -341,6 +576,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEk2qsbE072K1POLQx7X1y5FNYYbPHAAIzHgACW-4gURUL1-of_-xjPQQ"
           },
           {
+            "message_id": "1171",
+            "episode": 19,
+            "season": 1,
+            "duration": 2180,
+            "telegram_url": "https://t.me/@shoofcima/1171",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEk2q1c3Hg8WOy6UnjYtmkly8AAYao2wACMx4AAlvuIFGkkvM-S7CZph4E",
+            "file_unique_id": "AgADMx4AAlvuIFE",
+            "file_size": 34811581,
+            "mime_type": "video/mp4",
+            "file_name": "final_19.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:05:08"
+          },
+          {
             "episode": 20,
             "message_id": 1172,
             "duration": 1702,
@@ -349,6 +599,21 @@
             "embed_url": "https://t.me/shoofcima/1172?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1172",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIElGqsbE24Z0Os4bHklmPNejp331b7AAI0HgACW-4gUaNzHlyziPMJPQQ"
+          },
+          {
+            "message_id": "1172",
+            "episode": 20,
+            "season": 1,
+            "duration": 1702,
+            "telegram_url": "https://t.me/@shoofcima/1172",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIElGq1c3G_0X30s6e_sH2gfiEMhvkOAAI0HgACW-4gUUNbGJf-irFUHgQ",
+            "file_unique_id": "AgADNB4AAlvuIFE",
+            "file_size": 25358183,
+            "mime_type": "video/mp4",
+            "file_name": "final_20.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:09:29"
           },
           {
             "episode": 21,
@@ -361,6 +626,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIElWqsbE3budEb2RnEDL73WyUNRIVnAAI3HgACW-4gUeuJ0MtEAAEWCz0E"
           },
           {
+            "message_id": "1173",
+            "episode": 21,
+            "season": 1,
+            "duration": 1733,
+            "telegram_url": "https://t.me/@shoofcima/1173",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIElWq1c3EQAAH1M5jNesSbOYe5WMCIXgACNx4AAlvuIFHJ-XiD37FzBB4E",
+            "file_unique_id": "AgADNx4AAlvuIFE",
+            "file_size": 26576380,
+            "mime_type": "video/mp4",
+            "file_name": "final_21.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:15:09"
+          },
+          {
             "episode": 22,
             "message_id": 1174,
             "duration": 1748,
@@ -369,6 +649,21 @@
             "embed_url": "https://t.me/shoofcima/1174?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1174",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIElmqsbE3XUrjiRHystOVC3Z-7ZXDnAAI5HgACW-4gUQZTneFxORikPQQ"
+          },
+          {
+            "message_id": "1174",
+            "episode": 22,
+            "season": 1,
+            "duration": 1748,
+            "telegram_url": "https://t.me/@shoofcima/1174",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIElmq1c3FC4dM0kzEGIgABg6glQ_0zJgACOR4AAlvuIFFD7lc-s6DyYR4E",
+            "file_unique_id": "AgADOR4AAlvuIFE",
+            "file_size": 27013263,
+            "mime_type": "video/mp4",
+            "file_name": "final_22.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:21:21"
           },
           {
             "episode": 23,
@@ -381,6 +676,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEl2qsbE3ozPlAdM0fm6rEUQo2-L_OAAI7HgACW-4gUVh6c3lJhrdhPQQ"
           },
           {
+            "message_id": "1175",
+            "episode": 23,
+            "season": 1,
+            "duration": 1681,
+            "telegram_url": "https://t.me/@shoofcima/1175",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEl2q1c3FhjW7WFCYF9qA5PVcErsGbAAI7HgACW-4gUeOjeyh8PA0ZHgQ",
+            "file_unique_id": "AgADOx4AAlvuIFE",
+            "file_size": 26524195,
+            "mime_type": "video/mp4",
+            "file_name": "final_23.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:27:58"
+          },
+          {
             "episode": 24,
             "message_id": 1176,
             "duration": 1977,
@@ -389,6 +699,21 @@
             "embed_url": "https://t.me/shoofcima/1176?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1176",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEmGqsbEwsaimHXKyBhHibptpEFUvZAAJCHgACW-4gUWHwUzi29RndPQQ"
+          },
+          {
+            "message_id": "1176",
+            "episode": 24,
+            "season": 1,
+            "duration": 1977,
+            "telegram_url": "https://t.me/@shoofcima/1176",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEmGq1c3EeDGJIHL23xgABtovsWrN15AACQh4AAlvuIFGyt43UEmdXbx4E",
+            "file_unique_id": "AgADQh4AAlvuIFE",
+            "file_size": 28898778,
+            "mime_type": "video/mp4",
+            "file_name": "final_24.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:39:50"
           },
           {
             "episode": 25,
@@ -401,6 +726,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEmWqsbEx_n-BvXlC8dV3IHfHqWMeuAAJKHgACW-4gUfExoJrdROnHPQQ"
           },
           {
+            "message_id": "1177",
+            "episode": 25,
+            "season": 1,
+            "duration": 1850,
+            "telegram_url": "https://t.me/@shoofcima/1177",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEmWq1c3E--ZsBqJUO3A4x4b-iN8ktAAJKHgACW-4gUesy5sGUwQNWHgQ",
+            "file_unique_id": "AgADSh4AAlvuIFE",
+            "file_size": 29836622,
+            "mime_type": "video/mp4",
+            "file_name": "final_25.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:47:57"
+          },
+          {
             "episode": 26,
             "message_id": 1178,
             "duration": 1922,
@@ -409,6 +749,21 @@
             "embed_url": "https://t.me/shoofcima/1178?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1178",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEmmqsbExpAV4kCjn_NDreUkhFhemxAAJSHgACW-4gUcTssL9M55KYPQQ"
+          },
+          {
+            "message_id": "1178",
+            "episode": 26,
+            "season": 1,
+            "duration": 1922,
+            "telegram_url": "https://t.me/@shoofcima/1178",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEmmq1c3FMvP4rowyJ_Uj5WGMky0NBAAJSHgACW-4gUZ1aStRc2hBdHgQ",
+            "file_unique_id": "AgADUh4AAlvuIFE",
+            "file_size": 28449880,
+            "mime_type": "video/mp4",
+            "file_name": "final_26.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T18:58:06"
           },
           {
             "episode": 27,
@@ -421,6 +776,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEnGqsbEwDmmHzjjbcE4NDQGEU3tDUAAJ1HgACW-4gUd0s9pX9DkunPQQ"
           },
           {
+            "message_id": "1180",
+            "episode": 27,
+            "season": 1,
+            "duration": 1787,
+            "telegram_url": "https://t.me/@shoofcima/1180",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEnGq1c3EK21q2pHwRU9psOQzMaAL6AAJ1HgACW-4gURwRH9CwmLB7HgQ",
+            "file_unique_id": "AgADdR4AAlvuIFE",
+            "file_size": 28639527,
+            "mime_type": "video/mp4",
+            "file_name": "final_27.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T20:10:42"
+          },
+          {
             "episode": 28,
             "message_id": 1181,
             "duration": 1719,
@@ -429,6 +799,21 @@
             "embed_url": "https://t.me/shoofcima/1181?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1181",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEnWqsbExYN3dg-qDSBT4XPzy4A8BsAAJ3HgACW-4gUdJGT3cQ1LZYPQQ"
+          },
+          {
+            "message_id": "1181",
+            "episode": 28,
+            "season": 1,
+            "duration": 1719,
+            "telegram_url": "https://t.me/@shoofcima/1181",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEnWq1c3FvJos8_Ey8kYR5uGE8-flIAAJ3HgACW-4gUXxLqXzHRy9_HgQ",
+            "file_unique_id": "AgADdx4AAlvuIFE",
+            "file_size": 27735778,
+            "mime_type": "video/mp4",
+            "file_name": "final_28.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T20:14:55"
           },
           {
             "episode": 29,
@@ -441,6 +826,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEnmqsbEtfTNO0cf_8uuRCutpolzYJAAJ4HgACW-4gUVaPmHPeIkAmPQQ"
           },
           {
+            "message_id": "1182",
+            "episode": 29,
+            "season": 1,
+            "duration": 1774,
+            "telegram_url": "https://t.me/@shoofcima/1182",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEnmq1c3GU-ttY-IA9DQPrsH64lPdPAAJ4HgACW-4gUZeTsIQM4-miHgQ",
+            "file_unique_id": "AgADeB4AAlvuIFE",
+            "file_size": 28164638,
+            "mime_type": "video/mp4",
+            "file_name": "final_29.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T20:19:54"
+          },
+          {
             "episode": 30,
             "message_id": 1183,
             "duration": 1867,
@@ -449,6 +849,21 @@
             "embed_url": "https://t.me/shoofcima/1183?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1183",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEn2qsbEs8p5vVt9CUMae6gs8_5Yh4AAJ9HgACW-4gUax350yUGxvRPQQ"
+          },
+          {
+            "message_id": "1183",
+            "episode": 30,
+            "season": 1,
+            "duration": 1867,
+            "telegram_url": "https://t.me/@shoofcima/1183",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEn2q1c3HzN0KgC1rJTJ-lA9-IU3nxAAJ9HgACW-4gUdtAdvf_XlB5HgQ",
+            "file_unique_id": "AgADfR4AAlvuIFE",
+            "file_size": 28217890,
+            "mime_type": "video/mp4",
+            "file_name": "final_30.mp4",
+            "thumb_url": "",
+            "date": "2026-09-11T20:24:23"
           },
           {
             "episode": 31,
@@ -461,6 +876,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEqGqsbEvXFh4UR9X4flx_Er1gf9foAAJfIAACO8o4UfgqiDVNl-RwPQQ"
           },
           {
+            "message_id": "1192",
+            "episode": 31,
+            "season": 1,
+            "duration": 1830,
+            "telegram_url": "https://t.me/@shoofcima/1192",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEqGq1c3G11VrJvvPrlgws9y5jg3QuAAJfIAACO8o4UTX_3FVrePi3HgQ",
+            "file_unique_id": "AgADXyAAAjvKOFE",
+            "file_size": 30283750,
+            "mime_type": "video/mp4",
+            "file_name": "final_31.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T02:53:54"
+          },
+          {
             "episode": 32,
             "message_id": 1197,
             "duration": 1809,
@@ -469,6 +899,21 @@
             "embed_url": "https://t.me/shoofcima/1197?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1197",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIErWqsbEsk2f38KNs524iL8CILex9ZAAI4IAACO8pAUQJuVkcp9Q0OPQQ"
+          },
+          {
+            "message_id": "1197",
+            "episode": 32,
+            "season": 1,
+            "duration": 1809,
+            "telegram_url": "https://t.me/@shoofcima/1197",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIErWq1c3F-clOtWnwQKfN7CW9vU27wAAI4IAACO8pAUS5dFb9NB2dBHgQ",
+            "file_unique_id": "AgADOCAAAjvKQFE",
+            "file_size": 29954964,
+            "mime_type": "video/mp4",
+            "file_name": "final_32.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T06:39:48"
           },
           {
             "episode": 33,
@@ -481,6 +926,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEsGqsbEtvXlUxejgRehxVlZsVP-rbAAKYIAACO8pAUR6jo7D-_FtbPQQ"
           },
           {
+            "message_id": "1200",
+            "episode": 33,
+            "season": 1,
+            "duration": 1710,
+            "telegram_url": "https://t.me/@shoofcima/1200",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEsGq1c3FwHkGsfw41hOsgj2aInBRYAAKYIAACO8pAUXGPpESBJjbXHgQ",
+            "file_unique_id": "AgADmCAAAjvKQFE",
+            "file_size": 29283283,
+            "mime_type": "video/mp4",
+            "file_name": "final_33.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T09:16:03"
+          },
+          {
             "episode": 34,
             "message_id": 1204,
             "duration": 1771,
@@ -489,6 +949,21 @@
             "embed_url": "https://t.me/shoofcima/1204?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1204",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEtGqsbEsWSHKCstSvjl0Fhvnh78LyAALTIAACO8pAUWzSTYxHaqqdPQQ"
+          },
+          {
+            "message_id": "1204",
+            "episode": 34,
+            "season": 1,
+            "duration": 1771,
+            "telegram_url": "https://t.me/@shoofcima/1204",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEtGq1c3Gnki1lUfpqt2BMLeLvUrxRAALTIAACO8pAUQmILUXIvSUFHgQ",
+            "file_unique_id": "AgAD0yAAAjvKQFE",
+            "file_size": 30273678,
+            "mime_type": "video/mp4",
+            "file_name": "final_34.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T11:37:46"
           },
           {
             "episode": 35,
@@ -501,6 +976,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEtWqsbEoZTJM5nKdGVh0gmDLMTXw9AALbIAACO8pAUTJ7c6CIZMc8PQQ"
           },
           {
+            "message_id": "1205",
+            "episode": 35,
+            "season": 1,
+            "duration": 1771,
+            "telegram_url": "https://t.me/@shoofcima/1205",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEtWq1c3GY9C91ONyZyrJjmAaeswN5AALbIAACO8pAUSIppU9zoj1QHgQ",
+            "file_unique_id": "AgAD2yAAAjvKQFE",
+            "file_size": 28167863,
+            "mime_type": "video/mp4",
+            "file_name": "final_35.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:17:41"
+          },
+          {
             "episode": 36,
             "message_id": 1206,
             "duration": 1897,
@@ -509,6 +999,21 @@
             "embed_url": "https://t.me/shoofcima/1206?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1206",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEtmqsbEor7B57qco-Z_iSwleJ_Hd2AALeIAACO8pAUdTw4t6Ag2SrPQQ"
+          },
+          {
+            "message_id": "1206",
+            "episode": 36,
+            "season": 1,
+            "duration": 1897,
+            "telegram_url": "https://t.me/@shoofcima/1206",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEtmq1c3GzXIThlD-i4b9Cc6DdtiWFAALeIAACO8pAUbImZg9f5TZtHgQ",
+            "file_unique_id": "AgAD3iAAAjvKQFE",
+            "file_size": 27388130,
+            "mime_type": "video/mp4",
+            "file_name": "final_36.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:23:52"
           },
           {
             "episode": 37,
@@ -521,6 +1026,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEt2qsbEpzHxHpt5gZiOfLXlhPbNmQAALfIAACO8pAUUcdrjx37QajPQQ"
           },
           {
+            "message_id": "1207",
+            "episode": 37,
+            "season": 1,
+            "duration": 1850,
+            "telegram_url": "https://t.me/@shoofcima/1207",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEt2q1c3ElMLBNfhfhclGpnesNcecXAALfIAACO8pAUTUb3oHrTzR8HgQ",
+            "file_unique_id": "AgAD3yAAAjvKQFE",
+            "file_size": 29756619,
+            "mime_type": "video/mp4",
+            "file_name": "final_37.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:27:56"
+          },
+          {
             "episode": 38,
             "message_id": 1208,
             "duration": 1846,
@@ -529,6 +1049,21 @@
             "embed_url": "https://t.me/shoofcima/1208?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1208",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEuGqsbEranU58y88d5ifio6Wl4jg1AALiIAACO8pAUXuPduubVua1PQQ"
+          },
+          {
+            "message_id": "1208",
+            "episode": 38,
+            "season": 1,
+            "duration": 1846,
+            "telegram_url": "https://t.me/@shoofcima/1208",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEuGq1c3HMe5XDixBrspFiMPaksMebAALiIAACO8pAUWca5mO0KMHAHgQ",
+            "file_unique_id": "AgAD4iAAAjvKQFE",
+            "file_size": 27105381,
+            "mime_type": "video/mp4",
+            "file_name": "final_38.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:31:54"
           },
           {
             "episode": 39,
@@ -541,6 +1076,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEuWqsbEqr6iXSVoC4PtkXxIevtQ3xAALrIAACO8pAUZ1enA1AqrTwPQQ"
           },
           {
+            "message_id": "1209",
+            "episode": 39,
+            "season": 1,
+            "duration": 1849,
+            "telegram_url": "https://t.me/@shoofcima/1209",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEuWq1c3Gg5ifZEe4B5MaLH31Gv0uOAALrIAACO8pAUXp1rWPb5dAOHgQ",
+            "file_unique_id": "AgAD6yAAAjvKQFE",
+            "file_size": 29816446,
+            "mime_type": "video/mp4",
+            "file_name": "final_39.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:36:06"
+          },
+          {
             "episode": 40,
             "message_id": 1210,
             "duration": 1806,
@@ -549,6 +1099,21 @@
             "embed_url": "https://t.me/shoofcima/1210?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1210",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEumqsbErQwNnhxW7dJf_qwyRYYY-DAALvIAACO8pAUU4oSeidsYIgPQQ"
+          },
+          {
+            "message_id": "1210",
+            "episode": 40,
+            "season": 1,
+            "duration": 1806,
+            "telegram_url": "https://t.me/@shoofcima/1210",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEumq1c3FnVKKZ4Y-rFSkDH9xYoOaKAALvIAACO8pAUVdpjMOvb32aHgQ",
+            "file_unique_id": "AgAD7yAAAjvKQFE",
+            "file_size": 29331770,
+            "mime_type": "video/mp4",
+            "file_name": "final_40.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:39:59"
           },
           {
             "episode": 41,
@@ -561,6 +1126,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEu2qsbEmZL9C_7uHwQHUwqtuV61D8AALyIAACO8pAUfcZorcBzteGPQQ"
           },
           {
+            "message_id": "1211",
+            "episode": 41,
+            "season": 1,
+            "duration": 1861,
+            "telegram_url": "https://t.me/@shoofcima/1211",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEu2q1c3F_TvJcmqsrQR6OX708sLOqAALyIAACO8pAUSqp0RN9Sa3XHgQ",
+            "file_unique_id": "AgAD8iAAAjvKQFE",
+            "file_size": 28620464,
+            "mime_type": "video/mp4",
+            "file_name": "final_41.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:43:59"
+          },
+          {
             "episode": 42,
             "message_id": 1212,
             "duration": 1846,
@@ -569,6 +1149,21 @@
             "embed_url": "https://t.me/shoofcima/1212?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1212",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEvGqsbEnP8Wwo6HRzEPk6EWrSA3VyAAL1IAACO8pAUZ_wo5ZCzPKcPQQ"
+          },
+          {
+            "message_id": "1212",
+            "episode": 42,
+            "season": 1,
+            "duration": 1846,
+            "telegram_url": "https://t.me/@shoofcima/1212",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEvGq1c3H79MLUcNt1V7vUXKwsqqkXAAL1IAACO8pAUd8P7VglLlDLHgQ",
+            "file_unique_id": "AgAD9SAAAjvKQFE",
+            "file_size": 28464184,
+            "mime_type": "video/mp4",
+            "file_name": "final_42.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:48:05"
           },
           {
             "episode": 43,
@@ -581,6 +1176,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEvWqsbEmAKpPF3ZxGje0uF9JxgZMsAAL4IAACO8pAUatANGbAe94SPQQ"
           },
           {
+            "message_id": "1213",
+            "episode": 43,
+            "season": 1,
+            "duration": 1907,
+            "telegram_url": "https://t.me/@shoofcima/1213",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEvWq1c3EhqfI7I310n3f6EVIk4RIaAAL4IAACO8pAUQTjGT_u2erjHgQ",
+            "file_unique_id": "AgAD-CAAAjvKQFE",
+            "file_size": 29426562,
+            "mime_type": "video/mp4",
+            "file_name": "final_43.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:52:08"
+          },
+          {
             "episode": 44,
             "message_id": 1214,
             "duration": 1918,
@@ -589,6 +1199,21 @@
             "embed_url": "https://t.me/shoofcima/1214?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1214",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEvmqsbEmYbKUNQtreONLufI8ls_MaAAMhAAI7ykBRxd5uKs0oAX89BA"
+          },
+          {
+            "message_id": "1214",
+            "episode": 44,
+            "season": 1,
+            "duration": 1918,
+            "telegram_url": "https://t.me/@shoofcima/1214",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEvmq1c3H7Ne-OcdWq6W3_mryet4oQAAMhAAI7ykBRS-C2PMShIy0eBA",
+            "file_unique_id": "AgAEIQACO8pAUQ",
+            "file_size": 27672773,
+            "mime_type": "video/mp4",
+            "file_name": "final_44.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T12:56:08"
           },
           {
             "episode": 45,
@@ -601,6 +1226,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEv2qsbEnpNt0jbhI8ld41xwYrs7RVAAICIQACO8pAUTRHdvn9AqSQPQQ"
           },
           {
+            "message_id": "1215",
+            "episode": 45,
+            "season": 1,
+            "duration": 1953,
+            "telegram_url": "https://t.me/@shoofcima/1215",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEv2q1c3Gr8OUdCMgZPEI7srE3eGtwAAICIQACO8pAUf1mCpYQMciEHgQ",
+            "file_unique_id": "AgADAiEAAjvKQFE",
+            "file_size": 29847391,
+            "mime_type": "video/mp4",
+            "file_name": "final_45.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:00:13"
+          },
+          {
             "episode": 46,
             "message_id": 1216,
             "duration": 1827,
@@ -609,6 +1249,21 @@
             "embed_url": "https://t.me/shoofcima/1216?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1216",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEwGqsbEnsOl9P6Wjxx2N5ZoEm9WM4AAIEIQACO8pAUb_pyP9c63vXPQQ"
+          },
+          {
+            "message_id": "1216",
+            "episode": 46,
+            "season": 1,
+            "duration": 1827,
+            "telegram_url": "https://t.me/@shoofcima/1216",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEwGq1c3Ff4EfrSTTj1jMEG8WfppZcAAIEIQACO8pAUVeBr0Hxcso5HgQ",
+            "file_unique_id": "AgADBCEAAjvKQFE",
+            "file_size": 29199743,
+            "mime_type": "video/mp4",
+            "file_name": "final_46.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:04:13"
           },
           {
             "episode": 47,
@@ -621,6 +1276,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEwWqsbEiwULH2IQ99etT98IR9Xw-5AAIHIQACO8pAUUiVTeSxU_7pPQQ"
           },
           {
+            "message_id": "1217",
+            "episode": 47,
+            "season": 1,
+            "duration": 1775,
+            "telegram_url": "https://t.me/@shoofcima/1217",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEwWq1c3GPNix-azlmnW1IxWcydLU1AAIHIQACO8pAUS-ZPdqjONdvHgQ",
+            "file_unique_id": "AgADByEAAjvKQFE",
+            "file_size": 28079717,
+            "mime_type": "video/mp4",
+            "file_name": "final_47.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:10:32"
+          },
+          {
             "episode": 48,
             "message_id": 1218,
             "duration": 1810,
@@ -629,6 +1299,21 @@
             "embed_url": "https://t.me/shoofcima/1218?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1218",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEwmqsbEhmkh9e5ygfCBH59zMOy_hMAAIPIQACO8pAUXMEFbgOKZuDPQQ"
+          },
+          {
+            "message_id": "1218",
+            "episode": 48,
+            "season": 1,
+            "duration": 1810,
+            "telegram_url": "https://t.me/@shoofcima/1218",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEwmq1c3ERR8pMLgABAoycofC6C5-3dAACDyEAAjvKQFHy857WiBCFxx4E",
+            "file_unique_id": "AgADDyEAAjvKQFE",
+            "file_size": 26559806,
+            "mime_type": "video/mp4",
+            "file_name": "final_48.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:22:09"
           },
           {
             "episode": 49,
@@ -641,6 +1326,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEw2qsbEjtjM6gpjfM2ZzTitcfqdzdAAIQIQACO8pAUXzdBgy5RBQOPQQ"
           },
           {
+            "message_id": "1219",
+            "episode": 49,
+            "season": 1,
+            "duration": 1881,
+            "telegram_url": "https://t.me/@shoofcima/1219",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEw2q1c3FvLv5A44m3excLOJYgQZxRAAIQIQACO8pAUebLptyOlPa4HgQ",
+            "file_unique_id": "AgADECEAAjvKQFE",
+            "file_size": 28598169,
+            "mime_type": "video/mp4",
+            "file_name": "final_49.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:26:11"
+          },
+          {
             "episode": 50,
             "message_id": 1220,
             "duration": 1842,
@@ -649,6 +1349,21 @@
             "embed_url": "https://t.me/shoofcima/1220?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1220",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIExGqsbEjmoteel-bVLnapZkuAx-7RAAIRIQACO8pAUZoKhaD1S5yxPQQ"
+          },
+          {
+            "message_id": "1220",
+            "episode": 50,
+            "season": 1,
+            "duration": 1842,
+            "telegram_url": "https://t.me/@shoofcima/1220",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIExGq1c3GwfCEu67bzW25RorNVXoNeAAIRIQACO8pAUUbiTQSKihG9HgQ",
+            "file_unique_id": "AgADESEAAjvKQFE",
+            "file_size": 26736466,
+            "mime_type": "video/mp4",
+            "file_name": "final_50.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:30:09"
           },
           {
             "episode": 56,
@@ -661,6 +1376,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIExWqsbEjaEgk2CsEbz5VgxDcnTRVRAAIaIQACO8pAUf-YLyUiOxaYPQQ"
           },
           {
+            "message_id": "1221",
+            "episode": 56,
+            "season": 1,
+            "duration": 1773,
+            "telegram_url": "https://t.me/@shoofcima/1221",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIExWq1c3EUk7Y49TkMUByZWxi4MNl8AAIaIQACO8pAUajAhXzg2vgqHgQ",
+            "file_unique_id": "AgADGiEAAjvKQFE",
+            "file_size": 28115729,
+            "mime_type": "video/mp4",
+            "file_name": "final_56.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T13:56:13"
+          },
+          {
             "episode": 57,
             "message_id": 1222,
             "duration": 1796,
@@ -669,6 +1399,21 @@
             "embed_url": "https://t.me/shoofcima/1222?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1222",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIExmqsbEi76koPVj0rklNylHXpjE4ZAAIbIQACO8pAUUcwPy7h3vqQPQQ"
+          },
+          {
+            "message_id": "1222",
+            "episode": 57,
+            "season": 1,
+            "duration": 1796,
+            "telegram_url": "https://t.me/@shoofcima/1222",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIExmq1c3HZt-1Zq47hvvft3h4Z7TRvAAIbIQACO8pAUb-MUwXzTuwLHgQ",
+            "file_unique_id": "AgADGyEAAjvKQFE",
+            "file_size": 27466462,
+            "mime_type": "video/mp4",
+            "file_name": "final_57.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T14:00:14"
           },
           {
             "episode": 58,
@@ -681,6 +1426,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEx2qsbEfzbJ1iLXBzEtmb31gXHSynAAIcIQACO8pAUa933ZirTSDxPQQ"
           },
           {
+            "message_id": "1223",
+            "episode": 58,
+            "season": 1,
+            "duration": 1808,
+            "telegram_url": "https://t.me/@shoofcima/1223",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEx2q1c3HJfZtlQUGpO8mMKrwU6C0rAAIcIQACO8pAUb7wJoSPeKQwHgQ",
+            "file_unique_id": "AgADHCEAAjvKQFE",
+            "file_size": 26336096,
+            "mime_type": "video/mp4",
+            "file_name": "final_58.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T14:04:57"
+          },
+          {
             "episode": 59,
             "message_id": 1224,
             "duration": 1855,
@@ -689,6 +1449,21 @@
             "embed_url": "https://t.me/shoofcima/1224?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1224",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEyGqsbEdaYvywOmSShRvBJb8pZo7KAAIeIQACO8pAUX9ZHG1OmZgpPQQ"
+          },
+          {
+            "message_id": "1224",
+            "episode": 59,
+            "season": 1,
+            "duration": 1855,
+            "telegram_url": "https://t.me/@shoofcima/1224",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEyGq1c3G7sCxPg_p37XL-VA2IvjFRAAIeIQACO8pAUe7zxTHj8VB0HgQ",
+            "file_unique_id": "AgADHiEAAjvKQFE",
+            "file_size": 29055565,
+            "mime_type": "video/mp4",
+            "file_name": "final_59.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T14:09:07"
           },
           {
             "episode": 60,
@@ -701,6 +1476,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEyWqsbEeu713X9yW4jjoWTuhb4tcmAAIfIQACO8pAUWya2tof7DfrPQQ"
           },
           {
+            "message_id": "1225",
+            "episode": 60,
+            "season": 1,
+            "duration": 1851,
+            "telegram_url": "https://t.me/@shoofcima/1225",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEyWq1c3FGXB77XgG4CefUmiLTMKHHAAIfIQACO8pAUWthN9XTFTQpHgQ",
+            "file_unique_id": "AgADHyEAAjvKQFE",
+            "file_size": 26933995,
+            "mime_type": "video/mp4",
+            "file_name": "final_60.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T14:13:14"
+          },
+          {
             "episode": 61,
             "message_id": 1226,
             "duration": 1945,
@@ -709,6 +1499,21 @@
             "embed_url": "https://t.me/shoofcima/1226?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1226",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEymqsbEfKjyC_BOq3uenJzzKBh1nfAAJzIQACO8pAUR8MPxhhXT_KPQQ"
+          },
+          {
+            "message_id": "1226",
+            "episode": 61,
+            "season": 1,
+            "duration": 1945,
+            "telegram_url": "https://t.me/@shoofcima/1226",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEymq1c3GoB40dp6Okl5Kzbm83De0EAAJzIQACO8pAUTwpmfRGBHmHHgQ",
+            "file_unique_id": "AgADcyEAAjvKQFE",
+            "file_size": 29383371,
+            "mime_type": "video/mp4",
+            "file_name": "final_61.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T16:24:47"
           },
           {
             "episode": 62,
@@ -721,6 +1526,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEy2qsbEcEoyAjTs6MQJsnwsKcVAFYAAJ7IQACO8pAUZDJMYwS9Sr5PQQ"
           },
           {
+            "message_id": "1227",
+            "episode": 62,
+            "season": 1,
+            "duration": 1954,
+            "telegram_url": "https://t.me/@shoofcima/1227",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEy2q1c3HNwBlaAWd8Np1fYYgBxWCtAAJ7IQACO8pAUYzfQ3LJYuH0HgQ",
+            "file_unique_id": "AgADeyEAAjvKQFE",
+            "file_size": 27531721,
+            "mime_type": "video/mp4",
+            "file_name": "final_62.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T16:30:09"
+          },
+          {
             "episode": 63,
             "message_id": 1228,
             "duration": 1950,
@@ -729,6 +1549,21 @@
             "embed_url": "https://t.me/shoofcima/1228?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1228",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEzGqsbEZb9uMrkTR77Unh_2B0TsZAAAKKIQACO8pAUaJD80udHOWWPQQ"
+          },
+          {
+            "message_id": "1228",
+            "episode": 63,
+            "season": 1,
+            "duration": 1950,
+            "telegram_url": "https://t.me/@shoofcima/1228",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEzGq1cwxUNZwkOpguotH-_fhlhZDtAAKKIQACO8pAUZ3fKLH71rKTHgQ",
+            "file_unique_id": "AgADiiEAAjvKQFE",
+            "file_size": 28655253,
+            "mime_type": "video/mp4",
+            "file_name": "final_63.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T16:39:57"
           },
           {
             "episode": 64,
@@ -741,6 +1576,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEzWqsbEb9nWLKq-S5seFNHc-2ZaS2AAKRIQACO8pAUQABdvOZQlqkRz0E"
           },
           {
+            "message_id": "1229",
+            "episode": 64,
+            "season": 1,
+            "duration": 1918,
+            "telegram_url": "https://t.me/@shoofcima/1229",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEzWq1cwyvVQZtkvghaS5PzMdeDAx1AAKRIQACO8pAUT9BahCF-KSdHgQ",
+            "file_unique_id": "AgADkSEAAjvKQFE",
+            "file_size": 30497031,
+            "mime_type": "video/mp4",
+            "file_name": "final_64.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T16:45:13"
+          },
+          {
             "episode": 65,
             "message_id": 1230,
             "duration": 2009,
@@ -749,6 +1599,21 @@
             "embed_url": "https://t.me/shoofcima/1230?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1230",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEzmqsbEYQq---A0msz4h4OeIusVxRAAKVIQACO8pAUbh1hkj6SHbnPQQ"
+          },
+          {
+            "message_id": "1230",
+            "episode": 65,
+            "season": 1,
+            "duration": 2009,
+            "telegram_url": "https://t.me/@shoofcima/1230",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEzmq1cwyZOlUAAeBh5TFEWcWJ-Cl1-AAClSEAAjvKQFFdaPR7VQ1uAAEeBA",
+            "file_unique_id": "AgADlSEAAjvKQFE",
+            "file_size": 30802881,
+            "mime_type": "video/mp4",
+            "file_name": "final_65.mp4",
+            "thumb_url": "",
+            "date": "2026-09-14T16:50:50"
           }
         ]
       }
@@ -7621,6 +8486,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEz2qsbEYuXUxLBB4EpVG9W-vlEsIxAAKcIgAClWRRUYenb_fjHZ3sPQQ"
           },
           {
+            "message_id": "1231",
+            "episode": 1,
+            "season": 1,
+            "duration": 2553,
+            "telegram_url": "https://t.me/@shoofcima/1231",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEz2q1cwwj0-wSprBSenYTiv9Li-sKAAKcIgAClWRRUd6utIRVcAtaHgQ",
+            "file_unique_id": "AgADnCIAApVkUVE",
+            "file_size": 39004374,
+            "mime_type": "video/mp4",
+            "file_name": "final_01.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T17:30:05"
+          },
+          {
             "episode": 2,
             "message_id": 1233,
             "duration": 2772,
@@ -7629,6 +8509,21 @@
             "embed_url": "https://t.me/shoofcima/1233?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1233",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE0WqsbEYvWlQPsK-biIloI7P5TENmAAKzIgAClWRRUV6DTeItAhl6PQQ"
+          },
+          {
+            "message_id": "1233",
+            "episode": 2,
+            "season": 1,
+            "duration": 2772,
+            "telegram_url": "https://t.me/@shoofcima/1233",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE0Wq1cwxQUw9RUpKDzsNXYB7zhDnQAAKzIgAClWRRUeG6t6CG7rR4HgQ",
+            "file_unique_id": "AgADsyIAApVkUVE",
+            "file_size": 41663210,
+            "mime_type": "video/mp4",
+            "file_name": "final_02.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T17:58:33"
           },
           {
             "episode": 3,
@@ -7641,6 +8536,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE0mqsbEV2BtSdL8JxG_6QdGA6HSEfAAK0IgAClWRRUQaZkrJFmD7CPQQ"
           },
           {
+            "message_id": "1234",
+            "episode": 3,
+            "season": 1,
+            "duration": 2766,
+            "telegram_url": "https://t.me/@shoofcima/1234",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE0mq1cwxbVWGwA3z433ticTR0vgo9AAK0IgAClWRRUZ_NW7mnXTTUHgQ",
+            "file_unique_id": "AgADtCIAApVkUVE",
+            "file_size": 40372058,
+            "mime_type": "video/mp4",
+            "file_name": "final_03.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:06:50"
+          },
+          {
             "episode": 4,
             "message_id": 1235,
             "duration": 2806,
@@ -7649,6 +8559,21 @@
             "embed_url": "https://t.me/shoofcima/1235?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1235",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE02qsbEUHw-iemEP0LE8Fgn2tFuX1AAK4IgAClWRRUZWlWcEEodyvPQQ"
+          },
+          {
+            "message_id": "1235",
+            "episode": 4,
+            "season": 1,
+            "duration": 2806,
+            "telegram_url": "https://t.me/@shoofcima/1235",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE02q1cwwIFD8ug0vwBlmOrhAUz_X6AAK4IgAClWRRUcyiMcbNrqs3HgQ",
+            "file_unique_id": "AgADuCIAApVkUVE",
+            "file_size": 38994554,
+            "mime_type": "video/mp4",
+            "file_name": "final_04.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:16:08"
           },
           {
             "episode": 5,
@@ -7661,6 +8586,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE1GqsbEWf7WriUWlY8yZ_mhQ09y-kAAK_IgAClWRRUQutWD02nUrOPQQ"
           },
           {
+            "message_id": "1236",
+            "episode": 5,
+            "season": 1,
+            "duration": 2690,
+            "telegram_url": "https://t.me/@shoofcima/1236",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE1Gq1cwzfOqeGUIJN15lvbRXt04Z2AAK_IgAClWRRUana-xrx9rttHgQ",
+            "file_unique_id": "AgADvyIAApVkUVE",
+            "file_size": 40017530,
+            "mime_type": "video/mp4",
+            "file_name": "final_05.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:25:37"
+          },
+          {
             "episode": 6,
             "message_id": 1237,
             "duration": 2765,
@@ -7669,6 +8609,21 @@
             "embed_url": "https://t.me/shoofcima/1237?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1237",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE1WqsbEV2lEPol3rfNhRs_NCif0CtAALEIgAClWRRUZKDrDUQz5LTPQQ"
+          },
+          {
+            "message_id": "1237",
+            "episode": 6,
+            "season": 1,
+            "duration": 2765,
+            "telegram_url": "https://t.me/@shoofcima/1237",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE1Wq1cwwBQQ3ZtnlV3osKhHBd6sdZAALEIgAClWRRUbis2og9ilBCHgQ",
+            "file_unique_id": "AgADxCIAApVkUVE",
+            "file_size": 38083970,
+            "mime_type": "video/mp4",
+            "file_name": "final_06.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:34:40"
           },
           {
             "episode": 7,
@@ -7681,6 +8636,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE1mqsbEXPn0Skf1S92B_fpCq_40cdAALGIgAClWRRUYwiYVeOZGz6PQQ"
           },
           {
+            "message_id": "1238",
+            "episode": 7,
+            "season": 1,
+            "duration": 2760,
+            "telegram_url": "https://t.me/@shoofcima/1238",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE1mq1cwzmwsTkqyTnDn_sX_MU3vIRAALGIgAClWRRUc6wiiAj_53fHgQ",
+            "file_unique_id": "AgADxiIAApVkUVE",
+            "file_size": 39812827,
+            "mime_type": "video/mp4",
+            "file_name": "final_07.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:43:14"
+          },
+          {
             "episode": 8,
             "message_id": 1239,
             "duration": 2777,
@@ -7689,6 +8659,21 @@
             "embed_url": "https://t.me/shoofcima/1239?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1239",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE12qsbEViQmiRhVPlNMULylteNMTUAALMIgAClWRRUVaFKRAqSMENPQQ"
+          },
+          {
+            "message_id": "1239",
+            "episode": 8,
+            "season": 1,
+            "duration": 2777,
+            "telegram_url": "https://t.me/@shoofcima/1239",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE12q1cwz8Weau7S6rdALiQt9UkNKqAALMIgAClWRRUcs5J0dIgPFFHgQ",
+            "file_unique_id": "AgADzCIAApVkUVE",
+            "file_size": 40333740,
+            "mime_type": "video/mp4",
+            "file_name": "final_08.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T18:52:48"
           },
           {
             "episode": 9,
@@ -7701,6 +8686,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE2GqsbEXypYfZ3XDNTEYUmFVDZ1yjAALYIgAClWRRUfyMCUPo5vJMPQQ"
           },
           {
+            "message_id": "1240",
+            "episode": 9,
+            "season": 1,
+            "duration": 2645,
+            "telegram_url": "https://t.me/@shoofcima/1240",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE2Gq1cwyJHag0i33cEzmvlycmxQuTAALYIgAClWRRUfrDJqbUR-YXHgQ",
+            "file_unique_id": "AgAD2CIAApVkUVE",
+            "file_size": 38290497,
+            "mime_type": "video/mp4",
+            "file_name": "final_09.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:03:06"
+          },
+          {
             "episode": 10,
             "message_id": 1241,
             "duration": 2840,
@@ -7709,6 +8709,21 @@
             "embed_url": "https://t.me/shoofcima/1241?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1241",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE2WqsbER09H40sWcwxVzViMx1rp1KAALuIgAClWRRUdMmaXxCcbFYPQQ"
+          },
+          {
+            "message_id": "1241",
+            "episode": 10,
+            "season": 1,
+            "duration": 2840,
+            "telegram_url": "https://t.me/@shoofcima/1241",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE2Wq1cwwvCP-nBZFHAAF4nvWzShjciQAC7iIAApVkUVGgGrjox2YbIR4E",
+            "file_unique_id": "AgAD7iIAApVkUVE",
+            "file_size": 39110499,
+            "mime_type": "video/mp4",
+            "file_name": "final_10.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:13:22"
           },
           {
             "episode": 11,
@@ -7721,6 +8736,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE2mqsbERqwlwXrBbudAABh2dRennkbQAC-yIAApVkUVHbPVLzkR6sAT0E"
           },
           {
+            "message_id": "1242",
+            "episode": 11,
+            "season": 1,
+            "duration": 2648,
+            "telegram_url": "https://t.me/@shoofcima/1242",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE2mq1cwx95pxnmy2N5Q9pxjrDGCDQAAL7IgAClWRRUc146mo0MmAZHgQ",
+            "file_unique_id": "AgAD-yIAApVkUVE",
+            "file_size": 37465519,
+            "mime_type": "video/mp4",
+            "file_name": "final_11.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:23:20"
+          },
+          {
             "episode": 12,
             "message_id": 1243,
             "duration": 2834,
@@ -7729,6 +8759,21 @@
             "embed_url": "https://t.me/shoofcima/1243?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1243",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE22qsbERAB1Agxh5YxyrAUomdviAzAAILIwAClWRRUXUpibNLceOwPQQ"
+          },
+          {
+            "message_id": "1243",
+            "episode": 12,
+            "season": 1,
+            "duration": 2834,
+            "telegram_url": "https://t.me/@shoofcima/1243",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE22q1cwyQFW1oxbFnKT_iNYttroaoAAILIwAClWRRURGEUmDKC25KHgQ",
+            "file_unique_id": "AgADCyMAApVkUVE",
+            "file_size": 37767123,
+            "mime_type": "video/mp4",
+            "file_name": "final_12.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:33:47"
           },
           {
             "episode": 13,
@@ -7741,6 +8786,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE3GqsbEQvWcA9WGou8O__7VXJXFGTAAITIwAClWRRUdW_XCwnsh15PQQ"
           },
           {
+            "message_id": "1244",
+            "episode": 13,
+            "season": 1,
+            "duration": 2570,
+            "telegram_url": "https://t.me/@shoofcima/1244",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE3Gq1cwxMaPH6tcCgJTMV9BSt3XkLAAITIwAClWRRUegBzDavjFHLHgQ",
+            "file_unique_id": "AgADEyMAApVkUVE",
+            "file_size": 37675115,
+            "mime_type": "video/mp4",
+            "file_name": "final_13.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:44:58"
+          },
+          {
             "episode": 14,
             "message_id": 1245,
             "duration": 2699,
@@ -7749,6 +8809,21 @@
             "embed_url": "https://t.me/shoofcima/1245?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1245",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE3WqsbES2roOd0xbg65DqEcpMvRYbAAIcIwAClWRRUanHkjChuj9APQQ"
+          },
+          {
+            "message_id": "1245",
+            "episode": 14,
+            "season": 1,
+            "duration": 2699,
+            "telegram_url": "https://t.me/@shoofcima/1245",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE3Wq1cww5BfuEI-Z2HDOH9y47cS-wAAIcIwAClWRRUR1ovTSovqtkHgQ",
+            "file_unique_id": "AgADHCMAApVkUVE",
+            "file_size": 37248142,
+            "mime_type": "video/mp4",
+            "file_name": "final_14.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T19:55:21"
           },
           {
             "episode": 15,
@@ -7761,6 +8836,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE3mqsbEMUCEHD_myma_PcNoe3xHpgAAIgIwAClWRRUZIZ9o4htxyDPQQ"
           },
           {
+            "message_id": "1246",
+            "episode": 15,
+            "season": 1,
+            "duration": 2786,
+            "telegram_url": "https://t.me/@shoofcima/1246",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE3mq1cwxt7BhZtKgjjmtP4jqwqKLWAAIgIwAClWRRUeQFbc8p9TbRHgQ",
+            "file_unique_id": "AgADICMAApVkUVE",
+            "file_size": 36521713,
+            "mime_type": "video/mp4",
+            "file_name": "final_15.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T20:04:57"
+          },
+          {
             "episode": 16,
             "message_id": 1247,
             "duration": 2678,
@@ -7769,6 +8859,21 @@
             "embed_url": "https://t.me/shoofcima/1247?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1247",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE32qsbENtxmdW27GW02YfI3MTp93HAAIvIwAClWRRUWXV1qHVlN8IPQQ"
+          },
+          {
+            "message_id": "1247",
+            "episode": 16,
+            "season": 1,
+            "duration": 2678,
+            "telegram_url": "https://t.me/@shoofcima/1247",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE32q1cwyQVnHkiIZ1lCNIy0HjtNdKAAIvIwAClWRRUY78EHCk2JjsHgQ",
+            "file_unique_id": "AgADLyMAApVkUVE",
+            "file_size": 38651551,
+            "mime_type": "video/mp4",
+            "file_name": "final_16.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T20:15:47"
           },
           {
             "episode": 17,
@@ -7781,6 +8886,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE4GqsbEMiGh3Dg3J0JmcvUQklcZnSAAIyIwAClWRRUTkcksH9cdMCPQQ"
           },
           {
+            "message_id": "1248",
+            "episode": 17,
+            "season": 1,
+            "duration": 2604,
+            "telegram_url": "https://t.me/@shoofcima/1248",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE4Gq1cwyJokg3lXr093D_pt0LDH-5AAIyIwAClWRRUdAZg0W-f-AaHgQ",
+            "file_unique_id": "AgADMiMAApVkUVE",
+            "file_size": 36138898,
+            "mime_type": "video/mp4",
+            "file_name": "final_17.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T20:25:03"
+          },
+          {
             "episode": 18,
             "message_id": 1250,
             "duration": 2613,
@@ -7789,6 +8909,21 @@
             "embed_url": "https://t.me/shoofcima/1250?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1250",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE4mqsbEPHEM-S-gVqlyrdXWVAkMMvAAJSIwAClWRRUVzSNZmA4YQvPQQ"
+          },
+          {
+            "message_id": "1250",
+            "episode": 18,
+            "season": 1,
+            "duration": 2613,
+            "telegram_url": "https://t.me/@shoofcima/1250",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE4mq1cwynD96CDvknK2HtwB1qiJI3AAJSIwAClWRRUV4UIpTlcLs0HgQ",
+            "file_unique_id": "AgADUiMAApVkUVE",
+            "file_size": 35404862,
+            "mime_type": "video/mp4",
+            "file_name": "final_18.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T22:25:51"
           },
           {
             "episode": 19,
@@ -7801,6 +8936,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE42qsbEN7ZfK25pPFqw1e7g6btSXjAAJUIwAClWRRUZ3i9oTvTUPuPQQ"
           },
           {
+            "message_id": "1251",
+            "episode": 19,
+            "season": 1,
+            "duration": 2671,
+            "telegram_url": "https://t.me/@shoofcima/1251",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE42q1cwzrhylKzB9Olcsg-8w9xPNsAAJUIwAClWRRUVqrkHseAtLDHgQ",
+            "file_unique_id": "AgADVCMAApVkUVE",
+            "file_size": 38441253,
+            "mime_type": "video/mp4",
+            "file_name": "final_19.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T22:32:53"
+          },
+          {
             "episode": 20,
             "message_id": 1252,
             "duration": 2877,
@@ -7809,6 +8959,21 @@
             "embed_url": "https://t.me/shoofcima/1252?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1252",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE5GqsbENy09zFlpB2vFwIFUlcqAVSAAJVIwAClWRRUaqVH5KqJmllPQQ"
+          },
+          {
+            "message_id": "1252",
+            "episode": 20,
+            "season": 1,
+            "duration": 2877,
+            "telegram_url": "https://t.me/@shoofcima/1252",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE5Gq1cwxpwh2HmTdtEMPpBuxRnx8EAAJVIwAClWRRUT85oY3p_9LiHgQ",
+            "file_unique_id": "AgADVSMAApVkUVE",
+            "file_size": 39247817,
+            "mime_type": "video/mp4",
+            "file_name": "final_20.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T22:41:32"
           },
           {
             "episode": 21,
@@ -7821,6 +8986,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE5WqsbEIx8Nty5D2G5pFnc4PLHmOCAAJWIwAClWRRUTFA_xoTBMWbPQQ"
           },
           {
+            "message_id": "1253",
+            "episode": 21,
+            "season": 1,
+            "duration": 2584,
+            "telegram_url": "https://t.me/@shoofcima/1253",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE5Wq1cwwmlA48MJpc0l7p7ZbVotlsAAJWIwAClWRRUZX4qPMVwiGbHgQ",
+            "file_unique_id": "AgADViMAApVkUVE",
+            "file_size": 35358333,
+            "mime_type": "video/mp4",
+            "file_name": "final_21.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T22:51:01"
+          },
+          {
             "episode": 22,
             "message_id": 1254,
             "duration": 2810,
@@ -7829,6 +9009,21 @@
             "embed_url": "https://t.me/shoofcima/1254?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1254",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE5mqsbEJA4RVPDHM7qGyo5iuIWIKWAAJXIwAClWRRUcktbyoF1rolPQQ"
+          },
+          {
+            "message_id": "1254",
+            "episode": 22,
+            "season": 1,
+            "duration": 2810,
+            "telegram_url": "https://t.me/@shoofcima/1254",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE5mq1cww17v9JwzbSfpAQ5J0skJ78AAJXIwAClWRRUTM7qZ7VnB3wHgQ",
+            "file_unique_id": "AgADVyMAApVkUVE",
+            "file_size": 38235612,
+            "mime_type": "video/mp4",
+            "file_name": "final_22.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T22:58:22"
           },
           {
             "episode": 23,
@@ -7841,6 +9036,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE52qsbEJsiwi_eVsoLKvv7l54QNDKAAJYIwAClWRRUWr2DIPJN_HXPQQ"
           },
           {
+            "message_id": "1255",
+            "episode": 23,
+            "season": 1,
+            "duration": 2768,
+            "telegram_url": "https://t.me/@shoofcima/1255",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE52q1cwxOK4DCf2erAiVuDcLXEoKyAAJYIwAClWRRUUKXA0Igpp0hHgQ",
+            "file_unique_id": "AgADWCMAApVkUVE",
+            "file_size": 36787989,
+            "mime_type": "video/mp4",
+            "file_name": "final_23.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:05:35"
+          },
+          {
             "episode": 24,
             "message_id": 1256,
             "duration": 2725,
@@ -7849,6 +9059,21 @@
             "embed_url": "https://t.me/shoofcima/1256?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1256",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE6GqsbELRddl7KfA2YsKkzL5liUf6AAJZIwAClWRRUcEkRcDmnNgPPQQ"
+          },
+          {
+            "message_id": "1256",
+            "episode": 24,
+            "season": 1,
+            "duration": 2725,
+            "telegram_url": "https://t.me/@shoofcima/1256",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE6Gq1cwySTngrUMKRd4UN-46-snK5AAJZIwAClWRRUV2Xo0eyEu_6HgQ",
+            "file_unique_id": "AgADWSMAApVkUVE",
+            "file_size": 37595383,
+            "mime_type": "video/mp4",
+            "file_name": "final_24.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:12:46"
           },
           {
             "episode": 25,
@@ -7861,6 +9086,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE6WqsbELMXWZrNDZn8j-OrUunduiHAAJaIwAClWRRUdXHU4qFjrURPQQ"
           },
           {
+            "message_id": "1257",
+            "episode": 25,
+            "season": 1,
+            "duration": 2622,
+            "telegram_url": "https://t.me/@shoofcima/1257",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE6Wq1cwwAAaPfWjsEOfCS-T4Yr7CsZgACWiMAApVkUVH-uPkEfz6qcR4E",
+            "file_unique_id": "AgADWiMAApVkUVE",
+            "file_size": 36262979,
+            "mime_type": "video/mp4",
+            "file_name": "final_25.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:19:43"
+          },
+          {
             "episode": 26,
             "message_id": 1258,
             "duration": 2620,
@@ -7869,6 +9109,21 @@
             "embed_url": "https://t.me/shoofcima/1258?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1258",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE6mqsbEGCwvTaA9c8Sv5TSoM6j56RAAJeIwAClWRRUS6WPGpWAAFeyj0E"
+          },
+          {
+            "message_id": "1258",
+            "episode": 26,
+            "season": 1,
+            "duration": 2620,
+            "telegram_url": "https://t.me/@shoofcima/1258",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE6mq1cwx_IirbeBJoqjLwjI-lD9l1AAJeIwAClWRRUY7B5Fv2i_zVHgQ",
+            "file_unique_id": "AgADXiMAApVkUVE",
+            "file_size": 37715747,
+            "mime_type": "video/mp4",
+            "file_name": "final_26.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:26:42"
           },
           {
             "episode": 27,
@@ -7881,6 +9136,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE62qsbEFejyZ2V5p7RC6wIeqwWagdAAJgIwAClWRRUShyPe-yDLdIPQQ"
           },
           {
+            "message_id": "1259",
+            "episode": 27,
+            "season": 1,
+            "duration": 2584,
+            "telegram_url": "https://t.me/@shoofcima/1259",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE62q1cwwdfrbV1Ojy62dP-pSnGL7JAAJgIwAClWRRUfuSYodsgUMeHgQ",
+            "file_unique_id": "AgADYCMAApVkUVE",
+            "file_size": 35993745,
+            "mime_type": "video/mp4",
+            "file_name": "final_27.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:33:37"
+          },
+          {
             "episode": 28,
             "message_id": 1260,
             "duration": 2751,
@@ -7889,6 +9159,21 @@
             "embed_url": "https://t.me/shoofcima/1260?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1260",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE7GqsbEEdrR9vVErMZvwdiBlalwNnAAJhIwAClWRRUcAGuKQ3UTkZPQQ"
+          },
+          {
+            "message_id": "1260",
+            "episode": 28,
+            "season": 1,
+            "duration": 2751,
+            "telegram_url": "https://t.me/@shoofcima/1260",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE7Gq1cwwtzOd0wP9op0UDBg824_T4AAJhIwAClWRRUWYKG-0MtIpIHgQ",
+            "file_unique_id": "AgADYSMAApVkUVE",
+            "file_size": 37557577,
+            "mime_type": "video/mp4",
+            "file_name": "final_28.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:40:57"
           },
           {
             "episode": 29,
@@ -7901,6 +9186,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE7WqsbEHjIl50ol0a5MSfKFMdcibHAAJiIwAClWRRUettx5JqGM_TPQQ"
           },
           {
+            "message_id": "1261",
+            "episode": 29,
+            "season": 1,
+            "duration": 2787,
+            "telegram_url": "https://t.me/@shoofcima/1261",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE7Wq1cwy12_I-ZhzJeug7qvhWTcbUAAJiIwAClWRRUbQgbE2coJ33HgQ",
+            "file_unique_id": "AgADYiMAApVkUVE",
+            "file_size": 39365627,
+            "mime_type": "video/mp4",
+            "file_name": "final_29.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:44:21"
+          },
+          {
             "episode": 30,
             "message_id": 1262,
             "duration": 2876,
@@ -7909,6 +9209,21 @@
             "embed_url": "https://t.me/shoofcima/1262?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1262",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE7mqsbEG_Z7YMYSs0obwgXQfsAoM_AAJjIwAClWRRUfhzLJ7GtdWVPQQ"
+          },
+          {
+            "message_id": "1262",
+            "episode": 30,
+            "season": 1,
+            "duration": 2876,
+            "telegram_url": "https://t.me/@shoofcima/1262",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE7mq1cwzR8LCh4hjpvBEjLwqCvXSxAAJjIwAClWRRUWK-PAtBdkTdHgQ",
+            "file_unique_id": "AgADYyMAApVkUVE",
+            "file_size": 40408710,
+            "mime_type": "video/mp4",
+            "file_name": "final_30.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:47:49"
           },
           {
             "episode": 31,
@@ -7921,6 +9236,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE72qsbEH_8pv5p2q6AtQ7BXaMvrqBAAJkIwAClWRRUdLLNLCotCoHPQQ"
           },
           {
+            "message_id": "1263",
+            "episode": 31,
+            "season": 1,
+            "duration": 2750,
+            "telegram_url": "https://t.me/@shoofcima/1263",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE72q1cwwf0PAAATxQ8qjIAXpGhoRAgwACZCMAApVkUVE8kGoAAXk4IwceBA",
+            "file_unique_id": "AgADZCMAApVkUVE",
+            "file_size": 37773115,
+            "mime_type": "video/mp4",
+            "file_name": "final_31.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:51:12"
+          },
+          {
             "episode": 32,
             "message_id": 1264,
             "duration": 2688,
@@ -7929,6 +9259,21 @@
             "embed_url": "https://t.me/shoofcima/1264?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1264",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE8GqsbEBGWkHRLJpHj0fQEQXhiaTiAAJlIwAClWRRUQrz_l-2xT1jPQQ"
+          },
+          {
+            "message_id": "1264",
+            "episode": 32,
+            "season": 1,
+            "duration": 2688,
+            "telegram_url": "https://t.me/@shoofcima/1264",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE8Gq1cwxlgDeHPmZEkZBCj_juK_YkAAJlIwAClWRRUcKARMo33k39HgQ",
+            "file_unique_id": "AgADZSMAApVkUVE",
+            "file_size": 37701851,
+            "mime_type": "video/mp4",
+            "file_name": "final_32.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:54:36"
           },
           {
             "episode": 33,
@@ -7941,6 +9286,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE8WqsbED9Bm0X9GJRV4W2JeFqpG7JAAJmIwAClWRRUWG2knptmXy2PQQ"
           },
           {
+            "message_id": "1265",
+            "episode": 33,
+            "season": 1,
+            "duration": 2802,
+            "telegram_url": "https://t.me/@shoofcima/1265",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE8Wq1cwyFnmcEGwipxE7HLTkYxs6bAAJmIwAClWRRUWhb82q8k5llHgQ",
+            "file_unique_id": "AgADZiMAApVkUVE",
+            "file_size": 37166855,
+            "mime_type": "video/mp4",
+            "file_name": "final_33.mp4",
+            "thumb_url": "",
+            "date": "2026-09-15T23:57:56"
+          },
+          {
             "episode": 34,
             "message_id": 1266,
             "duration": 2676,
@@ -7949,6 +9309,21 @@
             "embed_url": "https://t.me/shoofcima/1266?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1266",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE8mqsbEBqFAtOlUwi3Hm3cWmw2QVzAAJnIwAClWRRUeu487do5QMXPQQ"
+          },
+          {
+            "message_id": "1266",
+            "episode": 34,
+            "season": 1,
+            "duration": 2676,
+            "telegram_url": "https://t.me/@shoofcima/1266",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE8mq1cwx-dn4YNwk80rhtGkcwOO8XAAJnIwAClWRRUaO5oxJh6xofHgQ",
+            "file_unique_id": "AgADZyMAApVkUVE",
+            "file_size": 35907823,
+            "mime_type": "video/mp4",
+            "file_name": "final_34.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:01:13"
           },
           {
             "episode": 35,
@@ -7961,6 +9336,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE82qsbEDgYYVqzrM1DmCrhgvjC239AAJoIwAClWRRUaQSN1-Cw7bMPQQ"
           },
           {
+            "message_id": "1267",
+            "episode": 35,
+            "season": 1,
+            "duration": 2775,
+            "telegram_url": "https://t.me/@shoofcima/1267",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE82q1cwxMgu2fynccqh_3oeyg0bcUAAJoIwAClWRRUZAd6HjdTRjKHgQ",
+            "file_unique_id": "AgADaCMAApVkUVE",
+            "file_size": 38604460,
+            "mime_type": "video/mp4",
+            "file_name": "final_35.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:04:45"
+          },
+          {
             "episode": 36,
             "message_id": 1268,
             "duration": 2857,
@@ -7969,6 +9359,21 @@
             "embed_url": "https://t.me/shoofcima/1268?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1268",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE9GqsbEDGmdgNPIoHDjM-DQABYK87PwACaSMAApVkUVGmPPN-42aidj0E"
+          },
+          {
+            "message_id": "1268",
+            "episode": 36,
+            "season": 1,
+            "duration": 2857,
+            "telegram_url": "https://t.me/@shoofcima/1268",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE9Gq1cwxtkCZzFBpSIDPxPh7AdSxKAAJpIwAClWRRURYMJ5d6ZMsRHgQ",
+            "file_unique_id": "AgADaSMAApVkUVE",
+            "file_size": 39540245,
+            "mime_type": "video/mp4",
+            "file_name": "final_36.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:08:15"
           },
           {
             "episode": 37,
@@ -7981,6 +9386,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE9WqsbD-06vs5N4prYNb-V2MZIO5YAAJqIwAClWRRUbbR6gvZ3iuEPQQ"
           },
           {
+            "message_id": "1269",
+            "episode": 37,
+            "season": 1,
+            "duration": 2773,
+            "telegram_url": "https://t.me/@shoofcima/1269",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE9Wq1cww1rwVgKa9r4uP_JAzv0I6pAAJqIwAClWRRUWvPp7Azt2VUHgQ",
+            "file_unique_id": "AgADaiMAApVkUVE",
+            "file_size": 38453125,
+            "mime_type": "video/mp4",
+            "file_name": "final_37.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:11:42"
+          },
+          {
             "episode": 38,
             "message_id": 1270,
             "duration": 2585,
@@ -7989,6 +9409,21 @@
             "embed_url": "https://t.me/shoofcima/1270?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1270",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE9mqsbD97PFSv4YGEdc1wSOCfq2OLAAJrIwAClWRRUaBjC6afIA3ePQQ"
+          },
+          {
+            "message_id": "1270",
+            "episode": 38,
+            "season": 1,
+            "duration": 2585,
+            "telegram_url": "https://t.me/@shoofcima/1270",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE9mq1cwzpCXHF_Cgcu70ladKmfO-SAAJrIwAClWRRUbccwtSe7R9WHgQ",
+            "file_unique_id": "AgADayMAApVkUVE",
+            "file_size": 33403925,
+            "mime_type": "video/mp4",
+            "file_name": "final_38.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:14:58"
           },
           {
             "episode": 39,
@@ -8001,6 +9436,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE92qsbD_rFO8oastNLaZWShymgsppAAJsIwAClWRRUe4T868MwsMGPQQ"
           },
           {
+            "message_id": "1271",
+            "episode": 39,
+            "season": 1,
+            "duration": 2678,
+            "telegram_url": "https://t.me/@shoofcima/1271",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE92q1cwxyTed5Twws9aAfBHe0UI3BAAJsIwAClWRRUSQx0zLc-b9SHgQ",
+            "file_unique_id": "AgADbCMAApVkUVE",
+            "file_size": 38237299,
+            "mime_type": "video/mp4",
+            "file_name": "final_39.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:18:17"
+          },
+          {
             "episode": 40,
             "message_id": 1272,
             "duration": 2875,
@@ -8009,6 +9459,21 @@
             "embed_url": "https://t.me/shoofcima/1272?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1272",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE-GqsbD95Y6mPLKPj1vxompYUHATjAAJtIwAClWRRUUZdWDausYZ6PQQ"
+          },
+          {
+            "message_id": "1272",
+            "episode": 40,
+            "season": 1,
+            "duration": 2875,
+            "telegram_url": "https://t.me/@shoofcima/1272",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE-Gq1cwwWzXs2usoqgF2N7TWGmmdQAAJtIwAClWRRUTinx7gd6IAYHgQ",
+            "file_unique_id": "AgADbSMAApVkUVE",
+            "file_size": 38953573,
+            "mime_type": "video/mp4",
+            "file_name": "final_40.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:21:45"
           },
           {
             "episode": 41,
@@ -8021,6 +9486,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE-WqsbD86K99JhBoZUZkKQkSzPpkfAAJuIwAClWRRUX1e-wRhUyTjPQQ"
           },
           {
+            "message_id": "1273",
+            "episode": 41,
+            "season": 1,
+            "duration": 2774,
+            "telegram_url": "https://t.me/@shoofcima/1273",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE-Wq1cwwC6OAJjpTCUt9xZpc3S0bJAAJuIwAClWRRUcktpwrq9wAB-x4E",
+            "file_unique_id": "AgADbiMAApVkUVE",
+            "file_size": 37959315,
+            "mime_type": "video/mp4",
+            "file_name": "final_41.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:25:12"
+          },
+          {
             "episode": 42,
             "message_id": 1274,
             "duration": 2854,
@@ -8029,6 +9509,21 @@
             "embed_url": "https://t.me/shoofcima/1274?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1274",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE-mqsbD8BTDHCjmDIUfu8vVJWpphxAAJvIwAClWRRUfEkw1SUvE_qPQQ"
+          },
+          {
+            "message_id": "1274",
+            "episode": 42,
+            "season": 1,
+            "duration": 2854,
+            "telegram_url": "https://t.me/@shoofcima/1274",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE-mq1cwwiy7uRrVO-PvO3OIIAAdb_DAACbyMAApVkUVEC5-eb-LNZmh4E",
+            "file_unique_id": "AgADbyMAApVkUVE",
+            "file_size": 38697653,
+            "mime_type": "video/mp4",
+            "file_name": "final_42.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:28:40"
           },
           {
             "episode": 43,
@@ -8041,6 +9536,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE-2qsbD-utNek54iB64ZOkGH-BkOkAAJxIwAClWRRUdJ9_ppwIx7xPQQ"
           },
           {
+            "message_id": "1275",
+            "episode": 43,
+            "season": 1,
+            "duration": 2655,
+            "telegram_url": "https://t.me/@shoofcima/1275",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE-2q1cwyzzUyDgckAAV8rjSg6GmyxRwACcSMAApVkUVGrioXiD6yYlh4E",
+            "file_unique_id": "AgADcSMAApVkUVE",
+            "file_size": 34852848,
+            "mime_type": "video/mp4",
+            "file_name": "final_43.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:31:57"
+          },
+          {
             "episode": 44,
             "message_id": 1276,
             "duration": 2684,
@@ -8049,6 +9559,21 @@
             "embed_url": "https://t.me/shoofcima/1276?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1276",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE_GqsbD5Abiz1nLxgyCESLkXLPpcsAAJyIwAClWRRUUKcSQQv-pOfPQQ"
+          },
+          {
+            "message_id": "1276",
+            "episode": 44,
+            "season": 1,
+            "duration": 2684,
+            "telegram_url": "https://t.me/@shoofcima/1276",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE_Gq1cwzhacriDjavrU2d9SyRlcntAAJyIwAClWRRUfYiEIA6Tg77HgQ",
+            "file_unique_id": "AgADciMAApVkUVE",
+            "file_size": 35869436,
+            "mime_type": "video/mp4",
+            "file_name": "final_44.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:35:14"
           },
           {
             "episode": 45,
@@ -8061,6 +9586,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE_WqsbD6sKu2BTjszXHsxWeoKDzJqAAJzIwAClWRRUaJ5MqTn_VXCPQQ"
           },
           {
+            "message_id": "1277",
+            "episode": 45,
+            "season": 1,
+            "duration": 2841,
+            "telegram_url": "https://t.me/@shoofcima/1277",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE_Wq1cwyz_3Bey9UMyEVn3Qt7PoEAA3MjAAKVZFFRNzAkTD3zSvseBA",
+            "file_unique_id": "AgADcyMAApVkUVE",
+            "file_size": 39279418,
+            "mime_type": "video/mp4",
+            "file_name": "final_45.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:38:34"
+          },
+          {
             "episode": 46,
             "message_id": 1278,
             "duration": 2711,
@@ -8069,6 +9609,21 @@
             "embed_url": "https://t.me/shoofcima/1278?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1278",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE_mqsbD7zvz-hpX1qmPiRZDgnkRk7AAJ0IwAClWRRUafaZTYvys2hPQQ"
+          },
+          {
+            "message_id": "1278",
+            "episode": 46,
+            "season": 1,
+            "duration": 2711,
+            "telegram_url": "https://t.me/@shoofcima/1278",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE_mq1cwwyU9w7jcVg3tixVfBA6KqhAAJ0IwAClWRRUUvPTULWH4gQHgQ",
+            "file_unique_id": "AgADdCMAApVkUVE",
+            "file_size": 36811723,
+            "mime_type": "video/mp4",
+            "file_name": "final_46.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:41:54"
           },
           {
             "episode": 47,
@@ -8081,6 +9636,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIE_2qsbD6Ef76hD9sfrJ6w2QzXEp-AAAJ1IwAClWRRUWjw0sqmDDz4PQQ"
           },
           {
+            "message_id": "1279",
+            "episode": 47,
+            "season": 1,
+            "duration": 2747,
+            "telegram_url": "https://t.me/@shoofcima/1279",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIE_2q1cwzwRyxXCc5Ceji1qteo9iJMAAJ1IwAClWRRUXPrK_u3zfeZHgQ",
+            "file_unique_id": "AgADdSMAApVkUVE",
+            "file_size": 39050618,
+            "mime_type": "video/mp4",
+            "file_name": "final_47.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:45:12"
+          },
+          {
             "episode": 48,
             "message_id": 1280,
             "duration": 2697,
@@ -8089,6 +9659,21 @@
             "embed_url": "https://t.me/shoofcima/1280?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1280",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFAAFqrGw-07xBYZOrZt0JinouzUdPHwACdyMAApVkUVH35M0ZhB_n8D0E"
+          },
+          {
+            "message_id": "1280",
+            "episode": 48,
+            "season": 1,
+            "duration": 2697,
+            "telegram_url": "https://t.me/@shoofcima/1280",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFAAFqtXMMx_Wgp_58T1a7WF_1lyqgNAACdyMAApVkUVHM0DiXryTN4B4E",
+            "file_unique_id": "AgADdyMAApVkUVE",
+            "file_size": 37036168,
+            "mime_type": "video/mp4",
+            "file_name": "final_48.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:48:27"
           },
           {
             "episode": 49,
@@ -8101,6 +9686,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFAWqsbD3s97-1G6lmoco249nXQnGyAAJ4IwAClWRRUb89Yr_KUZCiPQQ"
           },
           {
+            "message_id": "1281",
+            "episode": 49,
+            "season": 1,
+            "duration": 2704,
+            "telegram_url": "https://t.me/@shoofcima/1281",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFAWq1cwwxDymZJg2hR-mFIpKq8FzSAAJ4IwAClWRRUZWpLH0grjBXHgQ",
+            "file_unique_id": "AgADeCMAApVkUVE",
+            "file_size": 37527112,
+            "mime_type": "video/mp4",
+            "file_name": "final_49.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:51:47"
+          },
+          {
             "episode": 50,
             "message_id": 1282,
             "duration": 2620,
@@ -8109,6 +9709,21 @@
             "embed_url": "https://t.me/shoofcima/1282?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1282",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFAmqsbD3nuTbCvu4stJoISJGEtK7NAAJ5IwAClWRRUV_S1FVC3dYiPQQ"
+          },
+          {
+            "message_id": "1282",
+            "episode": 50,
+            "season": 1,
+            "duration": 2620,
+            "telegram_url": "https://t.me/@shoofcima/1282",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFAmq1cwwhvGx_7s53-nDknn13zUVJAAJ5IwAClWRRUWYAAaQ9ju5gox4E",
+            "file_unique_id": "AgADeSMAApVkUVE",
+            "file_size": 36248774,
+            "mime_type": "video/mp4",
+            "file_name": "final_50.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T00:58:45"
           },
           {
             "episode": 51,
@@ -8121,6 +9736,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFA2qsbD2FT0mzWhvK4KfcpUPEGV7KAAI4IQAClWRZUbvrZE70C4zEPQQ"
           },
           {
+            "message_id": "1283",
+            "episode": 51,
+            "season": 1,
+            "duration": 2755,
+            "telegram_url": "https://t.me/@shoofcima/1283",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFA2q1cwxi047eW7ujAAE7tQRkAzuNGQACOCEAApVkWVHrcEs9YgN5nh4E",
+            "file_unique_id": "AgADOCEAApVkWVE",
+            "file_size": 39058413,
+            "mime_type": "video/mp4",
+            "file_name": "final_51.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T16:44:31"
+          },
+          {
             "episode": 52,
             "message_id": 1284,
             "duration": 2670,
@@ -8129,6 +9759,21 @@
             "embed_url": "https://t.me/shoofcima/1284?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1284",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFBGqsbD3OVEdsniMAAaJNQ8oMnSHMvwACQSEAApVkWVFwDnmU-Ayglz0E"
+          },
+          {
+            "message_id": "1284",
+            "episode": 52,
+            "season": 1,
+            "duration": 2670,
+            "telegram_url": "https://t.me/@shoofcima/1284",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFBGq1cwy16ZNzLRZDXkjI6yZLuhnGAAJBIQAClWRZUeGAktH1rKLsHgQ",
+            "file_unique_id": "AgADQSEAApVkWVE",
+            "file_size": 37970931,
+            "mime_type": "video/mp4",
+            "file_name": "final_52.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T16:51:22"
           },
           {
             "episode": 53,
@@ -8141,6 +9786,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFBWqsbD2aiz9PucgHdQTwJLcpS9VvAAJHIQAClWRZUY8OfiEEyNVpPQQ"
           },
           {
+            "message_id": "1285",
+            "episode": 53,
+            "season": 1,
+            "duration": 2711,
+            "telegram_url": "https://t.me/@shoofcima/1285",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFBWq1cwznKYb4JxDw3rijCa3XUPjWAAJHIQAClWRZUXQOmyIrUdIFHgQ",
+            "file_unique_id": "AgADRyEAApVkWVE",
+            "file_size": 37224488,
+            "mime_type": "video/mp4",
+            "file_name": "final_53.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T16:58:22"
+          },
+          {
             "episode": 54,
             "message_id": 1286,
             "duration": 2732,
@@ -8149,6 +9809,21 @@
             "embed_url": "https://t.me/shoofcima/1286?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1286",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFBmqsbD1Jja2etlWWFXAP4WD6Yn7KAAJSIQAClWRZUWwaTQhj-9B6PQQ"
+          },
+          {
+            "message_id": "1286",
+            "episode": 54,
+            "season": 1,
+            "duration": 2732,
+            "telegram_url": "https://t.me/@shoofcima/1286",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFBmq1cwxmRr0MLyU6SSxjHMD0bN8CAAJSIQAClWRZUXGpIVnfBLTLHgQ",
+            "file_unique_id": "AgADUiEAApVkWVE",
+            "file_size": 40725745,
+            "mime_type": "video/mp4",
+            "file_name": "final_54.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:05:23"
           },
           {
             "episode": 55,
@@ -8161,6 +9836,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFB2qsbDxVCKB3cnVE6-5JugyzOwx6AAJaIQAClWRZUYjzrl6-ZNLxPQQ"
           },
           {
+            "message_id": "1287",
+            "episode": 55,
+            "season": 1,
+            "duration": 2645,
+            "telegram_url": "https://t.me/@shoofcima/1287",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFB2q1cww5Byk0f_KruDq5SUCXj8ILAAJaIQAClWRZUdq_GAeEGSL1HgQ",
+            "file_unique_id": "AgADWiEAApVkWVE",
+            "file_size": 38893969,
+            "mime_type": "video/mp4",
+            "file_name": "final_55.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:12:11"
+          },
+          {
             "episode": 56,
             "message_id": 1288,
             "duration": 2576,
@@ -8169,6 +9859,21 @@
             "embed_url": "https://t.me/shoofcima/1288?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1288",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFCGqsbDwwERu25EGwxET7WU90a6p6AAJdIQAClWRZUfvhrKoYVgQ5PQQ"
+          },
+          {
+            "message_id": "1288",
+            "episode": 56,
+            "season": 1,
+            "duration": 2576,
+            "telegram_url": "https://t.me/@shoofcima/1288",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFCGq1cwxQoz8v-4e4iMjZXVN-ZERrAAJdIQAClWRZUYGjm5zGu0tDHgQ",
+            "file_unique_id": "AgADXSEAApVkWVE",
+            "file_size": 40102983,
+            "mime_type": "video/mp4",
+            "file_name": "final_56.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:18:52"
           },
           {
             "episode": 57,
@@ -8181,6 +9886,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFCWqsbDwaVeZ457bE6mzu3fTt0brVAAJoIQAClWRZUW61X-XnbjUrPQQ"
           },
           {
+            "message_id": "1289",
+            "episode": 57,
+            "season": 1,
+            "duration": 2690,
+            "telegram_url": "https://t.me/@shoofcima/1289",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFCWq1cwww2Y86WLMhWC4MLNWKsVexAAJoIQAClWRZUQI3FDYNHkOZHgQ",
+            "file_unique_id": "AgADaCEAApVkWVE",
+            "file_size": 36831713,
+            "mime_type": "video/mp4",
+            "file_name": "final_57.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:25:45"
+          },
+          {
             "episode": 58,
             "message_id": 1290,
             "duration": 2654,
@@ -8189,6 +9909,21 @@
             "embed_url": "https://t.me/shoofcima/1290?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1290",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFCmqsbDyHamZvg1FhG10hcIaScjoUAAJuIQAClWRZUUvDP7ouyCLoPQQ"
+          },
+          {
+            "message_id": "1290",
+            "episode": 58,
+            "season": 1,
+            "duration": 2654,
+            "telegram_url": "https://t.me/@shoofcima/1290",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFCmq1cwyn-JZfAe0BOW-_g0mAcFLiAAJuIQAClWRZUYqCBSma3uQXHgQ",
+            "file_unique_id": "AgADbiEAApVkWVE",
+            "file_size": 35013183,
+            "mime_type": "video/mp4",
+            "file_name": "final_58.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:32:31"
           },
           {
             "episode": 59,
@@ -8201,6 +9936,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFC2qsbDtNHQkS5oBQ7UKwl8_h6fsTAAJvIQAClWRZUTH91Xa1h_0kPQQ"
           },
           {
+            "message_id": "1291",
+            "episode": 59,
+            "season": 1,
+            "duration": 2458,
+            "telegram_url": "https://t.me/@shoofcima/1291",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFC2q1cwyiaH7TeBNINT3PobI8FGEtAAJvIQAClWRZUcaUa4uPZq8gHgQ",
+            "file_unique_id": "AgADbyEAApVkWVE",
+            "file_size": 34195429,
+            "mime_type": "video/mp4",
+            "file_name": "final_59.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:38:56"
+          },
+          {
             "episode": 60,
             "message_id": 1292,
             "duration": 2722,
@@ -8209,6 +9959,21 @@
             "embed_url": "https://t.me/shoofcima/1292?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1292",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFDGqsbDv3JL423GRWfhmqKLdnmGAjAAJwIQAClWRZURU6rrO4Zn2zPQQ"
+          },
+          {
+            "message_id": "1292",
+            "episode": 60,
+            "season": 1,
+            "duration": 2722,
+            "telegram_url": "https://t.me/@shoofcima/1292",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFDGq1cwyMCcvQB3VUShfabipz70qHAAJwIQAClWRZUUMxuLzg02UMHgQ",
+            "file_unique_id": "AgADcCEAApVkWVE",
+            "file_size": 36962623,
+            "mime_type": "video/mp4",
+            "file_name": "final_60.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:45:53"
           },
           {
             "episode": 61,
@@ -8221,6 +9986,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFDWqsbDtocYlV8BZ5E3tAB-JadyzcAAJzIQAClWRZUR_8MT46RgttPQQ"
           },
           {
+            "message_id": "1293",
+            "episode": 61,
+            "season": 1,
+            "duration": 2770,
+            "telegram_url": "https://t.me/@shoofcima/1293",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFDWq1cwz9t-Yhr7Lb2ZmnhcooKjkbAAJzIQAClWRZUcqw_dOyHqHqHgQ",
+            "file_unique_id": "AgADcyEAApVkWVE",
+            "file_size": 36603068,
+            "mime_type": "video/mp4",
+            "file_name": "final_61.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:52:57"
+          },
+          {
             "episode": 62,
             "message_id": 1294,
             "duration": 2513,
@@ -8229,6 +10009,21 @@
             "embed_url": "https://t.me/shoofcima/1294?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1294",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFDmqsbDuqanxHiz717hDOIT1Vx6txAAIdHwAD-llRHZHCiOirzxg9BA"
+          },
+          {
+            "message_id": "1294",
+            "episode": 62,
+            "season": 1,
+            "duration": 2513,
+            "telegram_url": "https://t.me/@shoofcima/1294",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFDmq1cwwHx4YkFn-0AvXjZGahLfGgAAIdHwAD-llRrUNQIKIxmcIeBA",
+            "file_unique_id": "AgADHR8AA_pZUQ",
+            "file_size": 33869634,
+            "mime_type": "video/mp4",
+            "file_name": "final_62.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T17:59:29"
           },
           {
             "episode": 63,
@@ -8241,6 +10036,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFD2qsbDviGhQb4F6DiafRChfH9dncAAIjHwAD-llRnVgK2HS5zvo9BA"
           },
           {
+            "message_id": "1295",
+            "episode": 63,
+            "season": 1,
+            "duration": 2676,
+            "telegram_url": "https://t.me/@shoofcima/1295",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFD2q1cwyBfHzl2_bhuxHcG5I6KTBYAAIjHwAD-llRJ4lZkyM1qBseBA",
+            "file_unique_id": "AgADIx8AA_pZUQ",
+            "file_size": 39705083,
+            "mime_type": "video/mp4",
+            "file_name": "final_63.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:06:21"
+          },
+          {
             "episode": 64,
             "message_id": 1296,
             "duration": 2834,
@@ -8249,6 +10059,21 @@
             "embed_url": "https://t.me/shoofcima/1296?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1296",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFEGqsbDqxQRjYbZklNEmx3iQUWPbYAAIsHwAD-llRrqunLuM239k9BA"
+          },
+          {
+            "message_id": "1296",
+            "episode": 64,
+            "season": 1,
+            "duration": 2834,
+            "telegram_url": "https://t.me/@shoofcima/1296",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFEGq1cwwITDmKozuVzurBKzy9yrqbAAIsHwAD-llRlHqkvS0Is08eBA",
+            "file_unique_id": "AgADLB8AA_pZUQ",
+            "file_size": 41925024,
+            "mime_type": "video/mp4",
+            "file_name": "final_64.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:13:40"
           },
           {
             "episode": 65,
@@ -8261,6 +10086,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFEWqsbDpG_11SBCh7ID_-zSS5xwABnQACNB8AA_pZUcnt1jfjDsJfPQQ"
           },
           {
+            "message_id": "1297",
+            "episode": 65,
+            "season": 1,
+            "duration": 2576,
+            "telegram_url": "https://t.me/@shoofcima/1297",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFEWq1cwxZN-Q4G8Z3cQnM99fesaGvAAI0HwAD-llR43NaS4m9XZAeBA",
+            "file_unique_id": "AgADNB8AA_pZUQ",
+            "file_size": 37599831,
+            "mime_type": "video/mp4",
+            "file_name": "final_65.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:20:18"
+          },
+          {
             "episode": 66,
             "message_id": 1298,
             "duration": 2716,
@@ -8269,6 +10109,21 @@
             "embed_url": "https://t.me/shoofcima/1298?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1298",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFEmqsbDp0-4euKPh8EWUSBsswFiynAAJEHwAD-llRiIrCj5zuAxk9BA"
+          },
+          {
+            "message_id": "1298",
+            "episode": 66,
+            "season": 1,
+            "duration": 2716,
+            "telegram_url": "https://t.me/@shoofcima/1298",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFEmq1cwx_kEF0m1zXSHUNURHLBchJAAJEHwAD-llRLWmdlCTFm5MeBA",
+            "file_unique_id": "AgADRB8AA_pZUQ",
+            "file_size": 40711441,
+            "mime_type": "video/mp4",
+            "file_name": "final_66.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:27:17"
           },
           {
             "episode": 67,
@@ -8281,6 +10136,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFE2qsbDotJMwlQTx2wUQ_HesIBj0sAAJaHwAD-llRjFHJEKH1j6c9BA"
           },
           {
+            "message_id": "1299",
+            "episode": 67,
+            "season": 1,
+            "duration": 2756,
+            "telegram_url": "https://t.me/@shoofcima/1299",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFE2q1cwy-1erILqASTQhozAnq1Vt5AAJaHwAD-llRvgxh6zaEkhMeBA",
+            "file_unique_id": "AgADWh8AA_pZUQ",
+            "file_size": 37084151,
+            "mime_type": "video/mp4",
+            "file_name": "final_67.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:34:23"
+          },
+          {
             "episode": 68,
             "message_id": 1300,
             "duration": 2760,
@@ -8289,6 +10159,21 @@
             "embed_url": "https://t.me/shoofcima/1300?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1300",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFFGqsbDqNNLCb16y9k7WpizPaQYOEAAJoHwAD-llRAkiNLZCIhCE9BA"
+          },
+          {
+            "message_id": "1300",
+            "episode": 68,
+            "season": 1,
+            "duration": 2760,
+            "telegram_url": "https://t.me/@shoofcima/1300",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFFGq1cwyRJT5V4YVXgAsyyw0Ez6Z_AAJoHwAD-llROeIAAQd3Ov7LHgQ",
+            "file_unique_id": "AgADaB8AA_pZUQ",
+            "file_size": 39901665,
+            "mime_type": "video/mp4",
+            "file_name": "final_68.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:41:30"
           },
           {
             "episode": 69,
@@ -8301,6 +10186,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFFWqsbDqekGd35L9djt8a4eYvHlx1AAJ5HwAD-llRecNR7IWOWNw9BA"
           },
           {
+            "message_id": "1301",
+            "episode": 69,
+            "season": 1,
+            "duration": 2588,
+            "telegram_url": "https://t.me/@shoofcima/1301",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFFWq1cwy1fich4RcwZXdMrYXIhyVBAAJ5HwAD-llRCj7s99l9hKoeBA",
+            "file_unique_id": "AgADeR8AA_pZUQ",
+            "file_size": 36892833,
+            "mime_type": "video/mp4",
+            "file_name": "final_69.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:48:10"
+          },
+          {
             "episode": 70,
             "message_id": 1302,
             "duration": 2530,
@@ -8309,6 +10209,21 @@
             "embed_url": "https://t.me/shoofcima/1302?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1302",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFFmqsbDksOVDUfhKppuhxnSreZCBqAAKJHwAD-llRYBLSL5PgwUE9BA"
+          },
+          {
+            "message_id": "1302",
+            "episode": 70,
+            "season": 1,
+            "duration": 2530,
+            "telegram_url": "https://t.me/@shoofcima/1302",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFFmq1cwzvLz93XZfOV9CVgOZyFy4nAAKJHwAD-llRWr-b9cvjs70eBA",
+            "file_unique_id": "AgADiR8AA_pZUQ",
+            "file_size": 36281392,
+            "mime_type": "video/mp4",
+            "file_name": "final_70.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T18:53:45"
           },
           {
             "episode": 71,
@@ -8321,6 +10236,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFF2qsbDlc-hUwN01I0XfgjwKUuldlAAKKHwAD-llRdhp786K-1kI9BA"
           },
           {
+            "message_id": "1303",
+            "episode": 71,
+            "season": 1,
+            "duration": 2571,
+            "telegram_url": "https://t.me/@shoofcima/1303",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFF2q1cwzbawPuEsTP_CGEixAUfj_7AAKKHwAD-llREyhxpBKtPegeBA",
+            "file_unique_id": "AgADih8AA_pZUQ",
+            "file_size": 34246744,
+            "mime_type": "video/mp4",
+            "file_name": "final_71.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:00:21"
+          },
+          {
             "episode": 72,
             "message_id": 1304,
             "duration": 2648,
@@ -8329,6 +10259,21 @@
             "embed_url": "https://t.me/shoofcima/1304?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1304",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFGGqsbDlKEMiZ8HUJubv4bdJeHrL9AAKLHwAD-llRr7h-0-m_wSA9BA"
+          },
+          {
+            "message_id": "1304",
+            "episode": 72,
+            "season": 1,
+            "duration": 2648,
+            "telegram_url": "https://t.me/@shoofcima/1304",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFGGq1cwxVOwABYVuGZof7B4T30xIBKgACix8AA_pZUWhFsdwO19DyHgQ",
+            "file_unique_id": "AgADix8AA_pZUQ",
+            "file_size": 38421811,
+            "mime_type": "video/mp4",
+            "file_name": "final_72.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:07:10"
           },
           {
             "episode": 73,
@@ -8341,6 +10286,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFGWqsbDmF5eKFH5gnWMuMOOxbcKvnAAKPHwAD-llRfudzKQMXx_M9BA"
           },
           {
+            "message_id": "1305",
+            "episode": 73,
+            "season": 1,
+            "duration": 2482,
+            "telegram_url": "https://t.me/@shoofcima/1305",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFGWq1cwwRt3UduyTci2-7PS4ceIJ8AAKPHwAD-llRS9hqgb_oAroeBA",
+            "file_unique_id": "AgADjx8AA_pZUQ",
+            "file_size": 35208202,
+            "mime_type": "video/mp4",
+            "file_name": "final_73.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:13:39"
+          },
+          {
             "episode": 74,
             "message_id": 1306,
             "duration": 2711,
@@ -8349,6 +10309,21 @@
             "embed_url": "https://t.me/shoofcima/1306?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1306",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFGmqsbDk6QAkg5IpQ7yEVHg_Y4S3DAAKUHwAD-llRJUrcVi1rLE89BA"
+          },
+          {
+            "message_id": "1306",
+            "episode": 74,
+            "season": 1,
+            "duration": 2711,
+            "telegram_url": "https://t.me/@shoofcima/1306",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFGmq1cwwsGqx6O5iRS7NqX44FBPhCAAKUHwAD-llR8EMNvzc8ackeBA",
+            "file_unique_id": "AgADlB8AA_pZUQ",
+            "file_size": 37901744,
+            "mime_type": "video/mp4",
+            "file_name": "final_74.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:20:36"
           },
           {
             "episode": 75,
@@ -8361,6 +10336,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFG2qsbDkjUiads3i8qM-4rWzdeV13AAKVHwAD-llRUzy3lcl5pzA9BA"
           },
           {
+            "message_id": "1307",
+            "episode": 75,
+            "season": 1,
+            "duration": 2585,
+            "telegram_url": "https://t.me/@shoofcima/1307",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFG2q1cwwNLaf65FiLgN5Bt_UtErDAAAKVHwAD-llReH0emMgaB5YeBA",
+            "file_unique_id": "AgADlR8AA_pZUQ",
+            "file_size": 35717190,
+            "mime_type": "video/mp4",
+            "file_name": "final_75.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:27:37"
+          },
+          {
             "episode": 76,
             "message_id": 1308,
             "duration": 2710,
@@ -8369,6 +10359,21 @@
             "embed_url": "https://t.me/shoofcima/1308?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1308",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFHGqsbDj6TifhUsdSpLTgB7nRTZYaAAKZHwAD-llRq8cMr7zYwVs9BA"
+          },
+          {
+            "message_id": "1308",
+            "episode": 76,
+            "season": 1,
+            "duration": 2710,
+            "telegram_url": "https://t.me/@shoofcima/1308",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFHGq1cwydd3Aalp70NmgBqi2h5r8EAAKZHwAD-llR--gGYpXq9eEeBA",
+            "file_unique_id": "AgADmR8AA_pZUQ",
+            "file_size": 38904553,
+            "mime_type": "video/mp4",
+            "file_name": "final_76.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:34:34"
           },
           {
             "episode": 77,
@@ -8381,6 +10386,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFHWqsbDje9AYRzX2Ag3SssOSBZsqlAAKdHwAD-llRlT_gVIFuwx89BA"
           },
           {
+            "message_id": "1309",
+            "episode": 77,
+            "season": 1,
+            "duration": 2736,
+            "telegram_url": "https://t.me/@shoofcima/1309",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFHWq1cwwEmnY3olzMLK83VKFuetGQAAKdHwAD-llRQanqGF0XjsUeBA",
+            "file_unique_id": "AgADnR8AA_pZUQ",
+            "file_size": 37330712,
+            "mime_type": "video/mp4",
+            "file_name": "final_77.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:41:36"
+          },
+          {
             "episode": 78,
             "message_id": 1310,
             "duration": 2423,
@@ -8389,6 +10409,21 @@
             "embed_url": "https://t.me/shoofcima/1310?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1310",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFHmqsbDfrfV-JdtwTOaWCGh0-nwZMAAKhHwAD-llRtBK2QoBjn3o9BA"
+          },
+          {
+            "message_id": "1310",
+            "episode": 78,
+            "season": 1,
+            "duration": 2423,
+            "telegram_url": "https://t.me/@shoofcima/1310",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFHmq1cwxwib-QK6xkrw9v4y-u5UdeAAKhHwAD-llRL0YTQuC1WC4eBA",
+            "file_unique_id": "AgADoR8AA_pZUQ",
+            "file_size": 36103084,
+            "mime_type": "video/mp4",
+            "file_name": "final_78.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:47:56"
           },
           {
             "episode": 79,
@@ -8401,6 +10436,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFH2qsbDftrrH_5RwS7940KFeMzLpiAAKnHwAD-llRp_X76srlQyU9BA"
           },
           {
+            "message_id": "1311",
+            "episode": 79,
+            "season": 1,
+            "duration": 2672,
+            "telegram_url": "https://t.me/@shoofcima/1311",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFH2q1cwyg-HwJZQzBk84diB8cehaEAAKnHwAD-llRN_DWQ1q8AdUeBA",
+            "file_unique_id": "AgADpx8AA_pZUQ",
+            "file_size": 38654759,
+            "mime_type": "video/mp4",
+            "file_name": "final_79.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T19:54:46"
+          },
+          {
             "episode": 80,
             "message_id": 1312,
             "duration": 2673,
@@ -8409,6 +10459,21 @@
             "embed_url": "https://t.me/shoofcima/1312?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1312",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFIGqsbDeEOS0CTZDfJdRi2vXYoGVPAAKsHwAD-llRcu7BHldZm0s9BA"
+          },
+          {
+            "message_id": "1312",
+            "episode": 80,
+            "season": 1,
+            "duration": 2673,
+            "telegram_url": "https://t.me/@shoofcima/1312",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFIGq1cwxMRmD_Gsa8dTDRMiKSrDa5AAKsHwAD-llRHrFKTCzXO00eBA",
+            "file_unique_id": "AgADrB8AA_pZUQ",
+            "file_size": 38574616,
+            "mime_type": "video/mp4",
+            "file_name": "final_80.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:01:40"
           },
           {
             "episode": 81,
@@ -8421,6 +10486,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFIWqsbDanDAGLWHAkH3ugj4MrOozuAAKzHwAD-llRMUTx-jSjnC09BA"
           },
           {
+            "message_id": "1313",
+            "episode": 81,
+            "season": 1,
+            "duration": 2650,
+            "telegram_url": "https://t.me/@shoofcima/1313",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFIWq1cww5m-nvnJ9Kq5vZLR1nCqAGAAKzHwAD-llRMFM9ezrCpEceBA",
+            "file_unique_id": "AgADsx8AA_pZUQ",
+            "file_size": 38073425,
+            "mime_type": "video/mp4",
+            "file_name": "final_81.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:08:29"
+          },
+          {
             "episode": 82,
             "message_id": 1314,
             "duration": 2793,
@@ -8429,6 +10509,21 @@
             "embed_url": "https://t.me/shoofcima/1314?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1314",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFImqsbDDeOeeQaSNQcwxhwgIxrMk8AAK7HwAD-llRzaK2r8YKmW89BA"
+          },
+          {
+            "message_id": "1314",
+            "episode": 82,
+            "season": 1,
+            "duration": 2793,
+            "telegram_url": "https://t.me/@shoofcima/1314",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFImq1cwwMrjg63ZMUgR9r49lCqS3hAAK7HwAD-llRJjJ8ht8Iz9EeBA",
+            "file_unique_id": "AgADux8AA_pZUQ",
+            "file_size": 40682263,
+            "mime_type": "video/mp4",
+            "file_name": "final_82.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:15:35"
           },
           {
             "episode": 83,
@@ -8441,6 +10536,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFI2qsbC8kQxpMdgfpWSs3_Z120l2QAAK-HwAD-llRvYqcy35v_Xs9BA"
           },
           {
+            "message_id": "1315",
+            "episode": 83,
+            "season": 1,
+            "duration": 2470,
+            "telegram_url": "https://t.me/@shoofcima/1315",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFI2q1cwxJrIXdQObjLIntYloH7ktdAAK-HwAD-llRxUJd8Qgkeq0eBA",
+            "file_unique_id": "AgADvh8AA_pZUQ",
+            "file_size": 35158508,
+            "mime_type": "video/mp4",
+            "file_name": "final_83.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:22:02"
+          },
+          {
             "episode": 84,
             "message_id": 1316,
             "duration": 2758,
@@ -8449,6 +10559,21 @@
             "embed_url": "https://t.me/shoofcima/1316?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1316",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFJGqsbC8C8-261KGV2pf0BuPCCXp9AALEHwAD-llRsbFbFdbvnP09BA"
+          },
+          {
+            "message_id": "1316",
+            "episode": 84,
+            "season": 1,
+            "duration": 2758,
+            "telegram_url": "https://t.me/@shoofcima/1316",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFJGq1cwwWUB2k7Ysm59asLkhqX6eOAALEHwAD-llR-a00UM5vgKEeBA",
+            "file_unique_id": "AgADxB8AA_pZUQ",
+            "file_size": 39948549,
+            "mime_type": "video/mp4",
+            "file_name": "final_84.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:29:08"
           },
           {
             "episode": 85,
@@ -8461,6 +10586,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFJWqsbC6HE5TtDfpqJxEXZZt3SFv_AALNHwAD-llRvgJhhNhi01M9BA"
           },
           {
+            "message_id": "1317",
+            "episode": 85,
+            "season": 1,
+            "duration": 2744,
+            "telegram_url": "https://t.me/@shoofcima/1317",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFJWq1cwysjhcDxxskS_CLLQHcGsKvAALNHwAD-llRW-rjNXwdOz4eBA",
+            "file_unique_id": "AgADzR8AA_pZUQ",
+            "file_size": 39971241,
+            "mime_type": "video/mp4",
+            "file_name": "final_85.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:36:08"
+          },
+          {
             "episode": 86,
             "message_id": 1318,
             "duration": 2778,
@@ -8469,6 +10609,21 @@
             "embed_url": "https://t.me/shoofcima/1318?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1318",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFJmqsbC7qFOc-dCyjhgrD5xUvu60nAALQHwAD-llR81Ox6PYpBC49BA"
+          },
+          {
+            "message_id": "1318",
+            "episode": 86,
+            "season": 1,
+            "duration": 2778,
+            "telegram_url": "https://t.me/@shoofcima/1318",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFJmq1cwyyh8hXtChI1cMdrvZr5J-iAALQHwAD-llRgWOApfPsuuQeBA",
+            "file_unique_id": "AgAD0B8AA_pZUQ",
+            "file_size": 39351143,
+            "mime_type": "video/mp4",
+            "file_name": "final_86.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:43:24"
           },
           {
             "episode": 87,
@@ -8481,6 +10636,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFJ2qsbCstVR2FIk-1LFpWvznT_1d1AALUHwAD-llREkM8EYNz_-09BA"
           },
           {
+            "message_id": "1319",
+            "episode": 87,
+            "season": 1,
+            "duration": 2526,
+            "telegram_url": "https://t.me/@shoofcima/1319",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFJ2q1cwzZKxIC530GQYlRXjZDIVriAALUHwAD-llRevwSUlJKFeweBA",
+            "file_unique_id": "AgAD1B8AA_pZUQ",
+            "file_size": 35784982,
+            "mime_type": "video/mp4",
+            "file_name": "final_87.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:50:07"
+          },
+          {
             "episode": 88,
             "message_id": 1320,
             "duration": 2679,
@@ -8489,6 +10659,21 @@
             "embed_url": "https://t.me/shoofcima/1320?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1320",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFKGqsbCrJCEvFJlIsSVPqmNLoLkvvAALVHwAD-llRyTdPGrZCUJ49BA"
+          },
+          {
+            "message_id": "1320",
+            "episode": 88,
+            "season": 1,
+            "duration": 2679,
+            "telegram_url": "https://t.me/@shoofcima/1320",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFKGq1cwzZnwotndC12-SN54po-NESAALVHwAD-llRIgIGtZhEwZAeBA",
+            "file_unique_id": "AgAD1R8AA_pZUQ",
+            "file_size": 38433237,
+            "mime_type": "video/mp4",
+            "file_name": "final_88.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T20:57:04"
           },
           {
             "episode": 89,
@@ -8501,6 +10686,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFKWqsbCr4oXXA-lF281M-QaH6fpYZAALWHwAD-llRoq6I_oEtn9E9BA"
           },
           {
+            "message_id": "1321",
+            "episode": 89,
+            "season": 1,
+            "duration": 2556,
+            "telegram_url": "https://t.me/@shoofcima/1321",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFKWq1cwyonF6GHuQ7y6Eo-L4jgl3lAALWHwAD-llRRwctf-m_gyEeBA",
+            "file_unique_id": "AgAD1h8AA_pZUQ",
+            "file_size": 37778954,
+            "mime_type": "video/mp4",
+            "file_name": "final_89.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T21:03:40"
+          },
+          {
             "episode": 90,
             "message_id": 1322,
             "duration": 2698,
@@ -8509,6 +10709,21 @@
             "embed_url": "https://t.me/shoofcima/1322?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1322",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFKmqsbCmH-yL4aHYCdet2RUqmvdsxAALZHwAD-llRjXARguV4-Kc9BA"
+          },
+          {
+            "message_id": "1322",
+            "episode": 90,
+            "season": 1,
+            "duration": 2698,
+            "telegram_url": "https://t.me/@shoofcima/1322",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFKmq1cwyTsPRzYV3KUt0Ea-YL5gP8AALZHwAD-llRX4OHNAgKGw8eBA",
+            "file_unique_id": "AgAD2R8AA_pZUQ",
+            "file_size": 41956962,
+            "mime_type": "video/mp4",
+            "file_name": "final_90.mp4",
+            "thumb_url": "",
+            "date": "2026-09-16T21:10:42"
           },
           {
             "episode": 91,
@@ -8521,6 +10736,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFK2qsbCkHHzbPqrKoeehKy2HPtJNJAAKEIAAD-mFRE7zjHaDPzIk9BA"
           },
           {
+            "message_id": "1323",
+            "episode": 91,
+            "season": 1,
+            "duration": 2663,
+            "telegram_url": "https://t.me/@shoofcima/1323",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFK2q1cwzPDeex__q2hgL9fn0FQ8mxAAKEIAAD-mFRRjtEXszsrqIeBA",
+            "file_unique_id": "AgADhCAAA_phUQ",
+            "file_size": 37503131,
+            "mime_type": "video/mp4",
+            "file_name": "final_91.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:23:13"
+          },
+          {
             "episode": 92,
             "message_id": 1324,
             "duration": 2562,
@@ -8529,6 +10759,21 @@
             "embed_url": "https://t.me/shoofcima/1324?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1324",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFLGqsbCQlz43hKyBo4uQyd03OPEIDAAKFIAAD-mFRKgpR2-eHKlg9BA"
+          },
+          {
+            "message_id": "1324",
+            "episode": 92,
+            "season": 1,
+            "duration": 2562,
+            "telegram_url": "https://t.me/@shoofcima/1324",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFLGq1cwx4vQt4JZSp2BLNtS8KfPjwAAKFIAAD-mFRZqCFU8KlBfIeBA",
+            "file_unique_id": "AgADhSAAA_phUQ",
+            "file_size": 35903934,
+            "mime_type": "video/mp4",
+            "file_name": "final_92.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:29:58"
           },
           {
             "episode": 93,
@@ -8541,6 +10786,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFLWqsbCQD2ToGXfg1V1dYmtXa8mn0AAKGIAAD-mFR_N62MfCoLAE9BA"
           },
           {
+            "message_id": "1325",
+            "episode": 93,
+            "season": 1,
+            "duration": 2431,
+            "telegram_url": "https://t.me/@shoofcima/1325",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFLWq1cwwCdW-Z6lPa-xacUbpyabggAAKGIAAD-mFR4K2sOrzH5b4eBA",
+            "file_unique_id": "AgADhiAAA_phUQ",
+            "file_size": 35349269,
+            "mime_type": "video/mp4",
+            "file_name": "final_93.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:36:26"
+          },
+          {
             "episode": 94,
             "message_id": 1326,
             "duration": 2768,
@@ -8549,6 +10809,21 @@
             "embed_url": "https://t.me/shoofcima/1326?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1326",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFLmqsbCRsUZTOrkddh1kjAAE61AEUBgACjSAAA_phUW1C02FeQhnkPQQ"
+          },
+          {
+            "message_id": "1326",
+            "episode": 94,
+            "season": 1,
+            "duration": 2768,
+            "telegram_url": "https://t.me/@shoofcima/1326",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFLmq1cwzTek1J_Di2CPSgXI5RnuJ6AAKNIAAD-mFRz7HzRe0eln0eBA",
+            "file_unique_id": "AgADjSAAA_phUQ",
+            "file_size": 43508422,
+            "mime_type": "video/mp4",
+            "file_name": "final_94.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:43:41"
           },
           {
             "episode": 95,
@@ -8561,6 +10836,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFL2qsbCOXreccCG6RT3nY0OKLRkCSAAKWIAAD-mFR9xB70TH3VlE9BA"
           },
           {
+            "message_id": "1327",
+            "episode": 95,
+            "season": 1,
+            "duration": 2564,
+            "telegram_url": "https://t.me/@shoofcima/1327",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFL2q1cwwIvf_ICuS6_QeRu-vNILgmAAKWIAAD-mFRAAERSzz0ojn3HgQ",
+            "file_unique_id": "AgADliAAA_phUQ",
+            "file_size": 37066786,
+            "mime_type": "video/mp4",
+            "file_name": "final_95.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:50:20"
+          },
+          {
             "episode": 96,
             "message_id": 1328,
             "duration": 2532,
@@ -8571,6 +10861,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFMGqsbCOMcHZmUVwAAR0AAcbFlhPhjqYAAp0gAAP6YVH85r3x2_QF3T0E"
           },
           {
+            "message_id": "1328",
+            "episode": 96,
+            "season": 1,
+            "duration": 2532,
+            "telegram_url": "https://t.me/@shoofcima/1328",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFMGq1cwzT5ErQ7iF7pJKZCzo_faFeAAKdIAAD-mFRIkMWIx2O8N4eBA",
+            "file_unique_id": "AgADnSAAA_phUQ",
+            "file_size": 37046421,
+            "mime_type": "video/mp4",
+            "file_name": "final_96.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T17:56:54"
+          },
+          {
             "episode": 97,
             "message_id": 1329,
             "duration": 2468,
@@ -8579,6 +10884,21 @@
             "embed_url": "https://t.me/shoofcima/1329?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1329",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIFMWqsbCNJuzmICp1_-8eFZ9T1Zv-yAAKjIAAD-mFRamSDygf0MG09BA"
+          },
+          {
+            "message_id": "1329",
+            "episode": 97,
+            "season": 1,
+            "duration": 2468,
+            "telegram_url": "https://t.me/@shoofcima/1329",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIFMWq1cwxcHRHByCmKf7Cq8Q_n_LRrAAKjIAAD-mFRqYk7u2yI3o8eBA",
+            "file_unique_id": "AgADoyAAA_phUQ",
+            "file_size": 35589778,
+            "mime_type": "video/mp4",
+            "file_name": "final_97.mp4",
+            "thumb_url": "",
+            "date": "2026-09-17T18:03:22"
           }
         ]
       }
@@ -8925,6 +11245,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEU2qsbGG0BfHVCUsFviNJiobrFSbhAAMhAALOG6BSPHnPeAFlZN89BA"
           },
           {
+            "message_id": "1107",
+            "episode": 60,
+            "season": 3,
+            "duration": 2556,
+            "telegram_url": "https://t.me/@shoofcima/1107",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEU2q1c3FkeCExJ4m_bK5uI7ioR7-rAAMhAALOG6BSsW_J_6zLEH4eBA",
+            "file_unique_id": "AgAEIQACzhugUg",
+            "file_size": 41465008,
+            "mime_type": "video/mp4",
+            "file_name": "final_60.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:10:47"
+          },
+          {
             "episode": 61,
             "message_id": 1108,
             "duration": 2598,
@@ -8933,6 +11268,21 @@
             "embed_url": "https://t.me/shoofcima/1108?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1108",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEVGqsbGAh0AV3UqiJZBEUyzA0AAF9MQACBiEAAs4boFKSXsWBwKy1Iz0E"
+          },
+          {
+            "message_id": "1108",
+            "episode": 61,
+            "season": 3,
+            "duration": 2598,
+            "telegram_url": "https://t.me/@shoofcima/1108",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEVGq1c3FSuBQ-r4n4jCrBtcBC-J9BAAIGIQACzhugUkxyKIwztPdvHgQ",
+            "file_unique_id": "AgADBiEAAs4boFI",
+            "file_size": 43079543,
+            "mime_type": "video/mp4",
+            "file_name": "final_61.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:20:03"
           },
           {
             "episode": 62,
@@ -8945,6 +11295,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEVWqsbGCniC8bumKcSz8Kxx-gBVCsAAIHIQACzhugUoIj7cucMZL9PQQ"
           },
           {
+            "message_id": "1109",
+            "episode": 62,
+            "season": 3,
+            "duration": 2564,
+            "telegram_url": "https://t.me/@shoofcima/1109",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEVWq1c3FCkze-CVmpin2D2GKU4mQMAAIHIQACzhugUkyOuEfKM2pKHgQ",
+            "file_unique_id": "AgADByEAAs4boFI",
+            "file_size": 41952168,
+            "mime_type": "video/mp4",
+            "file_name": "final_62.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:29:07"
+          },
+          {
             "episode": 63,
             "message_id": 1110,
             "duration": 2647,
@@ -8953,6 +11318,21 @@
             "embed_url": "https://t.me/shoofcima/1110?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1110",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEVmqsbF_5wU7sr3K3bHmxeOWmFyuIAAILIQACzhugUjlgcICRapvCPQQ"
+          },
+          {
+            "message_id": "1110",
+            "episode": 63,
+            "season": 3,
+            "duration": 2647,
+            "telegram_url": "https://t.me/@shoofcima/1110",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEVmq1c3HekvVFHNRp1Rzh9k08XDF4AAILIQACzhugUnjU97OwLT8JHgQ",
+            "file_unique_id": "AgADCyEAAs4boFI",
+            "file_size": 47219267,
+            "mime_type": "video/mp4",
+            "file_name": "final_63.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:37:08"
           },
           {
             "episode": 64,
@@ -8965,6 +11345,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEV2qsbF-USpmjOft8fHkpjVZnjmkhAAIPIQACzhugUnZjauMJhixXPQQ"
           },
           {
+            "message_id": "1111",
+            "episode": 64,
+            "season": 3,
+            "duration": 2491,
+            "telegram_url": "https://t.me/@shoofcima/1111",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEV2q1c3GMJ1q8xfixXwSz2PV4V6pUAAIPIQACzhugUhmLdVtG7NLTHgQ",
+            "file_unique_id": "AgADDyEAAs4boFI",
+            "file_size": 45837139,
+            "mime_type": "video/mp4",
+            "file_name": "final_64.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:46:19"
+          },
+          {
             "episode": 65,
             "message_id": 1112,
             "duration": 2559,
@@ -8973,6 +11368,21 @@
             "embed_url": "https://t.me/shoofcima/1112?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1112",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEWGqsbF8UbLtAgQorT1uGa6R6EglmAAIRIQACzhugUq5-ZXbsUsk9PQQ"
+          },
+          {
+            "message_id": "1112",
+            "episode": 65,
+            "season": 3,
+            "duration": 2559,
+            "telegram_url": "https://t.me/@shoofcima/1112",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEWGq1c3H0TngTkJIZM53Yq-68Vb7gAAIRIQACzhugUlZKfD2AyDS8HgQ",
+            "file_unique_id": "AgADESEAAs4boFI",
+            "file_size": 46499228,
+            "mime_type": "video/mp4",
+            "file_name": "final_65.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T19:54:17"
           },
           {
             "episode": 66,
@@ -8985,6 +11395,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEWWqsbFc6Xub5AAEdbmBJRrl6T3N_SAACEiEAAs4boFJw-493A1SqgT0E"
           },
           {
+            "message_id": "1113",
+            "episode": 66,
+            "season": 3,
+            "duration": 2643,
+            "telegram_url": "https://t.me/@shoofcima/1113",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEWWq1c3Gv01Vv4Urp5_Y1r-WBQBWPAAISIQACzhugUnwv9Kd3dJVdHgQ",
+            "file_unique_id": "AgADEiEAAs4boFI",
+            "file_size": 44754399,
+            "mime_type": "video/mp4",
+            "file_name": "final_66.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:04:25"
+          },
+          {
             "episode": 67,
             "message_id": 1114,
             "duration": 2699,
@@ -8993,6 +11418,21 @@
             "embed_url": "https://t.me/shoofcima/1114?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1114",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEWmqsbFaNBjcHzmlCRq44-nDSkPZQAAIUIQACzhugUvZl0MTlAXCdPQQ"
+          },
+          {
+            "message_id": "1114",
+            "episode": 67,
+            "season": 3,
+            "duration": 2699,
+            "telegram_url": "https://t.me/@shoofcima/1114",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEWmq1c3FG6YugJqW3hXmWsSk0QcVQAAIUIQACzhugUrLJgkO8V4FCHgQ",
+            "file_unique_id": "AgADFCEAAs4boFI",
+            "file_size": 46121550,
+            "mime_type": "video/mp4",
+            "file_name": "final_67.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:12:35"
           },
           {
             "episode": 68,
@@ -9005,6 +11445,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEW2qsbFY99IB1T_gTBBWJkVUAAaOPLgACFiEAAs4boFJLMAs3GfscDD0E"
           },
           {
+            "message_id": "1115",
+            "episode": 68,
+            "season": 3,
+            "duration": 2727,
+            "telegram_url": "https://t.me/@shoofcima/1115",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEW2q1c3Fw4Fpia82I5v4tGX8tdAGQAAIWIQACzhugUo-skLY4iXH7HgQ",
+            "file_unique_id": "AgADFiEAAs4boFI",
+            "file_size": 45050290,
+            "mime_type": "video/mp4",
+            "file_name": "final_68.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:22:12"
+          },
+          {
             "episode": 69,
             "message_id": 1116,
             "duration": 2614,
@@ -9013,6 +11468,21 @@
             "embed_url": "https://t.me/shoofcima/1116?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1116",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEXGqsbFalCrkb1vUuAWLd16Jw28IMAAIbIQACzhugUmV5cRomNiSRPQQ"
+          },
+          {
+            "message_id": "1116",
+            "episode": 69,
+            "season": 3,
+            "duration": 2614,
+            "telegram_url": "https://t.me/@shoofcima/1116",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEXGq1c3G-PGtcY9RVRKTO9M7PQmTkAAIbIQACzhugUnxxncsr4HiAHgQ",
+            "file_unique_id": "AgADGyEAAs4boFI",
+            "file_size": 40200357,
+            "mime_type": "video/mp4",
+            "file_name": "final_69.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:30:24"
           },
           {
             "episode": 70,
@@ -9025,6 +11495,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEXWqsbFZM06IRN9VVfu_J4zrkGqBJAAIdIQACzhugUobssuRRvaR7PQQ"
           },
           {
+            "message_id": "1117",
+            "episode": 70,
+            "season": 3,
+            "duration": 2662,
+            "telegram_url": "https://t.me/@shoofcima/1117",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEXWq1c3Hxz5tXBX-Dq3aCNIS40eFZAAIdIQACzhugUoXh-9vjxk6BHgQ",
+            "file_unique_id": "AgADHSEAAs4boFI",
+            "file_size": 47877965,
+            "mime_type": "video/mp4",
+            "file_name": "final_70.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:39:50"
+          },
+          {
             "episode": 71,
             "message_id": 1118,
             "duration": 2598,
@@ -9033,6 +11518,21 @@
             "embed_url": "https://t.me/shoofcima/1118?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1118",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEXmqsbFVp8YAg1kgIwYR68tMg_JAPAAIeIQACzhugUqWSdnQFyDJEPQQ"
+          },
+          {
+            "message_id": "1118",
+            "episode": 71,
+            "season": 3,
+            "duration": 2598,
+            "telegram_url": "https://t.me/@shoofcima/1118",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEXmq1c3ECJhgvVZ-0V1m4Tp5tzmjiAAIeIQACzhugUuI3YZj2MLFhHgQ",
+            "file_unique_id": "AgADHiEAAs4boFI",
+            "file_size": 43206937,
+            "mime_type": "video/mp4",
+            "file_name": "final_71.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:47:44"
           },
           {
             "episode": 72,
@@ -9045,6 +11545,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEX2qsbFVnQ6_mmfR_K8xcxk15Ka1rAAIfIQACzhugUn5eZoLlPHSjPQQ"
           },
           {
+            "message_id": "1119",
+            "episode": 72,
+            "season": 3,
+            "duration": 2640,
+            "telegram_url": "https://t.me/@shoofcima/1119",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEX2q1c3FdYqkYRrt27I1h4ZK1PNl2AAIfIQACzhugUhsDJzbXZuhwHgQ",
+            "file_unique_id": "AgADHyEAAs4boFI",
+            "file_size": 42421122,
+            "mime_type": "video/mp4",
+            "file_name": "final_72.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T20:55:45"
+          },
+          {
             "episode": 73,
             "message_id": 1120,
             "duration": 2621,
@@ -9053,6 +11568,21 @@
             "embed_url": "https://t.me/shoofcima/1120?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1120",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEYGqsbFVKubv2dqxHkrwQ4LRSjTwqAAIhIQACzhugUv38j3OVSBogPQQ"
+          },
+          {
+            "message_id": "1120",
+            "episode": 73,
+            "season": 3,
+            "duration": 2621,
+            "telegram_url": "https://t.me/@shoofcima/1120",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEYGq1c3HQWcjEN6_CfPvBnbA5bpPBAAIhIQACzhugUgPKm7WeMgkLHgQ",
+            "file_unique_id": "AgADISEAAs4boFI",
+            "file_size": 44285155,
+            "mime_type": "video/mp4",
+            "file_name": "final_73.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:03:48"
           },
           {
             "episode": 74,
@@ -9065,6 +11595,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEYWqsbFXf6PZrqL1o7meqcQY3UgHkAAIiIQACzhugUnA-NCnP-_2PPQQ"
           },
           {
+            "message_id": "1121",
+            "episode": 74,
+            "season": 3,
+            "duration": 2670,
+            "telegram_url": "https://t.me/@shoofcima/1121",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEYWq1c3G2ZIVWa7PyjyBfAuYqb2smAAIiIQACzhugUsMeYPh-2ethHgQ",
+            "file_unique_id": "AgADIiEAAs4boFI",
+            "file_size": 43270007,
+            "mime_type": "video/mp4",
+            "file_name": "final_74.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:13:16"
+          },
+          {
             "episode": 75,
             "message_id": 1122,
             "duration": 2742,
@@ -9073,6 +11618,21 @@
             "embed_url": "https://t.me/shoofcima/1122?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1122",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEYmqsbFV2OieZrT5n1vilWJgAAXSRpwACIyEAAs4boFL9mzA2UZCsuD0E"
+          },
+          {
+            "message_id": "1122",
+            "episode": 75,
+            "season": 3,
+            "duration": 2742,
+            "telegram_url": "https://t.me/@shoofcima/1122",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEYmq1c3FJwhbUEedsW3rQ3udIlr_3AAIjIQACzhugUjt_ddNseLBcHgQ",
+            "file_unique_id": "AgADIyEAAs4boFI",
+            "file_size": 42195389,
+            "mime_type": "video/mp4",
+            "file_name": "final_75.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:22:55"
           },
           {
             "episode": 76,
@@ -9085,6 +11645,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEY2qsbFS3BmQ3qoJPpjYW5nURt8yCAAIkIQACzhugUpySyHQtO7_rPQQ"
           },
           {
+            "message_id": "1123",
+            "episode": 76,
+            "season": 3,
+            "duration": 2814,
+            "telegram_url": "https://t.me/@shoofcima/1123",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEY2q1c3Ex-tx07DswKMRX_Sz1vvOhAAIkIQACzhugUinUkZyJukQ4HgQ",
+            "file_unique_id": "AgADJCEAAs4boFI",
+            "file_size": 50268667,
+            "mime_type": "video/mp4",
+            "file_name": "final_76.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:32:58"
+          },
+          {
             "episode": 77,
             "message_id": 1124,
             "duration": 2742,
@@ -9093,6 +11668,21 @@
             "embed_url": "https://t.me/shoofcima/1124?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1124",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEZGqsbFScGNkZLBgxds_oHkvwoy5NAAIlIQACzhugUibfy68ajWTAPQQ"
+          },
+          {
+            "message_id": "1124",
+            "episode": 77,
+            "season": 3,
+            "duration": 2742,
+            "telegram_url": "https://t.me/@shoofcima/1124",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEZGq1c3FTC41Z3QWT7etp_ZQR1WpOAAIlIQACzhugUqohiaXjFrV7HgQ",
+            "file_unique_id": "AgADJSEAAs4boFI",
+            "file_size": 43634681,
+            "mime_type": "video/mp4",
+            "file_name": "final_77.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:42:32"
           },
           {
             "episode": 78,
@@ -9105,6 +11695,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEZWqsbFQqk_YoDFOzcyqhFn5M1y-gAAInIQACzhugUls0OR9e7RsAAT0E"
           },
           {
+            "message_id": "1125",
+            "episode": 78,
+            "season": 3,
+            "duration": 2586,
+            "telegram_url": "https://t.me/@shoofcima/1125",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEZWq1c3HiphBI59ykbs6WWX0j2LD2AAInIQACzhugUrMemZ4EVQRWHgQ",
+            "file_unique_id": "AgADJyEAAs4boFI",
+            "file_size": 41837196,
+            "mime_type": "video/mp4",
+            "file_name": "final_78.mp4",
+            "thumb_url": "",
+            "date": "2026-04-06T21:50:31"
+          },
+          {
             "episode": 79,
             "message_id": 1126,
             "duration": 2663,
@@ -9113,6 +11718,21 @@
             "embed_url": "https://t.me/shoofcima/1126?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1126",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEZmqsbFS8SDwzPpcD-K8xBKftwh3MAAIOHgACUd6oUsEScVNz4VVfPQQ"
+          },
+          {
+            "message_id": "1126",
+            "episode": 79,
+            "season": 3,
+            "duration": 2663,
+            "telegram_url": "https://t.me/@shoofcima/1126",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEZmq1c3Fer-aAoUXVlBJ6lZ_Me5I5AAIOHgACUd6oUhF48IbRk_D6HgQ",
+            "file_unique_id": "AgADDh4AAlHeqFI",
+            "file_size": 44705481,
+            "mime_type": "video/mp4",
+            "file_name": "final_79.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T19:17:54"
           },
           {
             "episode": 80,
@@ -9125,6 +11745,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEZ2qsbFRM4yk8vpiqiSiO8RgVX4_YAAISHgACUd6oUklPzXH4_7kZPQQ"
           },
           {
+            "message_id": "1127",
+            "episode": 80,
+            "season": 3,
+            "duration": 2615,
+            "telegram_url": "https://t.me/@shoofcima/1127",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEZ2q1c3G4OMr8LXbb4_w5X1U0R817AAISHgACUd6oUlCvyWTQ2RlEHgQ",
+            "file_unique_id": "AgADEh4AAlHeqFI",
+            "file_size": 40033391,
+            "mime_type": "video/mp4",
+            "file_name": "final_80.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T19:27:28"
+          },
+          {
             "episode": 81,
             "message_id": 1128,
             "duration": 2565,
@@ -9133,6 +11768,21 @@
             "embed_url": "https://t.me/shoofcima/1128?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1128",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEaGqsbFQhiDiRSqLwUsaNeUDMZovpAAIUHgACUd6oUtaCE3imKu6wPQQ"
+          },
+          {
+            "message_id": "1128",
+            "episode": 81,
+            "season": 3,
+            "duration": 2565,
+            "telegram_url": "https://t.me/@shoofcima/1128",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEaGq1c3FXi4aD_cULtQOGORCwX1GIAAIUHgACUd6oUseayVtusI2THgQ",
+            "file_unique_id": "AgADFB4AAlHeqFI",
+            "file_size": 43237890,
+            "mime_type": "video/mp4",
+            "file_name": "final_81.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T19:36:31"
           },
           {
             "episode": 82,
@@ -9145,6 +11795,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEaWqsbFOvHCbuTTtJcLSGHRqJjreGAAIgHgACUd6oUi-SdkVwe6b5PQQ"
           },
           {
+            "message_id": "1129",
+            "episode": 82,
+            "season": 3,
+            "duration": 2558,
+            "telegram_url": "https://t.me/@shoofcima/1129",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEaWq1c3HWC36Pn1AYUXFE6ymJN6dfAAIgHgACUd6oUtQeRW8n4REyHgQ",
+            "file_unique_id": "AgADIB4AAlHeqFI",
+            "file_size": 42088436,
+            "mime_type": "video/mp4",
+            "file_name": "final_82.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T19:46:01"
+          },
+          {
             "episode": 83,
             "message_id": 1130,
             "duration": 2699,
@@ -9153,6 +11818,21 @@
             "embed_url": "https://t.me/shoofcima/1130?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1130",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEamqsbFM3vEnSt2fgYBeVgG-23cFbAAIxHgACUd6oUlTwAAH-CKBoQT0E"
+          },
+          {
+            "message_id": "1130",
+            "episode": 83,
+            "season": 3,
+            "duration": 2699,
+            "telegram_url": "https://t.me/@shoofcima/1130",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEamq1c3Gy6XHlLmBk-DXNoDkMtORCAAIxHgACUd6oUliGpQQkk3oZHgQ",
+            "file_unique_id": "AgADMR4AAlHeqFI",
+            "file_size": 43243073,
+            "mime_type": "video/mp4",
+            "file_name": "final_83.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T19:54:57"
           },
           {
             "episode": 84,
@@ -9165,6 +11845,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEa2qsbFOnZvyoJOfdKJEDeNHCww8-AAI1HgACUd6oUkom_DkEBoqQPQQ"
           },
           {
+            "message_id": "1131",
+            "episode": 84,
+            "season": 3,
+            "duration": 2688,
+            "telegram_url": "https://t.me/@shoofcima/1131",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEa2q1c3HcfGZvv3PX-ICDnt9Kti9VAAI1HgACUd6oUhXPAlKG-cIZHgQ",
+            "file_unique_id": "AgADNR4AAlHeqFI",
+            "file_size": 45632410,
+            "mime_type": "video/mp4",
+            "file_name": "final_84.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:03:28"
+          },
+          {
             "episode": 85,
             "message_id": 1132,
             "duration": 2549,
@@ -9173,6 +11868,21 @@
             "embed_url": "https://t.me/shoofcima/1132?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1132",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEbGqsbFMJ84hRrMDiCMazVWBiaf6_AAI3HgACUd6oUhKMDNqAkBF9PQQ"
+          },
+          {
+            "message_id": "1132",
+            "episode": 85,
+            "season": 3,
+            "duration": 2549,
+            "telegram_url": "https://t.me/@shoofcima/1132",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEbGq1c3GQFlG5-vCtAAHJk47guIbMVgACNx4AAlHeqFLJKMnUxPPB6x4E",
+            "file_unique_id": "AgADNx4AAlHeqFI",
+            "file_size": 42567321,
+            "mime_type": "video/mp4",
+            "file_name": "final_85.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:11:44"
           },
           {
             "episode": 86,
@@ -9185,6 +11895,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEbWqsbFPsle2OsU4liteZ9KqH5JjlAAI6HgACUd6oUvLjJvs_xUvnPQQ"
           },
           {
+            "message_id": "1133",
+            "episode": 86,
+            "season": 3,
+            "duration": 2754,
+            "telegram_url": "https://t.me/@shoofcima/1133",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEbWq1c3FgU4H3_TglI0uCXA7ezjwIAAI6HgACUd6oUtELDZOUH-k4HgQ",
+            "file_unique_id": "AgADOh4AAlHeqFI",
+            "file_size": 45663895,
+            "mime_type": "video/mp4",
+            "file_name": "final_86.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:21:31"
+          },
+          {
             "episode": 87,
             "message_id": 1134,
             "duration": 2521,
@@ -9193,6 +11918,21 @@
             "embed_url": "https://t.me/shoofcima/1134?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1134",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEbmqsbFL8H81ooO_Vd-a63cEt0eviAAJBHgACUd6oUvHvIHfleyiePQQ"
+          },
+          {
+            "message_id": "1134",
+            "episode": 87,
+            "season": 3,
+            "duration": 2521,
+            "telegram_url": "https://t.me/@shoofcima/1134",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEbmq1c3F9Est2kt5QjoCVS6LCgdV8AAJBHgACUd6oUhIx0WH1wi49HgQ",
+            "file_unique_id": "AgADQR4AAlHeqFI",
+            "file_size": 42794205,
+            "mime_type": "video/mp4",
+            "file_name": "final_87.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:30:54"
           },
           {
             "episode": 88,
@@ -9205,6 +11945,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEb2qsbFKfTBrisWQ2b0hMeDbi2M3GAAJJHgACUd6oUjF-SiTHsiHlPQQ"
           },
           {
+            "message_id": "1135",
+            "episode": 88,
+            "season": 3,
+            "duration": 2706,
+            "telegram_url": "https://t.me/@shoofcima/1135",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEb2q1c3G5-RSHewjYMz8ixXIqsoJBAAJJHgACUd6oUoo8E5HJQ3SNHgQ",
+            "file_unique_id": "AgADSR4AAlHeqFI",
+            "file_size": 43196879,
+            "mime_type": "video/mp4",
+            "file_name": "final_88.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:40:36"
+          },
+          {
             "episode": 89,
             "message_id": 1136,
             "duration": 2563,
@@ -9213,6 +11968,21 @@
             "embed_url": "https://t.me/shoofcima/1136?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1136",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEcGqsbFLRySreSY0UW7CtLbXWnIeVAAJPHgACUd6oUs4Dy_--qMmxPQQ"
+          },
+          {
+            "message_id": "1136",
+            "episode": 89,
+            "season": 3,
+            "duration": 2563,
+            "telegram_url": "https://t.me/@shoofcima/1136",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEcGq1c3EuZGlreqy_PVTdZbj1DRJuAAJPHgACUd6oUvszj-zBtdPVHgQ",
+            "file_unique_id": "AgADTx4AAlHeqFI",
+            "file_size": 43640298,
+            "mime_type": "video/mp4",
+            "file_name": "final_89.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:49:43"
           },
           {
             "episode": 90,
@@ -9225,6 +11995,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEcWqsbFLZ5GOQCVI0skR30k43Rim8AAJTHgACUd6oUqtB8qSl021NPQQ"
           },
           {
+            "message_id": "1137",
+            "episode": 90,
+            "season": 3,
+            "duration": 2644,
+            "telegram_url": "https://t.me/@shoofcima/1137",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEcWq1c3G2GMQUlA9hzA2b6wpH73AfAAJTHgACUd6oUmxPue8o-wgMHgQ",
+            "file_unique_id": "AgADUx4AAlHeqFI",
+            "file_size": 49613919,
+            "mime_type": "video/mp4",
+            "file_name": "final_90.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T20:59:27"
+          },
+          {
             "episode": 91,
             "message_id": 1138,
             "duration": 2711,
@@ -9233,6 +12018,21 @@
             "embed_url": "https://t.me/shoofcima/1138?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1138",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEcmqsbFIxGAlWvxYFQBjnMeyIsLFmAAJeHgACUd6oUlh_NduIUgX8PQQ"
+          },
+          {
+            "message_id": "1138",
+            "episode": 91,
+            "season": 3,
+            "duration": 2711,
+            "telegram_url": "https://t.me/@shoofcima/1138",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEcmq1c3Hr-b9vnxTthuIYkA6OYulgAAJeHgACUd6oUsDmupO3RoWwHgQ",
+            "file_unique_id": "AgADXh4AAlHeqFI",
+            "file_size": 46763258,
+            "mime_type": "video/mp4",
+            "file_name": "final_91.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:08:08"
           },
           {
             "episode": 92,
@@ -9245,6 +12045,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEc2qsbFFBQF_k-sqrRnh_oIJF7PYKAAJkHgACUd6oUlZtXDEspqQqPQQ"
           },
           {
+            "message_id": "1139",
+            "episode": 92,
+            "season": 3,
+            "duration": 2609,
+            "telegram_url": "https://t.me/@shoofcima/1139",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEc2q1c3FqBCG8HZusVP7H8tA3o5_aAAJkHgACUd6oUtNUyYPrf53WHgQ",
+            "file_unique_id": "AgADZB4AAlHeqFI",
+            "file_size": 44686079,
+            "mime_type": "video/mp4",
+            "file_name": "final_92.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:16:13"
+          },
+          {
             "episode": 93,
             "message_id": 1140,
             "duration": 2715,
@@ -9253,6 +12068,21 @@
             "embed_url": "https://t.me/shoofcima/1140?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1140",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEdGqsbFEDlYS5053-2qjcyWHiKRU-AAJnHgACUd6oUsdCEGkqq9G4PQQ"
+          },
+          {
+            "message_id": "1140",
+            "episode": 93,
+            "season": 3,
+            "duration": 2715,
+            "telegram_url": "https://t.me/@shoofcima/1140",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEdGq1c3H2uSk0GeZyW4Gi0TQgZrkdAAJnHgACUd6oUqVPUae5TsVpHgQ",
+            "file_unique_id": "AgADZx4AAlHeqFI",
+            "file_size": 47048374,
+            "mime_type": "video/mp4",
+            "file_name": "final_93.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:24:38"
           },
           {
             "episode": 94,
@@ -9265,6 +12095,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEdWqsbFGpPzrvLMpgrMpUNkezUaKEAAJoHgACUd6oUtmkaxCWD4UyPQQ"
           },
           {
+            "message_id": "1141",
+            "episode": 94,
+            "season": 3,
+            "duration": 2679,
+            "telegram_url": "https://t.me/@shoofcima/1141",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEdWq1c3HLdtnV7-bSUyluSVIjVVM4AAJoHgACUd6oUoqGZ_KAz8iwHgQ",
+            "file_unique_id": "AgADaB4AAlHeqFI",
+            "file_size": 43578811,
+            "mime_type": "video/mp4",
+            "file_name": "final_94.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:32:53"
+          },
+          {
             "episode": 95,
             "message_id": 1142,
             "duration": 2685,
@@ -9273,6 +12118,21 @@
             "embed_url": "https://t.me/shoofcima/1142?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1142",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEdmqsbFG7NhUTYRb9SJyHxmFUUKwFAAJpHgACUd6oUs1Oov8EllykPQQ"
+          },
+          {
+            "message_id": "1142",
+            "episode": 95,
+            "season": 3,
+            "duration": 2685,
+            "telegram_url": "https://t.me/@shoofcima/1142",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEdmq1c3EKO5weKkm3S7JH17YwthecAAJpHgACUd6oUod6jnNd16mTHgQ",
+            "file_unique_id": "AgADaR4AAlHeqFI",
+            "file_size": 44684615,
+            "mime_type": "video/mp4",
+            "file_name": "final_95.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:41:03"
           },
           {
             "episode": 96,
@@ -9285,6 +12145,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEd2qsbFFVCuhNkpcOv_74Apnjkl_RAAJqHgACUd6oUo33_iXM5vCWPQQ"
           },
           {
+            "message_id": "1143",
+            "episode": 96,
+            "season": 3,
+            "duration": 2667,
+            "telegram_url": "https://t.me/@shoofcima/1143",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEd2q1c3F3Dl0-FNgTOXgqM0lmo_RWAAJqHgACUd6oUipn73tCgG1tHgQ",
+            "file_unique_id": "AgADah4AAlHeqFI",
+            "file_size": 46221428,
+            "mime_type": "video/mp4",
+            "file_name": "final_96.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:49:26"
+          },
+          {
             "episode": 97,
             "message_id": 1144,
             "duration": 2703,
@@ -9293,6 +12168,21 @@
             "embed_url": "https://t.me/shoofcima/1144?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1144",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEeGqsbFGD0K7SAgGH2hjOQyc45aFMAAJrHgACUd6oUjD75FRJwIp8PQQ"
+          },
+          {
+            "message_id": "1144",
+            "episode": 97,
+            "season": 3,
+            "duration": 2703,
+            "telegram_url": "https://t.me/@shoofcima/1144",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEeGq1c3EY6TJB9xuHGrkheU1Ve5wSAAJrHgACUd6oUsoSRSF2YaPPHgQ",
+            "file_unique_id": "AgADax4AAlHeqFI",
+            "file_size": 43611551,
+            "mime_type": "video/mp4",
+            "file_name": "final_97.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T21:56:26"
           },
           {
             "episode": 98,
@@ -9305,6 +12195,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEfGqsbFDYsKUFv4Xf9x-MD3ipVVNoAAIvGAACUd6wUmThjNP9m134PQQ"
           },
           {
+            "message_id": "1148",
+            "episode": 98,
+            "season": 3,
+            "duration": 2766,
+            "telegram_url": "https://t.me/@shoofcima/1148",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEfGq1c3EwfiCGPj1Mp6gcTUCJmV6IAAIvGAACUd6wUvMZEri7KKcGHgQ",
+            "file_unique_id": "AgADLxgAAlHesFI",
+            "file_size": 44914203,
+            "mime_type": "video/mp4",
+            "file_name": "final_98.mp4",
+            "thumb_url": "",
+            "date": "2026-04-08T20:34:00"
+          },
+          {
             "episode": 99,
             "message_id": 1149,
             "duration": 2725,
@@ -9313,6 +12218,21 @@
             "embed_url": "https://t.me/shoofcima/1149?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1149",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEfWqsbFA9rY7PYhxqC6i0qxsE0s2kAAI0GAACUd6wUtE0qx83fH1qPQQ"
+          },
+          {
+            "message_id": "1149",
+            "episode": 99,
+            "season": 3,
+            "duration": 2725,
+            "telegram_url": "https://t.me/@shoofcima/1149",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEfWq1c3Et_F603rVwMwt9Pj9BvULjAAI0GAACUd6wUgSdViaQE2tmHgQ",
+            "file_unique_id": "AgADNBgAAlHesFI",
+            "file_size": 46140444,
+            "mime_type": "video/mp4",
+            "file_name": "final_99.mp4",
+            "thumb_url": "",
+            "date": "2026-04-08T20:45:21"
           },
           {
             "episode": 100,
@@ -9325,6 +12245,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEeWqsbFA-7GgsU0DW1xu8XckeNwdwAAJsHgACUd6oUpgzjWpuERccPQQ"
           },
           {
+            "message_id": "1145",
+            "episode": 100,
+            "season": 3,
+            "duration": 2657,
+            "telegram_url": "https://t.me/@shoofcima/1145",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEeWq1c3GF41458ofvhxLuMSQJ7KFyAAJsHgACUd6oUlpVRsBL-3ePHgQ",
+            "file_unique_id": "AgADbB4AAlHeqFI",
+            "file_size": 43656274,
+            "mime_type": "video/mp4",
+            "file_name": "final_100.mp4",
+            "thumb_url": "",
+            "date": "2026-04-07T22:05:36"
+          },
+          {
             "episode": 102,
             "message_id": 1146,
             "duration": 2734,
@@ -9335,6 +12270,21 @@
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEemqsbFBOH3sPtzzOEcSZxiHOR5-qAAIcGAACUd6wUlDJW2THrSHNPQQ"
           },
           {
+            "message_id": "1146",
+            "episode": 102,
+            "season": 3,
+            "duration": 2734,
+            "telegram_url": "https://t.me/@shoofcima/1146",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEemq1c3G3CFDs4mSPtpU7HfaHBlOsAAIcGAACUd6wUof3qLj01JRDHgQ",
+            "file_unique_id": "AgADHBgAAlHesFI",
+            "file_size": 41798683,
+            "mime_type": "video/mp4",
+            "file_name": "final_102.mp4",
+            "thumb_url": "",
+            "date": "2026-04-08T19:20:32"
+          },
+          {
             "episode": 103,
             "message_id": 1147,
             "duration": 2838,
@@ -9343,6 +12293,21 @@
             "embed_url": "https://t.me/shoofcima/1147?embed=1&mode=tme",
             "telegram_url": "https://t.me/shoofcima/1147",
             "file_id": "BAACAgQAAyEFAATS7MsnAAIEe2qsbFDMD_iiB6LoxUCu15EWpyDvAAIgGAACUd6wUtjPicWEdp_4PQQ"
+          },
+          {
+            "message_id": "1147",
+            "episode": 103,
+            "season": 3,
+            "duration": 2838,
+            "telegram_url": "https://t.me/@shoofcima/1147",
+            "video_url": "",
+            "file_id": "BAACAgQAAyEGAATS7MsnAAIEe2q1c3FiuITlkdoHScPtGSvGfo42AAIgGAACUd6wUt0Vi9PMhoAJHgQ",
+            "file_unique_id": "AgADIBgAAlHesFI",
+            "file_size": 44463835,
+            "mime_type": "video/mp4",
+            "file_name": "final_103.mp4",
+            "thumb_url": "",
+            "date": "2026-04-08T19:35:12"
           }
         ]
       }
