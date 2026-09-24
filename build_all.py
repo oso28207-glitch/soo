@@ -15,7 +15,7 @@ DATA_FILE  = ROOT / "data.json"
 STATIC_SRC = ROOT / "static"
 
 # ★★★ Worker البث (استبدله بعد النشر) ★★★
-STREAM_WORKER = "https://tg-stream.sonasnsn.workers.dev"
+STREAM_WORKER = "https://soo-production.up.railway.app"
 FALLBACK_PROXY = "https://tg-webapp-proxy-58b.pages.dev"
 
 SITE_NAME = "TelegramFlix"
