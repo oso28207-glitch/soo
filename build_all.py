@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 build_all.py — مُولّد الموقع الثابت لـ TelegramFlix
-يقرأ من data.json في جذر المستودع
-★ يعرض الفيديو مباشرة عبر Worker البث ★
+★ نسخة مصححة: تنظيف روابط t.me + ترتيب الحلقات + worker URL ★
 """
 
 import re, json, shutil, html, argparse
@@ -15,10 +14,8 @@ OUT        = ROOT / "docs"
 DATA_FILE  = ROOT / "data.json"
 STATIC_SRC = ROOT / "static"
 
-# ★★★ عنوان Worker البث (بعد النشر على Cloudflare) ★★★
+# ★★★ Worker البث (استبدله بعد النشر) ★★★
 STREAM_WORKER = "https://tg-stream.sonasnsn.workers.dev"
-
-# عنوان proxy احتياطي للملفات > 20MB (اختياري)
 FALLBACK_PROXY = "https://tg-webapp-proxy-58b.pages.dev"
 
 SITE_NAME = "TelegramFlix"
@@ -45,6 +42,18 @@ def fmt_dur(sec):
     if s <= 0: return ""
     h, r = divmod(s, 3600); m, sec = divmod(r, 60)
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+# ═══════════════════════════════════════════════════════════════
+# ★ دالة تنظيف رابط t.me (تزيل @ والمعاملات)
+# ═══════════════════════════════════════════════════════════════
+def clean_tg_url(url: str) -> str:
+    if not url:
+        return ""
+    url = url.split("?")[0].strip()
+    url = re.sub(r"t\.me/@", "t.me/", url)
+    url = re.sub(r"t\.me/c/@", "t.me/c/", url)
+    return url
 
 
 def base(title, body, depth=0, head="", scripts=""):
@@ -96,10 +105,13 @@ def load_data():
                     e = dict(ep); e.setdefault("season", so.get("season", 1)); episodes.append(e)
         elif isinstance(s.get("episodes"), list):
             episodes = s["episodes"]
+        # ★ ترتيب
         episodes.sort(key=lambda e: (int(e.get("season", 1)), int(e.get("episode", 0))))
-        series_list.append({"name": name, "poster": poster,
-                            "description": s.get("description", ""),
-                            "episodes": episodes})
+        series_list.append({
+            "name": name, "poster": poster,
+            "description": s.get("description", ""),
+            "episodes": episodes,
+        })
     return series_list
 
 
@@ -128,36 +140,32 @@ def render_series(series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ render_watch — يعرض الفيديو مباشرة ★★★
+# render_watch — مع كل الإصلاحات
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     video_url = ep.get("video_url", "")
-    tg_url    = ep.get("telegram_url", "") or ep.get("embed_url", "")
-    file_id   = ep.get("file_id", "")  # ← حقل جديد (يُضاف من fetch_from_telegram.py)
+    tg_url    = clean_tg_url(ep.get("telegram_url", "") or ep.get("embed_url", ""))
+    file_id   = ep.get("file_id", "")
     thumb     = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # ─── تجاهل Worker URLs (لا تعمل) ───
+    # تجاهل Worker URLs القديمة
     if video_url and "/stream?fid=" in video_url:
         video_url = ""
 
-    # ─── بناء رابط البث ───
+    # ─── اختيار المشغل ───
     stream_url = ""
     use_iframe = False
 
     if file_id:
-        # ★ الحالة المثالية: file_id مباشر → Worker البث ★
+        # ★ الحالة المثالية: file_id → Worker ★
         stream_url = f"{STREAM_WORKER}/stream?fid={enc(file_id)}"
     elif video_url:
-        # ★ رابط فيديو مباشر من data.json ★
         stream_url = video_url
     elif tg_url:
-        # ★ احتياطي: iframe عبر proxy ★
         use_iframe = True
-        tg_clean = tg_url.split("?")[0]
-        iframe_url = f"{FALLBACK_PROXY}/?embed=1&url={enc(tg_clean)}"
+        iframe_url = f"{FALLBACK_PROXY}/?embed=1&url={enc(tg_url)}"
 
-    # ─── اختيار المشغل ───
     if use_iframe:
         player = (
             f'<div class="player-shell" id="playerShell">'
@@ -201,12 +209,10 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     next_btn = (f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية ⏭</a>'
                 if next_ep else '<span class="btn disabled">التالية ⏭</span>')
     series_url = "../series/" + enc(safe_name(name)) + ".html"
-    tg_clean_full = tg_url.split("?")[0] if "?" in tg_url else tg_url
-    tg_btn = (f'<a class="btn" href="{esc(tg_clean_full)}" target="_blank" rel="noopener">📱 فتح في تليجرام</a>'
+    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">📱 فتح في تليجرام</a>'
               if tg_url else "")
     next_json = json.dumps(f'{next_ep["message_id"]}.html' if next_ep else None)
 
-    # ─── سكريبت postMessage للـ iframe ───
     if use_iframe:
         scripts = f'''<script>
 (function() {{
@@ -215,7 +221,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
   var overlay = document.getElementById('loadingOverlay');
   var PLAYER_ORIGIN = '{FALLBACK_PROXY}';
   var overlayHidden = false;
-
   function hideOverlay() {{
     if (!overlayHidden && overlay) {{
       overlayHidden = true;
@@ -223,36 +228,21 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
       setTimeout(function(){{ if(overlay) overlay.style.display='none'; }}, 400);
     }}
   }}
-
   if (iframe) {{
     iframe.addEventListener('load', function() {{ setTimeout(hideOverlay, 1500); }});
     setTimeout(hideOverlay, 15000);
-
     window.addEventListener('message', function(event) {{
       if (event.origin !== PLAYER_ORIGIN) return;
       var data = event.data;
       if (!data || typeof data !== 'object') return;
-
       if (data.type === 'tg-embed-request-creds') {{
         var creds = null;
-        try {{
-          var raw = localStorage.getItem('tg_credentials');
-          if (raw) creds = JSON.parse(raw);
-        }} catch(e) {{}}
-        try {{
-          iframe.contentWindow.postMessage(
-            {{ type: 'tg-embed-creds', credentials: creds }},
-            PLAYER_ORIGIN
-          );
-        }} catch(e) {{}}
+        try {{ var raw = localStorage.getItem('tg_credentials'); if (raw) creds = JSON.parse(raw); }} catch(e) {{}}
+        try {{ iframe.contentWindow.postMessage({{ type: 'tg-embed-creds', credentials: creds }}, PLAYER_ORIGIN); }} catch(e) {{}}
       }}
-
-      if (data.type === 'tg-embed-error') {{ console.warn('[Player]', data.message); hideOverlay(); }}
-      if (data.type === 'tg-embed-progress') {{ hideOverlay(); }}
-      if (data.type === 'tg-embed-success') {{ hideOverlay(); }}
+      if (data.type === 'tg-embed-error' || data.type === 'tg-embed-progress' || data.type === 'tg-embed-success') {{ hideOverlay(); }}
     }});
   }}
-
   window.__NEXT_URL__ = {next_json};
 }})();
 </script>'''
@@ -281,7 +271,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
 
 
 # ═══════════════════════════════════════════════════════════════
-# CSS
+# CSS + JS
 # ═══════════════════════════════════════════════════════════════
 CSS = '''
 :root{--bg:#0b0b0f;--surface:#14141a;--surface-2:#1c1c24;--border:#2a2a33;--text:#e8e8ef;--text-dim:#8a8a95;--primary:#e50914;--accent:#4ea8de;--radius:12px}
@@ -359,32 +349,47 @@ WATCH_JS = '''
 })();
 '''
 
+
 def build_static():
-    d = OUT/"static"
+    d = OUT / "static"
     if STATIC_SRC.exists():
         if d.exists(): shutil.rmtree(d)
         shutil.copytree(STATIC_SRC, d)
     else:
         d.mkdir(parents=True, exist_ok=True)
-        (d/"style.css").write_text(CSS, encoding="utf-8")
-        (d/"watch.js").write_text(WATCH_JS, encoding="utf-8")
+        (d / "style.css").write_text(CSS, encoding="utf-8")
+        (d / "watch.js").write_text(WATCH_JS, encoding="utf-8")
     print(f"✅ static/ → {d}")
+
 
 def build_site():
     series_list = load_data()
     print(f"📚 تم تحميل {len(series_list)} مسلسل")
     total = 0
     for series in series_list:
-        name = series["name"]; eps = series["episodes"]
-        write_file(OUT/"series"/f"{safe_name(name)}.html", render_series(series))
-        for i, ep in enumerate(eps):
-            prev_ep = eps[i-1] if i>0 else None
-            next_ep = eps[i+1] if i<len(eps)-1 else None
-            html_ep = render_watch(name, ep.get("season",1), ep.get("episode",i+1), prev_ep, next_ep, ep)
-            write_file(OUT/"watch"/f"{ep.get('message_id',f'ep{i}')}.html", html_ep)
+        name = series["name"]
+        # ★ ترتيب الحلقات
+        episodes = sorted(
+            series.get("episodes", []),
+            key=lambda e: (int(e.get("season", 1)), int(e.get("episode", 0)))
+        )
+        series["episodes"] = episodes
+
+        write_file(OUT / "series" / f"{safe_name(name)}.html", render_series(series))
+
+        for i, ep in enumerate(episodes):
+            prev_ep = episodes[i - 1] if i > 0 else None
+            next_ep = episodes[i + 1] if i < len(episodes) - 1 else None
+            html_ep = render_watch(
+                name, ep.get("season", 1), ep.get("episode", i + 1),
+                prev_ep, next_ep, ep,
+            )
+            write_file(OUT / "watch" / f"{ep.get('message_id', f'ep{i}')}.html", html_ep)
             total += 1
-    write_file(OUT/"index.html", render_index(series_list))
+
+    write_file(OUT / "index.html", render_index(series_list))
     print(f"✅ تم بناء {len(series_list)} مسلسل و {total} حلقة")
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -395,6 +400,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     build_static(); build_site()
     print(f"\n✨ اكتمل البناء → {OUT}")
+
 
 if __name__ == "__main__":
     main()
