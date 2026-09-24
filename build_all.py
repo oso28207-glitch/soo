@@ -3,6 +3,7 @@
 """
 build_all.py — مُولّد الموقع الثابت لـ TelegramFlix
 يقرأ من data.json في جذر المستودع
+★ يعرض الفيديو مباشرة عبر Worker البث ★
 """
 
 import re, json, shutil, html, argparse
@@ -13,24 +14,38 @@ ROOT       = Path(__file__).resolve().parent
 OUT        = ROOT / "docs"
 DATA_FILE  = ROOT / "data.json"
 STATIC_SRC = ROOT / "static"
-PROXY_URL  = "https://tg-webapp-proxy-58b.pages.dev"
-SITE_NAME  = "TelegramFlix"
-SITE_DESC  = "مشاهدة المسلسلات مباشرة عبر Telegram"
+
+# ★★★ عنوان Worker البث (بعد النشر على Cloudflare) ★★★
+STREAM_WORKER = "https://tg-stream.YOUR-SUBDOMAIN.workers.dev"
+
+# عنوان proxy احتياطي للملفات > 20MB (اختياري)
+FALLBACK_PROXY = "https://tg-webapp-proxy-58b.pages.dev"
+
+SITE_NAME = "TelegramFlix"
+SITE_DESC = "مشاهدة المسلسلات مباشرة"
+
 
 def esc(s): return html.escape(str(s or ""), quote=True)
 def enc(s): return quote(str(s or ""), safe="")
+
+
 def safe_name(s):
     s = re.sub(r"[^\w\u0600-\u06FF\-]+", "_", str(s or "").strip())
     return re.sub(r"_+", "_", s).strip("_") or "untitled"
+
+
 def write_file(p, c):
     p = Path(p); p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(c, encoding="utf-8")
+
+
 def fmt_dur(sec):
     try: s = int(sec or 0)
     except: return ""
     if s <= 0: return ""
     h, r = divmod(s, 3600); m, sec = divmod(r, 60)
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
 
 def base(title, body, depth=0, head="", scripts=""):
     prefix = "../" * depth if depth else ""
@@ -41,7 +56,6 @@ def base(title, body, depth=0, head="", scripts=""):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{prefix}static/style.css">
 {head}
@@ -56,6 +70,7 @@ def base(title, body, depth=0, head="", scripts=""):
 {scripts}
 </body>
 </html>'''
+
 
 def load_data():
     if not DATA_FILE.exists():
@@ -87,6 +102,7 @@ def load_data():
                             "episodes": episodes})
     return series_list
 
+
 def render_index(series_list):
     cards = []
     for s in series_list:
@@ -97,6 +113,7 @@ def render_index(series_list):
         cards.append(f'<a class="series-card" href="{url}"><div class="series-poster">{ph}</div><div class="series-info"><h3>{esc(name)}</h3><span class="series-meta">{count} حلقة</span></div></a>')
     body = f'<section class="hero"><h1>{SITE_NAME}</h1><p>{SITE_DESC}</p></section><section class="series-grid">{"".join(cards) if cards else "<p class=empty>لا توجد مسلسلات</p>"}</section>'
     return base(f"{SITE_NAME} — الرئيسية", body)
+
 
 def render_series(series):
     name = series["name"]; poster = series["poster"]; eps = series["episodes"]
@@ -109,40 +126,44 @@ def render_series(series):
     body = f'<div class="series-hero"><div class="series-poster-large">{ph}</div><div class="series-details"><h1>{esc(name)}</h1><p class="series-count">{len(eps)} حلقة</p><p class="series-desc">{esc(series.get("description",""))}</p></div></div><h2 class="section-title">الحلقات</h2><div class="episodes-grid">{"".join(ep_cards)}</div>'
     return base(f"{name} — {SITE_NAME}", body, depth=1)
 
+
 # ═══════════════════════════════════════════════════════════════
-# ★★★ render_watch — مع Embed Mode + postMessage ★★★
+# ★★★ render_watch — يعرض الفيديو مباشرة ★★★
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     video_url = ep.get("video_url", "")
     tg_url    = ep.get("telegram_url", "") or ep.get("embed_url", "")
+    file_id   = ep.get("file_id", "")  # ← حقل جديد (يُضاف من fetch_from_telegram.py)
     thumb     = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
-    # تجاهل Worker URLs (لا تعمل مع الملفات > 20MB)
+    # ─── تجاهل Worker URLs (لا تعمل) ───
     if video_url and "/stream?fid=" in video_url:
         video_url = ""
 
-    # ─── اختيار المشغل ───
-    if video_url:
-        # فيديو مباشر (روابط خارجية قد تعمل)
-        player = (f'<video controls preload="metadata"{poster_attr} '
-                  f'style="width:100%;height:100%;display:block;background:#000;">'
-                  f'<source src="{esc(video_url)}" type="video/mp4"></video>')
-        note_html = ""
-        autoplay_html = ('<label class="autoplay-toggle">'
-                         '<input type="checkbox" id="autoplayNext"> تشغيل تلقائي للحلقة التالية</label>')
-        head = '<script src="../static/watch.js" defer></script>'
+    # ─── بناء رابط البث ───
+    stream_url = ""
+    use_iframe = False
 
+    if file_id:
+        # ★ الحالة المثالية: file_id مباشر → Worker البث ★
+        stream_url = f"{STREAM_WORKER}/stream?fid={enc(file_id)}"
+    elif video_url:
+        # ★ رابط فيديو مباشر من data.json ★
+        stream_url = video_url
     elif tg_url:
-        # ★★★ Embed Mode عبر iframe ★★★
+        # ★ احتياطي: iframe عبر proxy ★
+        use_iframe = True
         tg_clean = tg_url.split("?")[0]
-        player_url = f"{PROXY_URL}/?embed=1&url={enc(tg_clean)}"
-        iframe_id = f"tg-player-{ep.get('message_id', 'x')}"
+        iframe_url = f"{FALLBACK_PROXY}/?embed=1&url={enc(tg_clean)}"
+
+    # ─── اختيار المشغل ───
+    if use_iframe:
         player = (
             f'<div class="player-shell" id="playerShell">'
             f'<div class="loading-overlay" id="loadingOverlay">'
             f'<div class="spinner"></div><span>جاري تحضير المشغل...</span></div>'
-            f'<iframe id="{iframe_id}" src="{esc(player_url)}" '
+            f'<iframe id="tgPlayer" src="{esc(iframe_url)}" '
             f'frameborder="0" width="100%" height="100%" '
             f'allow="autoplay; encrypted-media; fullscreen; picture-in-picture" '
             f'allowfullscreen></iframe></div>'
@@ -150,12 +171,26 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         note_html = (
             '<div class="embed-note">'
             '💡 <strong>ملاحظة:</strong> إذا ظهرت رسالة "لا توجد جلسة مسجّلة"، '
-            f'افتح <a href="{PROXY_URL}/" target="_blank">الصفحة الرئيسية للمشغل</a> '
-            'وسجّل الدخول مرة واحدة (API ID + API Hash + Bot Token)، '
-            'ثم أعد تحميل هذه الصفحة.</div>'
+            f'افتح <a href="{FALLBACK_PROXY}/" target="_blank">الصفحة الرئيسية للمشغل</a> '
+            'وسجّل الدخول مرة واحدة، ثم أعد تحميل هذه الصفحة.</div>'
         )
-        autoplay_html = ""
         head = ""
+        autoplay_html = ""
+    elif stream_url:
+        player = (
+            f'<video id="mainPlayer" controls playsinline preload="metadata"{poster_attr} '
+            f'style="width:100%;height:100%;display:block;background:#000;" '
+            f'crossorigin="anonymous">'
+            f'<source src="{esc(stream_url)}" type="video/mp4">'
+            f'متصفحك لا يدعم تشغيل الفيديو.</video>'
+        )
+        note_html = ""
+        head = '<script src="../static/watch.js" defer></script>'
+        autoplay_html = (
+            '<label class="autoplay-toggle">'
+            '<input type="checkbox" id="autoplayNext" checked> تشغيل تلقائي للحلقة التالية'
+            '</label>'
+        )
     else:
         player = '<div class="no-player"><div>⚠️ لا يوجد رابط متاح لهذه الحلقة.</div></div>'
         note_html = ""; autoplay_html = ""; head = ""
@@ -171,14 +206,14 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
               if tg_url else "")
     next_json = json.dumps(f'{next_ep["message_id"]}.html' if next_ep else None)
 
-    # ★★★ سكريبت postMessage للـ Embed Mode ★★★
-    if tg_url and not video_url:
+    # ─── سكريبت postMessage للـ iframe ───
+    if use_iframe:
         scripts = f'''<script>
 (function() {{
   'use strict';
-  var iframe = document.querySelector('.player-shell iframe');
+  var iframe = document.getElementById('tgPlayer');
   var overlay = document.getElementById('loadingOverlay');
-  var PLAYER_ORIGIN = '{PROXY_URL}';
+  var PLAYER_ORIGIN = '{FALLBACK_PROXY}';
   var overlayHidden = false;
 
   function hideOverlay() {{
@@ -190,27 +225,14 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
   }}
 
   if (iframe) {{
-    // إخفاء شاشة التحميل بعد تحميل iframe
-    iframe.addEventListener('load', function() {{
-      setTimeout(hideOverlay, 1500);
-    }});
-    // إخفاء احتياطي بعد 15 ثانية
+    iframe.addEventListener('load', function() {{ setTimeout(hideOverlay, 1500); }});
     setTimeout(hideOverlay, 15000);
 
-    // إرسال رسالة جاهزية
-    window.addEventListener('load', function() {{
-      if (iframe.contentWindow) {{
-        try {{ iframe.contentWindow.postMessage({{ type: 'tg-embed-ready' }}, PLAYER_ORIGIN); }} catch(e) {{}}
-      }}
-    }});
-
-    // استقبال رسائل من iframe
     window.addEventListener('message', function(event) {{
       if (event.origin !== PLAYER_ORIGIN) return;
       var data = event.data;
       if (!data || typeof data !== 'object') return;
 
-      // طلب الاعتماد من iframe → نمرره من localStorage المحلي
       if (data.type === 'tg-embed-request-creds') {{
         var creds = null;
         try {{
@@ -225,16 +247,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         }} catch(e) {{}}
       }}
 
-      if (data.type === 'tg-embed-error') {{
-        console.warn('[Player] Error:', data.message);
-        hideOverlay();
-      }}
-
-      if (data.type === 'tg-embed-progress') {{
-        console.log('[Player] Progress:', data.text || data.percent || '');
-        hideOverlay();
-      }}
-
+      if (data.type === 'tg-embed-error') {{ console.warn('[Player]', data.message); hideOverlay(); }}
+      if (data.type === 'tg-embed-progress') {{ hideOverlay(); }}
       if (data.type === 'tg-embed-success') {{ hideOverlay(); }}
     }});
   }}
@@ -242,14 +256,14 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
   window.__NEXT_URL__ = {next_json};
 }})();
 </script>'''
-    elif video_url:
+    elif stream_url:
         scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
     else:
         scripts = ""
 
     body = f'''
     <div class="watch-wrap">
-      {player}
+      <div class="player-shell">{player}</div>
       {note_html}
       <div class="watch-info">
         <h1>{esc(name)}</h1>
@@ -265,8 +279,9 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     </div>'''
     return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
 
+
 # ═══════════════════════════════════════════════════════════════
-# CSS المدمج
+# CSS
 # ═══════════════════════════════════════════════════════════════
 CSS = '''
 :root{--bg:#0b0b0f;--surface:#14141a;--surface-2:#1c1c24;--border:#2a2a33;--text:#e8e8ef;--text-dim:#8a8a95;--primary:#e50914;--accent:#4ea8de;--radius:12px}
@@ -338,7 +353,7 @@ WATCH_JS = '''
   if(s>5) v.addEventListener('loadedmetadata',function(){ if(confirm('استئناف من '+ft(s)+'؟')) v.currentTime=s; });
   setInterval(function(){ if(!v.paused && v.currentTime>0) localStorage.setItem(k,v.currentTime.toString()); },5000);
   var a = document.getElementById('autoplayNext');
-  if(a){ a.checked = localStorage.getItem('tgflix_autoplay')==='1'; a.addEventListener('change',function(){ localStorage.setItem('tgflix_autoplay',this.checked?'1':'0'); }); }
+  if(a){ a.checked = localStorage.getItem('tgflix_autoplay')!=='0'; a.addEventListener('change',function(){ localStorage.setItem('tgflix_autoplay',this.checked?'1':'0'); }); }
   v.addEventListener('ended',function(){ localStorage.removeItem(k); if(a&&a.checked&&window.__NEXT_URL__) location.href=window.__NEXT_URL__; });
   function ft(s){var m=Math.floor(s/60),x=Math.floor(s%60);return m+':'+(x<10?'0':'')+x;}
 })();
