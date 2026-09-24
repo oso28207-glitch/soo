@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-يدعم Range Requests و بث الملفات الكبيرة (حتى 2GB)
+يدعم Range Requests و الملفات الكبيرة (حتى 2GB)
 """
 
 import os
@@ -15,11 +15,14 @@ from pyrogram.file_id import FileId
 from pyrogram.raw.functions.upload import GetFile
 from pyrogram.raw.types import InputDocumentFileLocation, InputPhotoFileLocation
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-STRING_SESSION = os.getenv("STRING_SESSION")
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+STRING_SESSION = os.getenv("STRING_SESSION", "")
 
-app = FastAPI()
+if not all([API_ID, API_HASH, STRING_SESSION]):
+    raise RuntimeError("❌ يجب ضبط API_ID و API_HASH و STRING_SESSION")
+
+app = FastAPI(title="Telegram Stream Server")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,6 +52,11 @@ async def shutdown():
     await client.stop()
 
 
+@app.get("/")
+async def root():
+    return {"service": "Telegram Stream Server", "status": "ok"}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -70,7 +78,6 @@ async def stream(request: Request, fid: str):
     if not file_size:
         raise HTTPException(400, "unknown file size")
 
-    # ─── تحديد النطاق ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -84,7 +91,6 @@ async def stream(request: Request, fid: str):
 
     length = end - start + 1
 
-    # ─── بناء الموقع ───
     if file_id.file_type in ("video", "document", "audio", "animation"):
         location = InputDocumentFileLocation(
             id=file_id.media_id,
@@ -102,7 +108,7 @@ async def stream(request: Request, fid: str):
     else:
         raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
 
-    CHUNK = 1024 * 1024  # 1MB
+    CHUNK = 1024 * 1024
 
     async def gen():
         offset = start
