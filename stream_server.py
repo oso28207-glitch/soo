@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-متوافق مع Railway / Render / Fly.io / VPS
+متوافق مع Railway/Render/Fly.io — يستخدم lifespan الحديث
 """
 
 import os
 import re
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,18 +29,6 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     raise SystemExit(1)
 
 # ═══════════════════════════════════════════════════════════════
-# FastAPI
-# ═══════════════════════════════════════════════════════════════
-app = FastAPI(title="Telegram Stream Server")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "HEAD", "OPTIONS"],
-    allow_headers=["Range"],
-    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges"],
-)
-
-# ═══════════════════════════════════════════════════════════════
 # MTProto Client
 # ═══════════════════════════════════════════════════════════════
 client = Client(
@@ -51,17 +41,32 @@ client = Client(
 )
 
 
-@app.on_event("startup")
-async def startup():
+# ═══════════════════════════════════════════════════════════════
+# Lifespan (بديل on_event)
+# ═══════════════════════════════════════════════════════════════
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ─── Startup ───
     await client.start()
     me = await client.get_me()
     print(f"✅ MTProto client started as @{me.username or me.id}")
-
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
+    # ─── Shutdown ───
     await client.stop()
     print("👋 MTProto client stopped")
+
+
+# ═══════════════════════════════════════════════════════════════
+# FastAPI App
+# ═══════════════════════════════════════════════════════════════
+app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "HEAD", "OPTIONS"],
+    allow_headers=["Range"],
+    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges"],
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -94,6 +99,8 @@ async def stream(request: Request, fid: str):
     try:
         file_id = FileId.decode(fid)
     except Exception as e:
+        print(f"❌ FileId.decode failed: {e}")
+        print(f"   fid = {fid[:80]}...")
         raise HTTPException(400, f"invalid file_id: {e}")
 
     file_size = file_id.file_size
@@ -170,21 +177,11 @@ async def stream(request: Request, fid: str):
 
 
 # ═══════════════════════════════════════════════════════════════
-# نقطة البداية — تقرأ PORT تلقائياً من البيئة
+# نقطة البداية
 # ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
-
-    # ★ Railway و Render يمرران PORT كمتغير بيئة
     port = int(os.environ.get("PORT", "8000"))
     host = os.environ.get("HOST", "0.0.0.0")
-
     print(f"🚀 Starting Telegram Stream Server on {host}:{port}")
-
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level="info",
-        access_log=True,
-    )
+    uvicorn.run(app, host=host, port=port, log_level="info")
