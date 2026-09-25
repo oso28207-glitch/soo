@@ -3,6 +3,7 @@
 """
 fetch_from_telegram.py — جالب بيانات المسلسلات من قناة Telegram
 يُنتج: data.json + forward_progress.json
+★ يستخرج file_id مباشرة من Pyrogram (متوافق مع FileId.decode)
 """
 
 import os
@@ -26,9 +27,9 @@ PROGRESS_FILE = ROOT / "forward_progress.json"
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 CHANNEL = (os.getenv("CHANNEL") or "").strip()
-CHANNEL_CLEAN = CHANNEL.lstrip("@")   # ★ إزالة @ من البداية
-STRING_SESSION = os.getenv("STRING_SESSION", "")
-STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
+CHANNEL_CLEAN = CHANNEL.lstrip("@")
+STRING_SESSION = os.getenv("STRING_SESSION", "").strip()
+STRING_SESSION2 = os.getenv("STRING_SESSION2", "").strip()
 STORAGE_CHANNEL = os.getenv("STORAGE_CHANNEL", "")
 STREAM_BASE = os.getenv("STREAM_BASE", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -190,9 +191,13 @@ def add_episode(series: dict, season: int, episode: dict) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════
-# استخراج معلومات الملف
+# استخراج معلومات الملف من رسالة Pyrogram
 # ═══════════════════════════════════════════════════════════════
 def extract_media_info(msg) -> Optional[dict]:
+    """
+    يستخرج معلومات الفيديو/المستند من رسالة Pyrogram
+    ★ file_id المستخرج هنا متوافق مع FileId.decode في stream_server.py
+    """
     media = None
     media_type = None
     if msg.video:
@@ -227,7 +232,7 @@ def extract_media_info(msg) -> Optional[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# معالجة رسالة
+# معالجة رسالة واحدة
 # ═══════════════════════════════════════════════════════════════
 async def process_message(client: Client, msg, data: dict, progress: dict) -> bool:
     if not msg or not msg.caption:
@@ -244,7 +249,7 @@ async def process_message(client: Client, msg, data: dict, progress: dict) -> bo
     if media_info["file_size"] < 1024 * 1024:
         return False
 
-    # ★ بناء رابط t.me بشكل صحيح (بدون @)
+    # بناء رابط t.me بشكل صحيح (بدون @)
     if CHANNEL_CLEAN.startswith("-100"):
         tg_url = f"https://t.me/c/{CHANNEL_CLEAN.replace('-100', '')}/{msg.id}"
     elif CHANNEL_CLEAN.startswith("-"):
