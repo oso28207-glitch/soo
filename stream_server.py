@@ -43,17 +43,15 @@ client = Client(
 
 
 # ═══════════════════════════════════════════════════════════════
-# Lifespan (بديل on_event)
+# Lifespan
 # ═══════════════════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print("🚀 Starting MTProto client...")
     await client.start()
     me = await client.get_me()
     print(f"✅ MTProto client started as @{me.username or me.id}")
     yield
-    # Shutdown
     print("👋 Stopping MTProto client...")
     await client.stop()
     print("✅ Stopped")
@@ -64,33 +62,21 @@ async def lifespan(app: FastAPI):
 # ═══════════════════════════════════════════════════════════════
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
-# ★★★ CORS — يسمح لـ GitHub Pages بالوصول ★★★
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # يمكنك تحديد النطاقات بدقة:
-    # allow_origins=[
-    #     "https://oso28207-glitch.github.io",
-    #     "https://soo.pages.dev",
-    # ],
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "HEAD", "OPTIONS"],
     allow_headers=["Range", "Content-Type", "Accept", "Origin"],
     expose_headers=[
-        "Content-Length",
-        "Content-Range",
-        "Accept-Ranges",
-        "Content-Type",
+        "Content-Length", "Content-Range", "Accept-Ranges", "Content-Type",
     ],
     max_age=86400,
 )
 
 
-# ═══════════════════════════════════════════════════════════════
-# CORS — Middleware إضافي لضمان الترويسات على كل الردود
-# ═══════════════════════════════════════════════════════════════
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
-    """يضمن إضافة CORS headers لكل الردود بما فيها الأخطاء"""
     try:
         response = await call_next(request)
     except Exception as e:
@@ -100,8 +86,6 @@ async def add_cors_headers(request: Request, call_next):
             {"error": "internal_error", "message": str(e)},
             status_code=500,
         )
-
-    # إضافة CORS headers دائماً
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Range, Content-Type"
@@ -116,14 +100,7 @@ async def add_cors_headers(request: Request, call_next):
 # ═══════════════════════════════════════════════════════════════
 @app.get("/")
 async def root():
-    return {
-        "service": "Telegram Stream Server",
-        "status": "ok",
-        "endpoints": {
-            "health": "/health",
-            "stream": "/stream?fid=FILE_ID",
-        },
-    }
+    return {"service": "Telegram Stream Server", "status": "ok"}
 
 
 @app.get("/health")
@@ -133,8 +110,14 @@ async def health():
 
 @app.head("/stream")
 @app.get("/stream")
-async def stream(request: Request, fid: str):
-    """بث ملف عبر MTProto مع دعم Range Requests"""
+async def stream(request: Request, fid: str, size: int = 0):
+    """
+    بث ملف عبر MTProto مع دعم Range Requests.
+    
+    Parameters:
+        fid  (str): ملف التعريف (file_id)
+        size (int): حجم الملف بالبايت (مطلوب للبث)
+    """
     if not fid:
         raise HTTPException(400, "missing fid parameter")
 
@@ -145,11 +128,17 @@ async def stream(request: Request, fid: str):
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
 
-    file_size = file_id.file_size
-    if not file_size:
-        raise HTTPException(400, "unknown file size")
+    # ★★★ استخدام الحجم المُمرَّر كمعامل ★★★
+    file_size = size
 
-    print(f"📥 Stream request: type={file_id.file_type}, "
+    if not file_size or file_size <= 0:
+        raise HTTPException(
+            400,
+            "missing or invalid 'size' parameter. "
+            "File size must be passed as ?size=<bytes>"
+        )
+
+    print(f"📥 Stream: type={file_id.file_type}, "
           f"size={file_size / 1024 / 1024:.1f}MB")
 
     # ─── 2) تحليل Range ───
@@ -167,26 +156,22 @@ async def stream(request: Request, fid: str):
     length = end - start + 1
 
     # ─── 3) تحديد موقع الملف ───
-    try:
-        if file_id.file_type in ("video", "document", "audio", "animation"):
-            location = InputDocumentFileLocation(
-                id=file_id.media_id,
-                access_hash=file_id.access_hash,
-                file_reference=file_id.file_reference,
-                thumb_size="",
-            )
-        elif file_id.file_type == "photo":
-            location = InputPhotoFileLocation(
-                id=file_id.media_id,
-                access_hash=file_id.access_hash,
-                file_reference=file_id.file_reference,
-                thumb_size="",
-            )
-        else:
-            raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
-    except Exception as e:
-        print(f"❌ Location build failed: {e}")
-        raise HTTPException(400, f"cannot build location: {e}")
+    if file_id.file_type in ("video", "document", "audio", "animation"):
+        location = InputDocumentFileLocation(
+            id=file_id.media_id,
+            access_hash=file_id.access_hash,
+            file_reference=file_id.file_reference,
+            thumb_size="",
+        )
+    elif file_id.file_type == "photo":
+        location = InputPhotoFileLocation(
+            id=file_id.media_id,
+            access_hash=file_id.access_hash,
+            file_reference=file_id.file_reference,
+            thumb_size="",
+        )
+    else:
+        raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
 
     # ─── 4) مولّد البث ───
     CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -194,7 +179,6 @@ async def stream(request: Request, fid: str):
     async def generate():
         offset = start
         remaining = length
-        chunk_count = 0
         while remaining > 0:
             chunk = min(CHUNK_SIZE, remaining)
             try:
@@ -205,18 +189,12 @@ async def stream(request: Request, fid: str):
                 print(f"⚠️ Chunk error at offset {offset}: {e}")
                 traceback.print_exc()
                 break
-
             data = result.bytes
             if not data:
                 break
-
             yield data
             offset += len(data)
             remaining -= len(data)
-            chunk_count += 1
-
-            if chunk_count % 5 == 0:
-                print(f"   ... sent {chunk_count} chunks ({offset / 1024 / 1024:.1f}MB)")
 
     # ─── 5) الترويسات ───
     headers = {
@@ -233,9 +211,6 @@ async def stream(request: Request, fid: str):
     return StreamingResponse(generate(), headers=headers)
 
 
-# ═══════════════════════════════════════════════════════════════
-# Error Handler عام
-# ═══════════════════════════════════════════════════════════════
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     print(f"❌ Unhandled exception: {exc}")
@@ -243,29 +218,13 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         {"error": "internal_error", "message": str(exc)},
         status_code=500,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-            "Access-Control-Allow-Headers": "Range",
-        },
+        headers={"Access-Control-Allow-Origin": "*"},
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# نقطة البداية
-# ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.environ.get("PORT", "8000"))
     host = os.environ.get("HOST", "0.0.0.0")
-
     print(f"🚀 Starting Telegram Stream Server on {host}:{port}")
-
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level="info",
-        access_log=True,
-    )
+    uvicorn.run(app, host=host, port=port, log_level="info", access_log=True)
