@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 fetch_from_telegram.py — جالب بيانات المسلسلات من قناة Telegram
-يُنتج: data.json + forward_progress.json
+يُنتج: data.json + forward_progress.jso
 ★ يستخرج file_id مباشرة من Pyrogram (متوافق مع FileId.decode)
 """
 
