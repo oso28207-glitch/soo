@@ -194,8 +194,12 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     use_iframe = False
 
     if file_id:
-        # الحالة المثالية: file_id → Railway
-        stream_url = f"{STREAM_WORKER}/stream?fid={enc(file_id)}"
+        fsize = ep.get("file_size", 0)
+        stream_url = (
+            f"{STREAM_WORKER}/stream"
+            f"?fid={enc(file_id)}"
+            f"&size={fsize}"
+        )
     elif video_url:
         stream_url = video_url
 
