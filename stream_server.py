@@ -97,6 +97,55 @@ async def health():
     return {"status": "ok"}
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★ دالة مساعدة لبناء Location بناءً على نوع الملف ★
+# ═══════════════════════════════════════════════════════════════
+def build_location(file_id):
+    """
+    يبني كائن Location المناسب حسب نوع الملف.
+    يدعم الأرقام (4=video) والنصوص ('video') لأن Pyrogram قد يُرجع أياً منهما.
+    """
+    ft = file_id.file_type
+    ft_str = str(ft).lower()
+
+    # Pyrogram FileType: 0=THUMBNAIL, 1=PROFILE_PHOTO, 2=PHOTO,
+    #                    3=VOICE, 4=VIDEO, 5=DOCUMENT, 6=SECURE,
+    #                    7=AUDIO, 8=GIF, 9=STICKER
+
+    DOC_TYPES = {
+        "video", "document", "audio", "animation", "gif",
+        "voice", "sticker", "secure",
+        "3", "4", "5", "6", "7", "8", "9",
+    }
+    PHOTO_TYPES = {"photo", "profile_photo", "thumbnail", "0", "1", "2"}
+
+    if ft_str in DOC_TYPES:
+        return InputDocumentFileLocation(
+            id=file_id.media_id,
+            access_hash=file_id.access_hash,
+            file_reference=file_id.file_reference,
+            thumb_size="",
+        )
+    elif ft_str in PHOTO_TYPES:
+        return InputPhotoFileLocation(
+            id=file_id.media_id,
+            access_hash=file_id.access_hash,
+            file_reference=file_id.file_reference,
+            thumb_size="",
+        )
+    else:
+        print(f"⚠️ Unknown file_type: {ft} — defaulting to document")
+        return InputDocumentFileLocation(
+            id=file_id.media_id,
+            access_hash=file_id.access_hash,
+            file_reference=file_id.file_reference,
+            thumb_size="",
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# Endpoint البث
+# ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
 @app.get("/stream")
 async def stream(request: Request, fid: str, size: int = 0):
@@ -117,7 +166,7 @@ async def stream(request: Request, fid: str, size: int = 0):
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
 
-    # ─── 2) قراءة الحجم من المعامل ───
+    # ─── 2) قراءة الحجم ───
     file_size = size
     if not file_size or file_size <= 0:
         raise HTTPException(
@@ -142,23 +191,13 @@ async def stream(request: Request, fid: str, size: int = 0):
 
     length = end - start + 1
 
-    # ─── 4) تحديد موقع الملف ───
-    if file_id.file_type in ("video", "document", "audio", "animation"):
-        location = InputDocumentFileLocation(
-            id=file_id.media_id,
-            access_hash=file_id.access_hash,
-            file_reference=file_id.file_reference,
-            thumb_size="",
-        )
-    elif file_id.file_type == "photo":
-        location = InputPhotoFileLocation(
-            id=file_id.media_id,
-            access_hash=file_id.access_hash,
-            file_reference=file_id.file_reference,
-            thumb_size="",
-        )
-    else:
-        raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
+    # ─── 4) بناء Location ───
+    try:
+        location = build_location(file_id)
+    except Exception as e:
+        print(f"❌ Failed to build location: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, f"cannot build location: {e}")
 
     # ─── 5) مولّد البث ───
     CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -166,6 +205,7 @@ async def stream(request: Request, fid: str, size: int = 0):
     async def generate():
         offset = start
         remaining = length
+        chunk_count = 0
         while remaining > 0:
             chunk = min(CHUNK_SIZE, remaining)
             try:
@@ -182,10 +222,16 @@ async def stream(request: Request, fid: str, size: int = 0):
             yield data
             offset += len(data)
             remaining -= len(data)
+            chunk_count += 1
+            if chunk_count % 10 == 0:
+                print(f"   ... sent {offset / 1024 / 1024:.1f}MB")
 
     # ─── 6) الترويسات ───
+    # استنتاج mime_type
+    mime_type = getattr(file_id, "mime_type", None) or "video/mp4"
+
     headers = {
-        "Content-Type": file_id.mime_type or "video/mp4",
+        "Content-Type": mime_type,
         "Accept-Ranges": "bytes",
         "Content-Length": str(length),
         "Cache-Control": "public, max-age=86400",
