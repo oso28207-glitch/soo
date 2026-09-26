@@ -42,9 +42,6 @@ client = Client(
 )
 
 
-# ═══════════════════════════════════════════════════════════════
-# Lifespan
-# ═══════════════════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting MTProto client...")
@@ -57,9 +54,6 @@ async def lifespan(app: FastAPI):
     print("✅ Stopped")
 
 
-# ═══════════════════════════════════════════════════════════════
-# FastAPI App
-# ═══════════════════════════════════════════════════════════════
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
 app.add_middleware(
@@ -68,9 +62,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "HEAD", "OPTIONS"],
     allow_headers=["Range", "Content-Type", "Accept", "Origin"],
-    expose_headers=[
-        "Content-Length", "Content-Range", "Accept-Ranges", "Content-Type",
-    ],
+    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Type"],
     max_age=86400,
 )
 
@@ -95,9 +87,6 @@ async def add_cors_headers(request: Request, call_next):
     return response
 
 
-# ═══════════════════════════════════════════════════════════════
-# Endpoints
-# ═══════════════════════════════════════════════════════════════
 @app.get("/")
 async def root():
     return {"service": "Telegram Stream Server", "status": "ok"}
@@ -115,8 +104,8 @@ async def stream(request: Request, fid: str, size: int = 0):
     بث ملف عبر MTProto مع دعم Range Requests.
     
     Parameters:
-        fid  (str): ملف التعريف (file_id)
-        size (int): حجم الملف بالبايت (مطلوب للبث)
+        fid  (str): معرف الملف (file_id) — مطلوب
+        size (int): حجم الملف بالبايت — مطلوب
     """
     if not fid:
         raise HTTPException(400, "missing fid parameter")
@@ -128,9 +117,8 @@ async def stream(request: Request, fid: str, size: int = 0):
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
 
-    # ★★★ استخدام الحجم المُمرَّر كمعامل ★★★
+    # ─── 2) قراءة الحجم من المعامل ───
     file_size = size
-
     if not file_size or file_size <= 0:
         raise HTTPException(
             400,
@@ -138,10 +126,9 @@ async def stream(request: Request, fid: str, size: int = 0):
             "File size must be passed as ?size=<bytes>"
         )
 
-    print(f"📥 Stream: type={file_id.file_type}, "
-          f"size={file_size / 1024 / 1024:.1f}MB")
+    print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB")
 
-    # ─── 2) تحليل Range ───
+    # ─── 3) تحليل Range ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -155,7 +142,7 @@ async def stream(request: Request, fid: str, size: int = 0):
 
     length = end - start + 1
 
-    # ─── 3) تحديد موقع الملف ───
+    # ─── 4) تحديد موقع الملف ───
     if file_id.file_type in ("video", "document", "audio", "animation"):
         location = InputDocumentFileLocation(
             id=file_id.media_id,
@@ -173,7 +160,7 @@ async def stream(request: Request, fid: str, size: int = 0):
     else:
         raise HTTPException(400, f"unsupported file type: {file_id.file_type}")
 
-    # ─── 4) مولّد البث ───
+    # ─── 5) مولّد البث ───
     CHUNK_SIZE = 1024 * 1024  # 1 MB
 
     async def generate():
@@ -196,7 +183,7 @@ async def stream(request: Request, fid: str, size: int = 0):
             offset += len(data)
             remaining -= len(data)
 
-    # ─── 5) الترويسات ───
+    # ─── 6) الترويسات ───
     headers = {
         "Content-Type": file_id.mime_type or "video/mp4",
         "Accept-Ranges": "bytes",
