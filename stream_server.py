@@ -25,11 +25,14 @@ from pyrogram.errors import FileReferenceExpired
 API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "").strip()
 STRING_SESSION = os.environ.get("STRING_SESSION", "").strip()
-CHANNEL_ID = os.environ.get("CHANNEL", "").strip()  # ★ قناة المصدر للتحديث
+CHANNEL_ID = os.environ.get("CHANNEL", "").strip()
 
 if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
+
+if not CHANNEL_ID:
+    print("⚠️ تحذير: CHANNEL غير مضبوط — لن يتم تحديث file_id تلقائياً")
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -43,16 +46,20 @@ client = Client(
     workers=4,
 )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting MTProto client...")
     await client.start()
     me = await client.get_me()
     print(f"✅ MTProto client started as @{me.username or me.id}")
+    if CHANNEL_ID:
+        print(f"📺 Channel for refresh: {CHANNEL_ID}")
     yield
     print("👋 Stopping MTProto client...")
     await client.stop()
     print("✅ Stopped")
+
 
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
@@ -65,6 +72,7 @@ app.add_middleware(
     expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Type"],
     max_age=86400,
 )
+
 
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
@@ -85,57 +93,65 @@ async def add_cors_headers(request: Request, call_next):
     )
     return response
 
+
 @app.get("/")
 async def root():
     return {"service": "Telegram Stream Server", "status": "ok"}
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
+
 # ═══════════════════════════════════════════════════════════════
-# ★ دالة تحديث file_reference ★
+# دالة تحديث file_id
 # ═══════════════════════════════════════════════════════════════
-async def refresh_file_id(original_fid: str, message_id: int) -> str:
-    """
-    يجلب file_id جديد من Telegram عند انتهاء صلاحية المرجع.
-    """
+async def refresh_file_id(message_id: int) -> str:
+    """يجلب file_id جديد من Telegram عند انتهاء صلاحية المرجع"""
     if not CHANNEL_ID or not message_id:
         print("⚠️ Cannot refresh: CHANNEL or message_id missing")
-        return original_fid
+        return ""
 
     try:
         print(f"🔄 Refreshing file_id for message {message_id}...")
-        # جلب الرسالة من جديد
-        messages = await client.get_messages(CHANNEL_ID, message_ids=message_id)
-        if not messages or not messages.media:
-            print("❌ Message or media not found")
-            return original_fid
 
-        # استخراج file_id الجديد
-        new_fid = ""
-        if messages.video:
-            new_fid = messages.video.file_id
-        elif messages.document:
-            new_fid = messages.document.file_id
-        elif messages.audio:
-            new_fid = messages.audio.file_id
-        elif messages.animation:
-            new_fid = messages.animation.file_id
+        # ★ محاولة 1: get_messages
+        try:
+            msg = await client.get_messages(CHANNEL_ID, message_ids=message_id)
+            if msg and msg.media:
+                return _extract_file_id(msg)
+        except Exception as e1:
+            print(f"⚠️ get_messages failed: {e1}")
 
-        if new_fid:
-            print(f"✅ Refreshed: {new_fid[:30]}...")
-            return new_fid
-        else:
-            print("❌ No media found in message")
-            return original_fid
+        # ★ محاولة 2: get_chat_history
+        try:
+            async for msg in client.get_chat_history(CHANNEL_ID, limit=200):
+                if msg.id == message_id and msg.media:
+                    return _extract_file_id(msg)
+        except Exception as e2:
+            print(f"⚠️ get_chat_history failed: {e2}")
+
+        print("❌ All refresh methods failed")
+        return ""
 
     except Exception as e:
         print(f"❌ Refresh failed: {e}")
-        return original_fid
+        traceback.print_exc()
+        return ""
+
+
+def _extract_file_id(msg) -> str:
+    """يستخرج file_id من رسالة Pyrogram"""
+    for attr in ("video", "document", "audio", "animation", "voice"):
+        media = getattr(msg, attr, None)
+        if media and hasattr(media, "file_id"):
+            return media.file_id
+    return ""
+
 
 # ═══════════════════════════════════════════════════════════════
-# ★ دالة بناء Location ★
+# بناء Location
 # ═══════════════════════════════════════════════════════════════
 def build_location(file_id):
     ft = file_id.file_type
@@ -163,7 +179,6 @@ def build_location(file_id):
             thumb_size="",
         )
     else:
-        print(f"⚠️ Unknown file_type: {ft} — defaulting to document")
         return InputDocumentFileLocation(
             id=file_id.media_id,
             access_hash=file_id.access_hash,
@@ -171,33 +186,33 @@ def build_location(file_id):
             thumb_size="",
         )
 
+
 # ═══════════════════════════════════════════════════════════════
-# ★ Endpoint البث ★
+# Endpoint البث — ★ مع إصلاح Content-Length ★
 # ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
 @app.get("/stream")
 async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
-    """
-    بث ملف عبر MTProto مع دعم Range Requests.
-    """
+    """بث ملف عبر MTProto مع دعم Range Requests"""
+
     if not fid:
         raise HTTPException(400, "missing fid parameter")
 
-    # ─── 1) فك تشفير file_id ───
+    # ─── فك تشفير file_id ───
     try:
         file_id = FileId.decode(fid)
     except Exception as e:
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
 
-    # ─── 2) الحجم ───
+    # ─── الحجم ───
     file_size = size
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
 
     print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, mid={mid}")
 
-    # ─── 3) Range ───
+    # ─── Range ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -211,17 +226,19 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
 
     length = end - start + 1
 
-    # ─── 4) بناء Location ───
+    # ─── Location ───
     location = build_location(file_id)
 
-    # ─── 5) مولّد البث مع معالجة الأخطاء ★ ───
-    CHUNK_SIZE = 1024 * 1024
+    # ─── مولّد البث ★ مع إعادة المحاولة عند انتهاء المرجع ★ ───
+    CHUNK_SIZE = 1024 * 1024  # 1 MB
+    MAX_REFRESH_RETRIES = 2
 
     async def generate():
         nonlocal file_id, location
         offset = start
         remaining = length
-        chunk_count = 0
+        refresh_attempts = 0
+        total_sent = 0
 
         while remaining > 0:
             chunk = min(CHUNK_SIZE, remaining)
@@ -231,17 +248,32 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                     GetFile(location=location, offset=offset, limit=chunk)
                 )
             except FileReferenceExpired:
-                print(f"🔄 FileReferenceExpired at offset {offset}, refreshing...")
-                # ★ تحديث file_id وإعادة المحاولة ★
-                if mid > 0:
-                    new_fid = await refresh_file_id(fid, mid)
-                    if new_fid != fid:
-                        file_id = FileId.decode(new_fid)
-                        location = build_location(file_id)
-                        # إعادة المحاولة
-                        continue
-                print("❌ Refresh failed, aborting")
-                break
+                print(f"🔄 FileReferenceExpired at offset {offset}")
+
+                if refresh_attempts >= MAX_REFRESH_RETRIES:
+                    print("❌ Max refresh retries reached")
+                    break
+
+                if not mid:
+                    print("⚠️ No mid — cannot refresh")
+                    break
+
+                refresh_attempts += 1
+                new_fid = await refresh_file_id(mid)
+
+                if not new_fid:
+                    print("❌ Refresh returned empty")
+                    break
+
+                try:
+                    file_id = FileId.decode(new_fid)
+                    location = build_location(file_id)
+                    print(f"✅ Refreshed (attempt {refresh_attempts}), retrying...")
+                    continue  # إعادة المحاولة بنفس offset
+                except Exception as e:
+                    print(f"❌ Failed to decode refreshed file_id: {e}")
+                    break
+
             except Exception as e:
                 print(f"⚠️ Chunk error at offset {offset}: {e}")
                 traceback.print_exc()
@@ -252,27 +284,36 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 break
 
             yield data
+            total_sent += len(data)
             offset += len(data)
             remaining -= len(data)
-            chunk_count += 1
-            if chunk_count % 10 == 0:
-                print(f"   ... sent {offset / 1024 / 1024:.1f}MB")
 
-    # ─── 6) الترويسات ───
+            if total_sent % (10 * CHUNK_SIZE) == 0:
+                print(f"   ... sent {total_sent / 1024 / 1024:.1f}MB")
+
+        # ─── إذا لم نُكمل البث، اطبع تحذيراً ───
+        if remaining > 0:
+            print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.1f}MB remaining")
+
+    # ─── الترويسات ★ بدون Content-Length لضمان البث الفعلي ★ ───
     mime_type = getattr(file_id, "mime_type", None) or "video/mp4"
 
     headers = {
         "Content-Type": mime_type,
         "Accept-Ranges": "bytes",
-        "Content-Length": str(length),
         "Cache-Control": "public, max-age=86400",
     }
 
+    # ★ نضع Content-Length فقط عند طلب Range محدد ★
+    # مع البث الكامل، نستخدم chunked transfer
     if range_header:
+        headers["Content-Length"] = str(length)
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
         return StreamingResponse(generate(), status_code=206, headers=headers)
 
+    # ★ للبث الكامل: لا نضع Content-Length → chunked ★
     return StreamingResponse(generate(), headers=headers)
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -283,6 +324,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         headers={"Access-Control-Allow-Origin": "*"},
     )
+
 
 if __name__ == "__main__":
     import uvicorn
