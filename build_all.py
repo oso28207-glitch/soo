@@ -3,7 +3,7 @@
 """
 build_all.py — مُولّد الموقع الثابت لـ TelegramFlix
 يقرأ من data.json في جذر المستودع
-★ يعرض الفيديو مباشرة عبر خادم Railway ★
+★ يعرض الفيديو مباشرة عبر خادم Railway مع دعم تحديث file_id ★
 """
 
 import re
@@ -155,7 +155,7 @@ def load_data():
         elif isinstance(s.get("episodes"), list):
             episodes = s["episodes"]
 
-        # ★ ترتيب الحلقات
+        # ★ ترتيب الحلقات حسب الموسم ثم رقم الحلقة
         episodes.sort(key=lambda e: (
             int(e.get("season", 1)),
             int(e.get("episode", 0))
@@ -248,13 +248,14 @@ def render_series(series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ صفحة المشاهدة — مع file_size كمعامل ★★★
+# ★★★ صفحة المشاهدة — مع file_size + mid ★★★
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     video_url = ep.get("video_url", "")
     tg_url = clean_tg_url(ep.get("telegram_url", "") or ep.get("embed_url", ""))
     file_id = ep.get("file_id", "")
     file_size = ep.get("file_size", 0) or 0  # ★ الحجم بالبايت
+    message_id = ep.get("message_id", 0)  # ★ معرف الرسالة للتحديث
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
@@ -267,11 +268,12 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     use_iframe = False
 
     if file_id and file_size:
-        # ★ الحالة المثالية: file_id + size → Railway ★
+        # ★ الحالة المثالية: file_id + size + mid → Railway ★
         stream_url = (
             f"{STREAM_SERVER}/stream"
             f"?fid={enc(file_id)}"
             f"&size={int(file_size)}"
+            f"&mid={int(message_id)}"
         )
     elif video_url:
         stream_url = video_url
@@ -560,12 +562,13 @@ def build_site():
     total = 0
     with_fid = 0
     with_size = 0
+    with_mid = 0
 
     for series in series_list:
         name = series["name"]
         episodes = series["episodes"]
 
-        # ★ ترتيب الحلقات
+        # ★ ترتيب الحلقات حسب (الموسم، الحلقة)
         episodes = sorted(
             episodes,
             key=lambda e: (int(e.get("season", 1)), int(e.get("episode", 0)))
@@ -600,6 +603,8 @@ def build_site():
                 with_fid += 1
             if ep.get("file_size"):
                 with_size += 1
+            if ep.get("message_id"):
+                with_mid += 1
 
     # الصفحة الرئيسية
     write_file(OUT / "index.html", render_index(series_list))
@@ -607,6 +612,7 @@ def build_site():
     print(f"✅ تم بناء {len(series_list)} مسلسل و {total} حلقة")
     print(f"   - مع file_id: {with_fid}")
     print(f"   - مع file_size: {with_size}")
+    print(f"   - مع message_id: {with_mid}")
 
 
 def main():
