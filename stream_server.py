@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-★ نسخة نهائية: offset/limit alignment إجباري ★
+★ الحل النهائي: offset متوافق مع CHUNK_SIZE بالكامل ★
 """
 
 import os
@@ -31,10 +31,10 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
-# ★★★ ثوابت Telegram ★★★
-BLOCK_SIZE = 4096                          # وحدة الذرّ الأساسية
-CHUNK_SIZE = 512 * 1024                    # 512 KB (آمن لجميع الأحجام)
-MAX_CHUNK_SIZE = 1024 * 1024               # 1 MB (الحد الأقصى)
+# ★★★ القاعدة الذهبية: CHUNK_SIZE يجب أن يكون من مضاعفات 4096 ★★★
+# ونصفّر offset إلى CHUNK_SIZE (لا 4096!) لتفادي LIMIT_INVALID
+CHUNK_SIZE = 1024 * 1024        # 1 MB
+assert CHUNK_SIZE % 4096 == 0, "CHUNK_SIZE must be multiple of 4096"
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
     print(f"✅ MTProto client started as @{me.username or me.id}")
     if CHANNEL_ID:
         print(f"📺 Channel for refresh: {CHANNEL_ID}")
+    print(f"📦 CHUNK_SIZE = {CHUNK_SIZE / 1024:.0f} KB")
     yield
     print("👋 Stopping MTProto client...")
     await client.stop()
@@ -109,17 +110,7 @@ async def health():
 # ═══════════════════════════════════════════════════════════════
 # دوال مساعدة
 # ═══════════════════════════════════════════════════════════════
-def align_down(x: int, alignment: int) -> int:
-    """تصفير للأسفل إلى مضاعف alignment"""
-    return (x // alignment) * alignment
-
-
-def align_up(x: int, alignment: int) -> int:
-    """تصفير للأعلى إلى مضاعف alignment"""
-    return ((x + alignment - 1) // alignment) * alignment
-
-
-def extract_file_id(msg) -> str:
+def _extract_file_id(msg) -> str:
     for attr in ("video", "document", "audio", "animation", "voice"):
         media = getattr(msg, attr, None)
         if media and hasattr(media, "file_id"):
@@ -134,11 +125,10 @@ async def refresh_file_id(message_id: int) -> str:
 
     try:
         print(f"🔄 Refreshing file_id for message {message_id}...")
-
         try:
             msg = await client.get_messages(CHANNEL_ID, message_ids=message_id)
             if msg and msg.media:
-                new_fid = extract_file_id(msg)
+                new_fid = _extract_file_id(msg)
                 if new_fid:
                     print(f"✅ Refreshed: {new_fid[:40]}...")
                     return new_fid
@@ -148,7 +138,7 @@ async def refresh_file_id(message_id: int) -> str:
         try:
             async for msg in client.get_chat_history(CHANNEL_ID, limit=500):
                 if msg.id == message_id and msg.media:
-                    new_fid = extract_file_id(msg)
+                    new_fid = _extract_file_id(msg)
                     if new_fid:
                         print(f"✅ Refreshed (history): {new_fid[:40]}...")
                         return new_fid
@@ -196,23 +186,6 @@ def build_location(file_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★ دالة البث المُصفّاة ★
-# ═══════════════════════════════════════════════════════════════
-async def read_chunk(location, offset: int, limit: int):
-    """يقرأ chunk واحد من Telegram مع تصفير إجباري"""
-    # تصفير الإزاحة والحجم إلى BLOCK_SIZE
-    offset = align_down(offset, BLOCK_SIZE)
-    limit = align_down(limit, BLOCK_SIZE)
-    if limit == 0:
-        limit = BLOCK_SIZE
-    if limit > MAX_CHUNK_SIZE:
-        limit = MAX_CHUNK_SIZE
-    return await client.invoke(
-        GetFile(location=location, offset=offset, limit=limit)
-    )
-
-
-# ═══════════════════════════════════════════════════════════════
 # Endpoint البث
 # ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
@@ -248,59 +221,42 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
     length = end - start + 1
 
     print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, "
-          f"range={start}-{end} ({length / 1024 / 1024:.1f}MB), mid={mid}")
+          f"range={start}-{end} ({length / 1024 / 1024:.2f}MB), mid={mid}")
 
     location = build_location(file_id)
 
     # ═══════════════════════════════════════════════════════════
-    # ★ مولّد البث — مع تصفير الإزاحة والحجم ★
+    # ★ مولّد البث — الحل النهائي ★
     # ═══════════════════════════════════════════════════════════
     async def generate():
         nonlocal file_id, location
 
-        # ★ الإزاحة الحالية لقراءة Telegram (مُصفّاة للأسفل) ★
-        read_offset = align_down(start, BLOCK_SIZE)
-        # ★ كم بايت يجب تخطّيها في البداية (قبل start) ★
-        skip = start - read_offset
-        # ★ كم بايت يجب إرسالها في النهاية ★
-        remaining = length
+        # ★★ تصفير الإزاحة إلى CHUNK_SIZE (وليس 4096) ★★
+        aligned_start = (start // CHUNK_SIZE) * CHUNK_SIZE
+        skip = start - aligned_start  # بايتات يجب تخطّيها في الكتلة الأولى
 
-        refresh_attempts = 0
+        read_offset = aligned_start
+        remaining = length
         total_sent = 0
+        first_read = True
+        refresh_attempts = 0
         MAX_REFRESH = 3
 
-        # ★ قراءة الكتلة الأولى (تشمل البايتات المُتخطّاة) ★
-        first_chunk_size = align_up(
-            min(CHUNK_SIZE, remaining + skip),
-            BLOCK_SIZE,
-        )
+        print(f"   ↳ aligned_start={aligned_start}, skip={skip}")
 
         while remaining > 0:
-            # حجم القراءة: بين BLOCK_SIZE و MAX_CHUNK_SIZE
-            if total_sent == 0:
-                # الكتلة الأولى: تحتوي على الإزاحة الكلية + البيانات المطلوبة
-                read_size = first_chunk_size
-            else:
-                # الكتل التالية: مُصفّاة تماماً
-                read_size = align_up(min(CHUNK_SIZE, remaining), BLOCK_SIZE)
-
-            # تأكد أن القراءة لا تتجاوز حجم الملف
-            if read_offset + read_size > file_size:
-                read_size = file_size - read_offset
-                # تصفير للأعلى (قد نقرأ بايتات إضافية قليلة)
-                read_size = align_up(read_size, BLOCK_SIZE)
-                if read_offset + read_size > file_size:
-                    read_size = file_size - read_offset
-                # إذا لم يعد قابلاً للتصفير، نقرأ المتبقي فقط (سيُقبل لأنه آخر كتلة)
-                if read_size % BLOCK_SIZE != 0:
-                    read_size = read_size  # آخر كتلة قد لا تكون مُصفّاة
-
             try:
-                result = await read_chunk(location, read_offset, read_size)
+                result = await client.invoke(
+                    GetFile(
+                        location=location,
+                        offset=read_offset,
+                        limit=CHUNK_SIZE,  # ★ دائماً CHUNK_SIZE كامل ★
+                    )
+                )
             except FileReferenceExpired:
                 print(f"🔄 FileReferenceExpired at offset {read_offset}")
                 if refresh_attempts >= MAX_REFRESH or not mid:
-                    print("❌ Cannot refresh")
+                    print("❌ Cannot refresh — aborting")
                     break
                 refresh_attempts += 1
                 new_fid = await refresh_file_id(mid)
@@ -309,15 +265,15 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 try:
                     file_id = FileId.decode(new_fid)
                     location = build_location(file_id)
-                    print(f"✅ Refreshed (attempt {refresh_attempts})")
+                    print(f"✅ Refreshed (attempt {refresh_attempts}), retrying...")
                     continue
                 except Exception as e:
-                    print(f"❌ Failed to decode: {e}")
+                    print(f"❌ Failed to decode refreshed file_id: {e}")
                     break
 
             except Exception as e:
                 print(f"⚠️ Chunk error at offset {read_offset} "
-                      f"(size={read_size}): {e}")
+                      f"(size={CHUNK_SIZE}): {e}")
                 traceback.print_exc()
                 break
 
@@ -326,27 +282,28 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 print(f"⚠️ Empty response at offset {read_offset}")
                 break
 
-            # ─── تخطّي البايتات الإضافية في الكتلة الأولى ───
-            if skip > 0:
-                data = data[skip:]
-                skip = 0
+            # ★ تخطّي البايتات الإضافية في الكتلة الأولى ★
+            if first_read:
+                if skip > 0:
+                    data = data[skip:]
+                first_read = False
 
-            # ─── قصّ البيانات إلى المتبقي ───
+            # ★ قصّ البيانات إذا تجاوزت المتبقي ★
             if len(data) > remaining:
                 data = data[:remaining]
 
             yield data
             total_sent += len(data)
-            read_offset += read_size
+            read_offset += CHUNK_SIZE
             remaining -= len(data)
 
             if total_sent % (10 * CHUNK_SIZE) == 0:
                 print(f"   ... sent {total_sent / 1024 / 1024:.1f}MB")
 
         if remaining > 0:
-            print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.1f}MB remaining")
+            print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.2f}MB remaining")
         else:
-            print(f"✅ Stream complete: {total_sent / 1024 / 1024:.1f}MB sent")
+            print(f"✅ Stream complete: {total_sent / 1024 / 1024:.2f}MB sent")
 
     # ─── الترويسات ───
     headers = {
