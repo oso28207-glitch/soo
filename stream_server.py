@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-مع معالجة تلقائية لانتهاء صلاحية file_reference
+★ نسخة مُصلّحة: chunk alignment + FileReference refresh ★
 """
 
 import os
@@ -31,8 +31,9 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
-if not CHANNEL_ID:
-    print("⚠️ تحذير: CHANNEL غير مضبوط — لن يتم تحديث file_id تلقائياً")
+# ★★★ ثوابت Telegram ★★★
+BLOCK_SIZE = 4096                      # حجم البلوك الإجباري
+CHUNK_SIZE = 1024 * 1024               # 1 MB (يجب أن يقبل القسمة على BLOCK_SIZE)
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -105,8 +106,17 @@ async def health():
 
 
 # ═══════════════════════════════════════════════════════════════
-# دالة تحديث file_id
+# تحديث file_id عند انتهاء الصلاحية
 # ═══════════════════════════════════════════════════════════════
+def _extract_file_id(msg) -> str:
+    """يستخرج file_id من رسالة Pyrogram"""
+    for attr in ("video", "document", "audio", "animation", "voice"):
+        media = getattr(msg, attr, None)
+        if media and hasattr(media, "file_id"):
+            return media.file_id
+    return ""
+
+
 async def refresh_file_id(message_id: int) -> str:
     """يجلب file_id جديد من Telegram عند انتهاء صلاحية المرجع"""
     if not CHANNEL_ID or not message_id:
@@ -116,19 +126,25 @@ async def refresh_file_id(message_id: int) -> str:
     try:
         print(f"🔄 Refreshing file_id for message {message_id}...")
 
-        # ★ محاولة 1: get_messages
+        # محاولة 1: get_messages
         try:
             msg = await client.get_messages(CHANNEL_ID, message_ids=message_id)
             if msg and msg.media:
-                return _extract_file_id(msg)
+                new_fid = _extract_file_id(msg)
+                if new_fid:
+                    print(f"✅ Refreshed: {new_fid[:40]}...")
+                    return new_fid
         except Exception as e1:
             print(f"⚠️ get_messages failed: {e1}")
 
-        # ★ محاولة 2: get_chat_history
+        # محاولة 2: get_chat_history
         try:
-            async for msg in client.get_chat_history(CHANNEL_ID, limit=200):
+            async for msg in client.get_chat_history(CHANNEL_ID, limit=500):
                 if msg.id == message_id and msg.media:
-                    return _extract_file_id(msg)
+                    new_fid = _extract_file_id(msg)
+                    if new_fid:
+                        print(f"✅ Refreshed (history): {new_fid[:40]}...")
+                        return new_fid
         except Exception as e2:
             print(f"⚠️ get_chat_history failed: {e2}")
 
@@ -141,21 +157,11 @@ async def refresh_file_id(message_id: int) -> str:
         return ""
 
 
-def _extract_file_id(msg) -> str:
-    """يستخرج file_id من رسالة Pyrogram"""
-    for attr in ("video", "document", "audio", "animation", "voice"):
-        media = getattr(msg, attr, None)
-        if media and hasattr(media, "file_id"):
-            return media.file_id
-    return ""
-
-
 # ═══════════════════════════════════════════════════════════════
 # بناء Location
 # ═══════════════════════════════════════════════════════════════
 def build_location(file_id):
-    ft = file_id.file_type
-    ft_str = str(ft).lower()
+    ft_str = str(file_id.file_type).lower()
 
     DOC_TYPES = {
         "video", "document", "audio", "animation", "gif",
@@ -188,7 +194,31 @@ def build_location(file_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Endpoint البث — ★ مع إصلاح Content-Length ★
+# ★ دالة حساب حجم الـ chunk الصحيح ★
+# ═══════════════════════════════════════════════════════════════
+def calc_chunk_size(remaining: int) -> int:
+    """
+    يحسب حجم الـ chunk المناسب بناءً على المتبقي.
+    - يجب أن يقبل القسمة على 4096 (BLOCK_SIZE)
+    - يجب ألا يتجاوز 1 MB (CHUNK_SIZE)
+    - يُصفَّى للأعلى (round up) لضمان قراءة البايت الأخير
+    """
+    # إذا المتبقي أكبر من أو يساوي 1MB، استخدم 1MB مباشرة
+    if remaining >= CHUNK_SIZE:
+        return CHUNK_SIZE
+
+    # المتبقي أقل من 1MB — صفّره للأعلى إلى أقرب مضاعف لـ 4096
+    if remaining % BLOCK_SIZE != 0:
+        chunk = ((remaining + BLOCK_SIZE - 1) // BLOCK_SIZE) * BLOCK_SIZE
+    else:
+        chunk = remaining
+
+    # تأكد ألا يتجاوز الحد الأقصى
+    return min(chunk, CHUNK_SIZE)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Endpoint البث
 # ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
 @app.get("/stream")
@@ -210,8 +240,6 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
 
-    print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, mid={mid}")
-
     # ─── Range ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
@@ -226,12 +254,14 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
 
     length = end - start + 1
 
+    print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, "
+          f"range={start}-{end} ({length / 1024 / 1024:.1f}MB), mid={mid}")
+
     # ─── Location ───
     location = build_location(file_id)
 
-    # ─── مولّد البث ★ مع إعادة المحاولة عند انتهاء المرجع ★ ───
-    CHUNK_SIZE = 1024 * 1024  # 1 MB
-    MAX_REFRESH_RETRIES = 2
+    # ─── مولّد البث ★ مع إصلاح الـ chunk الأخير ★ ───
+    MAX_REFRESH_RETRIES = 3
 
     async def generate():
         nonlocal file_id, location
@@ -241,7 +271,8 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
         total_sent = 0
 
         while remaining > 0:
-            chunk = min(CHUNK_SIZE, remaining)
+            # ★ حساب حجم الـ chunk الصحيح (مُصفّى لـ 4096) ★
+            chunk = calc_chunk_size(remaining)
 
             try:
                 result = await client.invoke(
@@ -253,14 +284,12 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 if refresh_attempts >= MAX_REFRESH_RETRIES:
                     print("❌ Max refresh retries reached")
                     break
-
                 if not mid:
                     print("⚠️ No mid — cannot refresh")
                     break
 
                 refresh_attempts += 1
                 new_fid = await refresh_file_id(mid)
-
                 if not new_fid:
                     print("❌ Refresh returned empty")
                     break
@@ -268,20 +297,25 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 try:
                     file_id = FileId.decode(new_fid)
                     location = build_location(file_id)
-                    print(f"✅ Refreshed (attempt {refresh_attempts}), retrying...")
-                    continue  # إعادة المحاولة بنفس offset
+                    print(f"✅ Refreshed (attempt {refresh_attempts}), retrying offset {offset}...")
+                    continue
                 except Exception as e:
                     print(f"❌ Failed to decode refreshed file_id: {e}")
                     break
 
             except Exception as e:
-                print(f"⚠️ Chunk error at offset {offset}: {e}")
+                print(f"⚠️ Chunk error at offset {offset} (chunk={chunk}): {e}")
                 traceback.print_exc()
                 break
 
             data = result.bytes
             if not data:
+                print(f"⚠️ Empty response at offset {offset}")
                 break
+
+            # ─── قصّ البيانات إلى المتبقي (الخادم قد يعيد أكثر) ───
+            if len(data) > remaining:
+                data = data[:remaining]
 
             yield data
             total_sent += len(data)
@@ -291,27 +325,25 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
             if total_sent % (10 * CHUNK_SIZE) == 0:
                 print(f"   ... sent {total_sent / 1024 / 1024:.1f}MB")
 
-        # ─── إذا لم نُكمل البث، اطبع تحذيراً ───
         if remaining > 0:
             print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.1f}MB remaining")
+        else:
+            print(f"✅ Stream complete: {total_sent / 1024 / 1024:.1f}MB sent")
 
-    # ─── الترويسات ★ بدون Content-Length لضمان البث الفعلي ★ ───
-    mime_type = getattr(file_id, "mime_type", None) or "video/mp4"
-
+    # ─── الترويسات ───
+    mime_type = "video/mp4"
     headers = {
         "Content-Type": mime_type,
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=86400",
     }
 
-    # ★ نضع Content-Length فقط عند طلب Range محدد ★
-    # مع البث الكامل، نستخدم chunked transfer
     if range_header:
-        headers["Content-Length"] = str(length)
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        headers["Content-Length"] = str(length)
         return StreamingResponse(generate(), status_code=206, headers=headers)
 
-    # ★ للبث الكامل: لا نضع Content-Length → chunked ★
+    headers["Content-Length"] = str(length)
     return StreamingResponse(generate(), headers=headers)
 
 
