@@ -1,9 +1,13 @@
-name: 🤖 Build & Deploy TelegramFlix
+name: Build and Deploy TelegramFlix
 
 on:
   push:
-    branches: [main]
-    paths-ignore: ['docs/**', '*.md', '.gitignore']
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -19,21 +23,28 @@ concurrency:
 
 jobs:
   fetch-data:
-    name: 📥 Fetch from Telegram
+    name: Fetch from Telegram
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0, token: ${{ secrets.GITHUB_TOKEN }} }
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.11', cache: 'pip' }
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: 📚 Install dependencies
+      - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install pyrogram==2.0.106 tgcrypto aiohttp requests
 
-      - name: 📥 Fetch from Telegram
+      - name: Fetch from Telegram
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
@@ -45,13 +56,12 @@ jobs:
           HISTORY_LIMIT: '5000'
         run: python fetch_from_telegram.py
 
-      # ★★★ جلب صور المسلسلات من TMDB ★★★
-      - name: 🖼️ Fetch posters from TMDB
+      - name: Fetch posters from TMDB
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: python fetch_posters.py
 
-      - name: 📊 Verify data.json
+      - name: Verify data.json
         run: |
           python -c "
           import json
@@ -64,45 +74,63 @@ jobs:
           print(f'With poster: {with_poster}')
           "
 
-      - name: 💾 Commit data
+      - name: Commit data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data.json forward_progress.json 2>/dev/null || true
           if ! git diff --staged --quiet; then
-            git commit -m "🤖 Update data + posters [skip ci]"
-            for i in 1 2 3; do
-              git pull --rebase origin main && git push origin main && break
-              sleep 3
-            done
+            git commit -m "Update data and posters [skip ci]"
+            git pull --rebase origin main || true
+            git push origin main || true
           fi
 
-      - uses: actions/upload-artifact@v4
-        with: { name: data-json, path: data.json, retention-days: 7 }
+      - name: Upload data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-json
+          path: data.json
+          retention-days: 7
 
   build:
-    name: 🏗️ Build site
+    name: Build site
     runs-on: ubuntu-latest
     needs: fetch-data
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with: { ref: main, fetch-depth: 0 }
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - uses: actions/download-artifact@v4
-        with: { name: data-json, path: . }
-      - run: python build_all.py --clean
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: docs/ }
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: data-json
+          path: .
+
+      - name: Build site
+        run: python build_all.py --clean
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
 
   deploy:
-    name: 🚀 Deploy
+    name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      - name: Deploy
+        id: deployment
         uses: actions/deploy-pages@v4
