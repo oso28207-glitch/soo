@@ -3,17 +3,10 @@ name: 🤖 Build & Deploy TelegramFlix
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '.gitignore'
+    paths-ignore: ['docs/**', '*.md', '.gitignore']
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
-    inputs:
-      history_limit:
-        description: 'حد الرسائل'
-        default: '5000'
 
 permissions:
   contents: write
@@ -21,8 +14,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: telegram-fetch-${{ github.ref }}
-  cancel-in-progress: true
+  group: build-deploy
+  cancel-in-progress: false
 
 jobs:
   fetch-data:
@@ -31,37 +24,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+        with: { fetch-depth: 0, token: ${{ secrets.GITHUB_TOKEN }} }
 
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+        with: { python-version: '3.11', cache: 'pip' }
 
       - name: 📚 Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pyrogram==2.0.106 tgcrypto aiohttp
-
-      - name: 🔒 Check secrets
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          CHANNEL: ${{ secrets.CHANNEL }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: |
-          missing=""
-          [ -z "$API_ID" ] && missing="$missing API_ID"
-          [ -z "$API_HASH" ] && missing="$missing API_HASH"
-          [ -z "$CHANNEL" ] && missing="$missing CHANNEL"
-          [ -z "$STRING_SESSION" ] && missing="$missing STRING_SESSION"
-          if [ -n "$missing" ]; then
-            echo "❌ متغيرات ناقصة:$missing"
-            exit 1
-          fi
-          echo "✅ جميع المتغيرات موجودة"
+          pip install pyrogram==2.0.106 tgcrypto aiohttp requests
 
       - name: 📥 Fetch from Telegram
         env:
@@ -72,21 +42,26 @@ jobs:
           STORAGE_CHANNEL: ${{ secrets.STORAGE_CHANNEL }}
           STREAM_BASE: ${{ secrets.STREAM_BASE }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          HISTORY_LIMIT: ${{ github.event.inputs.history_limit || '5000' }}
+          HISTORY_LIMIT: '5000'
         run: python fetch_from_telegram.py
+
+      # ★★★ جلب صور المسلسلات من TMDB ★★★
+      - name: 🖼️ Fetch posters from TMDB
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: python fetch_posters.py
 
       - name: 📊 Verify data.json
         run: |
           python -c "
           import json
           d = json.load(open('data.json', encoding='utf-8'))
-          series = d.get('series', [])
-          total = sum(len(eps) for s in series for eps in s.get('seasons', {}).values())
-          with_fid = sum(1 for s in series for eps in s.get('seasons', {}).values()
-                         for ep in eps if ep.get('file_id'))
-          print(f'Series: {len(series)}')
+          s = d.get('series', [])
+          total = sum(len(eps) for x in s for eps in x.get('seasons', {}).values())
+          with_poster = sum(1 for x in s if x.get('poster_url'))
+          print(f'Series: {len(s)}')
           print(f'Episodes: {total}')
-          print(f'With file_id: {with_fid}')
+          print(f'With poster: {with_poster}')
           "
 
       - name: 💾 Commit data
@@ -94,24 +69,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data.json forward_progress.json 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "ℹ️ لا تغييرات"
-          else
-            git commit -m "🤖 Update data.json [skip ci]"
+          if ! git diff --staged --quiet; then
+            git commit -m "🤖 Update data + posters [skip ci]"
             for i in 1 2 3; do
               git pull --rebase origin main && git push origin main && break
-              echo "⚠️ محاولة $i فشلت، إعادة..."
               sleep 3
             done
           fi
 
       - uses: actions/upload-artifact@v4
-        with:
-          name: data-json
-          path: |
-            data.json
-            forward_progress.json
-          retention-days: 7
+        with: { name: data-json, path: data.json, retention-days: 7 }
 
   build:
     name: 🏗️ Build site
@@ -121,22 +88,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: main, fetch-depth: 0 }
-
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-
       - uses: actions/download-artifact@v4
         with: { name: data-json, path: . }
-
-      - name: 🏗️ Build
-        run: python build_all.py --clean
-
-      - name: 📊 Stats
-        run: |
-          echo "docs size: $(du -sh docs/ | cut -f1)"
-          echo "HTML files: $(find docs -name '*.html' | wc -l)"
-          echo "Watch pages: $(find docs/watch -name '*.html' 2>/dev/null | wc -l)"
-
+      - run: python build_all.py --clean
       - uses: actions/upload-pages-artifact@v3
         with: { path: docs/ }
 
@@ -150,7 +106,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-
-      - run: |
-          echo "### 🎉 Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
