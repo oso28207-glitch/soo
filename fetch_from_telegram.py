@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fetch_from_telegram.py — جالب بيانات المسلسلات من قناة Telegram
-يُنتج: data.json + forward_progress.jso
-★ يستخرج file_id مباشرة من Pyrogram (متوافق مع FileId.decode)
+fetch_from_telegram.py — جالب بيانات المسلسلات من قنوات Telegram
+★ يدعم قناتين: CHANNEL + CHANNEL2 ★
 """
 
 import os
@@ -27,9 +26,14 @@ PROGRESS_FILE = ROOT / "forward_progress.json"
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 CHANNEL = (os.getenv("CHANNEL") or "").strip()
+CHANNEL2 = (os.getenv("CHANNEL2") or "").strip()
+
+# تنظيف @ من البداية
 CHANNEL_CLEAN = CHANNEL.lstrip("@")
-STRING_SESSION = os.getenv("STRING_SESSION", "").strip()
-STRING_SESSION2 = os.getenv("STRING_SESSION2", "").strip()
+CHANNEL2_CLEAN = CHANNEL2.lstrip("@") if CHANNEL2 else ""
+
+STRING_SESSION = os.getenv("STRING_SESSION", "")
+STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
 STORAGE_CHANNEL = os.getenv("STORAGE_CHANNEL", "")
 STREAM_BASE = os.getenv("STREAM_BASE", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -56,15 +60,16 @@ PATTERNS = {
     "series_en": re.compile(r"^([^\n—\-:]+?)(?:\s*[—\-:]|\s*$)", re.I),
     "season_ar": re.compile(r"(?:الموسم|موسم)\s*[:\-]?\s*(\d+)", re.I),
     "season_en": re.compile(r"\bS(\d{1,2})\b", re.I),
-    "season_word": re.compile(r"\b(?:Season)\s*(\d{1,2})\b", re.I),
-    "episode_ar": re.compile(r"(?:الحلقة|حلقة)\s*[:\-]?\s*(\d+)", re.I),
+    "episode_ar": re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*[:\-]?\s*(\d+)", re.I),
     "episode_en": re.compile(r"\bE(\d{1,3})\b", re.I),
     "episode_word": re.compile(r"\b(?:Episode)\s*[:\-]?\s*(\d{1,3})\b", re.I),
+    "year": re.compile(r"\b(19\d{2}|20\d{2})\b"),
 }
 
 CLEANUP_PATTERNS = [
     re.compile(r"مشاهدة\s+مسلسل\s+"),
     re.compile(r"مسلسل\s+"),
+    re.compile(r"فيلم\s+"),
     re.compile(r"\s*الحلقة\s*\d+.*$"),
     re.compile(r"\s*الموسم\s*\d+.*$"),
     re.compile(r"\s*S\d+E\d+.*$"),
@@ -72,6 +77,7 @@ CLEANUP_PATTERNS = [
     re.compile(r"\[[^\]]*\]"),
     re.compile(r"\([^)]*\)"),
     re.compile(r"_+"),
+    re.compile(r"\s+"),
 ]
 
 
@@ -80,7 +86,7 @@ def clean_series_name(name: str) -> str:
         return ""
     name = name.strip()
     for pat in CLEANUP_PATTERNS:
-        name = pat.sub("", name)
+        name = pat.sub(" ", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name or "غير معروف"
 
@@ -90,8 +96,9 @@ def parse_caption(caption: str) -> Optional[dict]:
         return None
     caption = caption.strip()
 
+    # الموسم
     season = 1
-    for key in ("season_ar", "season_en", "season_word"):
+    for key in ("season_ar", "season_en"):
         m = PATTERNS[key].search(caption)
         if m:
             try:
@@ -100,6 +107,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError):
                 pass
 
+    # الحلقة
     episode = None
     for key in ("episode_ar", "episode_en", "episode_word"):
         m = PATTERNS[key].search(caption)
@@ -113,6 +121,7 @@ def parse_caption(caption: str) -> Optional[dict]:
     if episode is None:
         return None
 
+    # اسم المسلسل
     name = ""
     m = PATTERNS["series_ar"].search(caption)
     if m:
@@ -154,7 +163,7 @@ def load_existing_data() -> dict:
             return json.loads(DATA_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
-    return {"channel": CHANNEL_CLEAN, "stream_base": STREAM_BASE, "series": []}
+    return {"channels": [CHANNEL_CLEAN], "stream_base": STREAM_BASE, "series": []}
 
 
 def save_data(data: dict):
@@ -170,7 +179,12 @@ def find_or_create_series(data: dict, name: str) -> dict:
     for s in data["series"]:
         if s.get("name") == name:
             return s
-    new_series = {"name": name, "poster_url": "", "description": "", "seasons": {}}
+    new_series = {
+        "name": name,
+        "poster_url": "",
+        "description": "",
+        "seasons": {},
+    }
     data["series"].append(new_series)
     return new_series
 
@@ -181,25 +195,24 @@ def add_episode(series: dict, season: int, episode: dict) -> bool:
         series["seasons"][season_key] = []
     existing = series["seasons"][season_key]
     msg_id = episode.get("message_id")
+
     for ep in existing:
         if ep.get("message_id") == msg_id:
             ep.update(episode)
             return False
+
     existing.append(episode)
     existing.sort(key=lambda e: int(e.get("episode", 0)))
     return True
 
 
 # ═══════════════════════════════════════════════════════════════
-# استخراج معلومات الملف من رسالة Pyrogram
+# استخراج معلومات الملف
 # ═══════════════════════════════════════════════════════════════
 def extract_media_info(msg) -> Optional[dict]:
-    """
-    يستخرج معلومات الفيديو/المستند من رسالة Pyrogram
-    ★ file_id المستخرج هنا متوافق مع FileId.decode في stream_server.py
-    """
     media = None
     media_type = None
+
     if msg.video:
         media, media_type = msg.video, "video"
     elif msg.document:
@@ -215,7 +228,7 @@ def extract_media_info(msg) -> Optional[dict]:
     size_bytes = getattr(media, "file_size", 0) or 0
     size_mb = size_bytes / (1024 * 1024)
     if size_mb > MAX_FILE_MB:
-        log.warning(f"⚠️ الملف {size_mb:.1f}MB يتجاوز الحد ({MAX_FILE_MB}MB)")
+        log.warning(f"⚠️ الملف {size_mb:.1f}MB يتجاوز الحد")
         return None
 
     return {
@@ -232,9 +245,9 @@ def extract_media_info(msg) -> Optional[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# معالجة رسالة واحدة
+# معالجة رسالة
 # ═══════════════════════════════════════════════════════════════
-async def process_message(client: Client, msg, data: dict, progress: dict) -> bool:
+async def process_message(client: Client, msg, data: dict, progress: dict, channel: str) -> bool:
     if not msg or not msg.caption:
         return False
 
@@ -249,13 +262,13 @@ async def process_message(client: Client, msg, data: dict, progress: dict) -> bo
     if media_info["file_size"] < 1024 * 1024:
         return False
 
-    # بناء رابط t.me بشكل صحيح (بدون @)
-    if CHANNEL_CLEAN.startswith("-100"):
-        tg_url = f"https://t.me/c/{CHANNEL_CLEAN.replace('-100', '')}/{msg.id}"
-    elif CHANNEL_CLEAN.startswith("-"):
-        tg_url = f"https://t.me/c/{CHANNEL_CLEAN.replace('-', '')}/{msg.id}"
+    # بناء رابط t.me
+    if channel.startswith("-100"):
+        tg_url = f"https://t.me/c/{channel.replace('-100', '')}/{msg.id}"
+    elif channel.startswith("-"):
+        tg_url = f"https://t.me/c/{channel.replace('-', '')}/{msg.id}"
     else:
-        tg_url = f"https://t.me/{CHANNEL_CLEAN}/{msg.id}"
+        tg_url = f"https://t.me/{channel}/{msg.id}"
 
     episode = {
         "message_id": str(msg.id),
@@ -271,6 +284,7 @@ async def process_message(client: Client, msg, data: dict, progress: dict) -> bo
         "file_name": media_info["file_name"],
         "thumb_url": "",
         "date": msg.date.isoformat() if msg.date else "",
+        "source_channel": channel,
     }
 
     series = find_or_create_series(data, parsed["name"])
@@ -279,61 +293,57 @@ async def process_message(client: Client, msg, data: dict, progress: dict) -> bo
     if added:
         log.info(
             f"✅ [{parsed['name']}] S{parsed['season']:02d}E{parsed['episode']:02d} "
-            f"({media_info['file_size'] / 1024 / 1024:.1f}MB)"
+            f"({media_info['file_size'] / 1024 / 1024:.1f}MB) [{channel}]"
         )
     return added
 
 
 # ═══════════════════════════════════════════════════════════════
-# الجلب
+# جلب قناة واحدة
 # ═══════════════════════════════════════════════════════════════
-async def fetch_history(client: Client, data: dict, progress: dict):
-    log.info(f"📥 جلب حتى {HISTORY_LIMIT} رسالة من @{CHANNEL_CLEAN}")
-
+async def fetch_channel(client: Client, channel: str, data: dict, progress: dict):
+    log.info(f"📥 جلب من @{channel}")
     count = added = skipped = errors = 0
     last_id = 0
 
     try:
-        async for msg in client.get_chat_history(CHANNEL_CLEAN, limit=HISTORY_LIMIT):
+        async for msg in client.get_chat_history(channel, limit=HISTORY_LIMIT):
             count += 1
             last_id = msg.id
             await asyncio.sleep(BASE_DELAY / 4)
+
             try:
-                if await process_message(client, msg, data, progress):
+                if await process_message(client, msg, data, progress, channel):
                     added += 1
                 else:
                     skipped += 1
             except FloodWait as e:
                 wait = min(e.value + SAFETY_BUFFER, MAX_DELAY)
-                log.warning(f"⏳ FloodWait: {e.value}s — انتظار {wait:.1f}s")
+                log.warning(f"⏳ FloodWait: {e.value}s")
                 await asyncio.sleep(wait)
             except Exception as e:
                 errors += 1
-                log.error(f"❌ خطأ في الرسالة {msg.id}: {e}")
+                log.error(f"❌ [{channel}] رسالة {msg.id}: {e}")
 
-            if count % 50 == 0:
-                log.info(f"📊 تقدم: {count} رسالة | {added} مضافة | {skipped} متجاهلة | {errors} أخطاء")
             if count % 100 == 0:
-                progress["last_message_id"] = last_id
+                log.info(f"📊 [{channel}] {count} رسالة | {added} مضافة | {skipped} متجاهلة")
                 save_data(data)
-                save_progress(progress)
 
     except FloodWait as e:
         await asyncio.sleep(min(e.value + SAFETY_BUFFER, MAX_DELAY))
     except Exception as e:
-        log.error(f"❌ خطأ في get_chat_history: {e}")
+        log.error(f"❌ خطأ في {channel}: {e}")
 
-    progress["last_message_id"] = last_id
-    log.info(f"\n📊 الإحصائيات: {count} رسالة | {added} مضافة | {skipped} متجاهلة | {errors} أخطاء")
+    log.info(f"✅ [{channel}] اكتمل: {count} رسالة | {added} مضافة | {skipped} متجاهلة")
 
 
 # ═══════════════════════════════════════════════════════════════
-# العميل
+# إنشاء العميل
 # ═══════════════════════════════════════════════════════════════
 def create_client() -> Client:
     session = STRING_SESSION or STRING_SESSION2
     if not session:
-        raise ValueError("❌ يجب ضبط STRING_SESSION أو STRING_SESSION2")
+        raise ValueError("❌ يجب ضبط STRING_SESSION")
     if not API_ID or not API_HASH:
         raise ValueError("❌ يجب ضبط API_ID و API_HASH")
 
@@ -351,29 +361,41 @@ def create_client() -> Client:
 # main
 # ═══════════════════════════════════════════════════════════════
 async def main():
-    log.info("🚀 بدء جلب البيانات من Telegram")
+    log.info("🚀 بدء جلب البيانات")
 
-    if not CHANNEL_CLEAN:
-        raise ValueError("❌ يجب ضبط CHANNEL")
+    # قائمة القنوات
+    channels = []
+    if CHANNEL_CLEAN:
+        channels.append(CHANNEL_CLEAN)
+    if CHANNEL2_CLEAN:
+        channels.append(CHANNEL2_CLEAN)
+
+    if not channels:
+        raise ValueError("❌ يجب ضبط CHANNEL على الأقل")
+
+    log.info(f"📺 القنوات: {', '.join('@' + c for c in channels)}")
 
     data = load_existing_data()
-    data["channel"] = CHANNEL_CLEAN
+    data["channels"] = channels
     data["stream_base"] = STREAM_BASE
     progress = load_progress()
 
-    log.info(f"📂 مسلسلات محمّلة: {len(data['series'])}")
-    total_episodes = sum(
+    total_before = sum(
         len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
     )
-    log.info(f"🎬 حلقات محمّلة: {total_episodes}")
+    log.info(f"📂 محمّل: {len(data['series'])} عمل | {total_before} حلقة")
 
     client = create_client()
-
     try:
         async with client:
             me = await client.get_me()
             log.info(f"✅ متصل كـ @{me.username or me.id}")
-            await fetch_history(client, data, progress)
+            for ch in channels:
+                try:
+                    await fetch_channel(client, ch, data, progress)
+                except Exception as e:
+                    log.error(f"❌ فشل {ch}: {e}")
+                    continue
     except Exception as e:
         err = str(e)
         if "AUTH_KEY_DUPLICATED" in err or "406" in err:
@@ -397,7 +419,7 @@ async def main():
     )
 
     log.info(f"\n✨ اكتمل الجلب:")
-    log.info(f"   مسلسلات: {total_series}")
+    log.info(f"   أعمال: {total_series}")
     log.info(f"   حلقات: {total_eps}")
     log.info(f"   مع file_id: {with_file_id}")
 
