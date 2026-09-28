@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 fetch_from_telegram.py — جالب بيانات المسلسلات من قنوات Telegram
-يدعم قناتين: CHANNEL + CHANNEL2
-مع حماية من الملف التالف والتكرار
+يدعم قناتين + حماية من التكرار + تنظيف محسّن للأسماء
 """
 
 import os
@@ -52,6 +51,53 @@ log = logging.getLogger("fetch")
 
 
 # ═══════════════════════════════════════════════════════════════
+# ★★★ أنماط التنظيف المُحسّنة — الإصلاح الرئيسي ★★★
+# ═══════════════════════════════════════════════════════════════
+CLEANUP_PATTERNS = [
+    # إزالة البادئات
+    re.compile(r"^(?:مشاهدة|تحميل)\s+", re.I),
+    re.compile(r"^(?:مسلسل|فيلم|فيلمو)\s+", re.I),
+
+    # ★★★ إزالة "حلقة N" و "الحلقة N" بجميع الصيغ ★★★
+    re.compile(r"\s+(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+.*$", re.I),
+
+    # إزالة "الموسم N" و "موسم N"
+    re.compile(r"\s+(?:الموسم|موسم)\s*\d+.*$", re.I),
+
+    # إزالة "S01E01" أو "S01"
+    re.compile(r"\s+S\d+\s*E\d+.*$", re.I),
+    re.compile(r"\s+S\d+\s*$", re.I),
+
+    # إزالة "E01" في النهاية
+    re.compile(r"\s+E\d+\s*$", re.I),
+
+    # إزالة الامتدادات
+    re.compile(r"\.(?:mp4|mkv|avi|mov|wmv|flv|webm)$", re.I),
+
+    # إزالة الأقواس والرموز
+    re.compile(r"\[[^\]]*\]"),
+    re.compile(r"\([^)]*\)"),
+    re.compile(r"【[^】]*】"),
+    re.compile(r"_+"),
+
+    # إزالة الشرطات في النهاية
+    re.compile(r"\s*[-–—]+\s*$"),
+    re.compile(r"^\s*[-–—]+\s*"),
+]
+
+
+def clean_series_name(name: str) -> str:
+    """تنظيف اسم المسلسل من الكلمات الزائدة"""
+    if not name:
+        return ""
+    name = name.strip()
+    for pat in CLEANUP_PATTERNS:
+        name = pat.sub(" ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "غير معروف"
+
+
+# ═══════════════════════════════════════════════════════════════
 # أنماط تحليل الـ Captions
 # ═══════════════════════════════════════════════════════════════
 PATTERNS = {
@@ -64,35 +110,13 @@ PATTERNS = {
     "episode_word": re.compile(r"\b(?:Episode)\s*[:\-]?\s*(\d{1,3})\b", re.I),
 }
 
-CLEANUP_PATTERNS = [
-    re.compile(r"مشاهدة\s+مسلسل\s+"),
-    re.compile(r"مسلسل\s+"),
-    re.compile(r"فيلم\s+"),
-    re.compile(r"\s*الحلقة\s*\d+.*$"),
-    re.compile(r"\s*الموسم\s*\d+.*$"),
-    re.compile(r"\s*S\d+E\d+.*$"),
-    re.compile(r"\.(mp4|mkv|avi)$", re.I),
-    re.compile(r"\[[^\]]*\]"),
-    re.compile(r"\([^)]*\)"),
-    re.compile(r"_+"),
-]
-
-
-def clean_series_name(name: str) -> str:
-    if not name:
-        return ""
-    name = name.strip()
-    for pat in CLEANUP_PATTERNS:
-        name = pat.sub(" ", name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name or "غير معروف"
-
 
 def parse_caption(caption: str) -> Optional[dict]:
     if not caption:
         return None
     caption = caption.strip()
 
+    # الموسم
     season = 1
     for key in ("season_ar", "season_en"):
         m = PATTERNS[key].search(caption)
@@ -103,6 +127,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError):
                 pass
 
+    # الحلقة
     episode = None
     for key in ("episode_ar", "episode_en", "episode_word"):
         m = PATTERNS[key].search(caption)
@@ -116,6 +141,7 @@ def parse_caption(caption: str) -> Optional[dict]:
     if episode is None:
         return None
 
+    # اسم المسلسل
     name = ""
     m = PATTERNS["series_ar"].search(caption)
     if m:
@@ -213,7 +239,6 @@ def save_data(data: dict):
     clean_data = clean_duplicates(data)
     try:
         content = json.dumps(clean_data, ensure_ascii=False, indent=2)
-        # التحقق من الصحة قبل الكتابة
         json.loads(content)
         DATA_FILE.write_text(content, encoding="utf-8")
         size_kb = DATA_FILE.stat().st_size / 1024
