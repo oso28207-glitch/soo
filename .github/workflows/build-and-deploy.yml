@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       history_limit:
-        description: 'حد الرسائل المسحوبة من Telegram'
+        description: 'حد الرسائل'
         required: false
         default: '5000'
         type: string
@@ -57,6 +57,7 @@ jobs:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
+          CHANNEL2: ${{ secrets.CHANNEL2 }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
@@ -65,18 +66,24 @@ jobs:
           [ -z "$API_HASH" ] && missing="$missing API_HASH"
           [ -z "$CHANNEL" ] && missing="$missing CHANNEL"
           [ -z "$STRING_SESSION" ] && missing="$missing STRING_SESSION"
-          [ -z "$TMDB_API_KEY" ] && missing="$missing TMDB_API_KEY"
           if [ -n "$missing" ]; then
             echo "Missing secrets:$missing"
             exit 1
           fi
-          echo "All secrets present"
+          echo "Required secrets present"
+          if [ -n "$CHANNEL2" ]; then
+            echo "Secondary channel configured: $CHANNEL2"
+          fi
+          if [ -z "$TMDB_API_KEY" ]; then
+            echo "Warning: TMDB_API_KEY not set"
+          fi
 
       - name: Fetch from Telegram
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           CHANNEL: ${{ secrets.CHANNEL }}
+          CHANNEL2: ${{ secrets.CHANNEL2 }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
           STORAGE_CHANNEL: ${{ secrets.STORAGE_CHANNEL }}
@@ -207,7 +214,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Time:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
 
   notify-failure:
     name: Notify on failure
@@ -220,6 +226,3 @@ jobs:
           echo "### Build Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "One of the jobs failed. Check logs above." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
