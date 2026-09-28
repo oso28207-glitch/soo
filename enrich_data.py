@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 enrich_data.py — إثراء data.json بالتصنيفات والصور
-- تصنيف تلقائي (نوع + أصل)
-- جلب صور من TMDB + Bing Images
-- معالجة متوازية سريعة
-- Cache لمنع الطلبات المكررة
+★ تصنيف تلقائي محسّن + جلب صور متعدد المصادر ★
 """
 
 import os
@@ -17,9 +14,6 @@ from pathlib import Path
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ═══════════════════════════════════════════════════════════════
-# الإعدادات
-# ═══════════════════════════════════════════════════════════════
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "data.json"
 CACHE_FILE = ROOT / ".poster_cache.json"
@@ -32,36 +26,66 @@ MAX_WORKERS = 8
 TIMEOUT = 8
 
 # ═══════════════════════════════════════════════════════════════
-# كلمات مفتاحية للتصنيف
+# ★ قوائم الكلمات المفتاحية المحسّنة ★
 # ═══════════════════════════════════════════════════════════════
 TURKISH_KW = [
+    # ★ كلمات عامة ★
+    "تركي", "مدبلج", "تركية",
+    # ★ مسلسلات تاريخية ★
     "قيامة", "عثمان", "أرطغرل", "حريم السلطان", "وادي الذئاب",
-    "الأزهار الحزينة", "أسمر", "أنت اطرق بابي", "قلعة",
-    "خاطفة", "صفقة", "الخائن", "مدبلج", "تركي", "Turkish",
-    "كان يا مكان", "بين", "مريم", "حكايتنا", "فتاة النافذة",
-    "حب أعمى", "قلب الأسد", "الحفرة", "قيامة عثمان",
-    "دموع وردة", "إيزيل", "العشق المشبوه", "عشق ودموع",
-    "لا احد يعلم", "المدينة", "الطبيب المعجزة",
+    "المؤسس عثمان", "قيامة أرطغرل", "ملحمة", "بني", "قبيلة",
+    # ★ مسلسلات رومانسية مشهورة ★
+    "لعبة حب", "التفاح الحرام", "كذبتي الحلوة", "حب للايجار",
+    "الحب ورطة", "حياتي الرائعة", "احتمال حب", "ورود وذنوب",
+    "النص الثاني", "الغرفة", "اسمه السعادة", "عائلة", 
+    "في الظل", "كيزيلجيك", "الثمانينات", "على مر الزمان",
+    "سنوات الضياع", "العشق الأسود", "الانتقام", "ياسمين", 
+    "فاتن", "بين", "أمينة", "خديجة", "نور", "لمسة حب",
+    "شمال وجنوب", "حكاية جزيرة", "جسور والجميلة", "الحياة جميلة",
+    "منزل الحب", "أنت اطرق بابي", "قلعة", "خاطفة", "صفقة",
+    "الخائن", "كان يا مكان", "مريم", "حكايتنا", "فتاة النافذة",
+    "حب أعمى", "قلب الأسد", "الحفرة", "دموع وردة", "إيزيل",
+    "العشق المشبوه", "عشق ودموع", "لا احد يعلم", "المدينة",
+    "الطبيب المعجزة", "لعبة الحظ", "الأزهار الحزينة", "أسمر",
+    # ★ مسلسلات جديدة ★
+    "قلب الجبل", "زهرة الثالوث", "الأمانة", "حب على طريقة",
+    "الطفل", "المعلم", "الوالدة", "سنوات", "طائر الرفراف",
+    "أنت وطني", "وطني أنت", "الحب الطاهر", "ثلاثة أجساد",
+    "غرفة الانتظار", "الجراح", "الخلية", "الحياة سر",
+    "سجين الحب", "الوعد", "الوعد الحلو", "قلب الأم",
+    "عائلة الحاج", "الوصية", "حكاية جزيرة", "جسر",
+    "دموع الغجرية", "أمل الحياة", "فتاة القمر", "الرياض",
 ]
 
 ARABIC_KW = [
+    # ★ مسلسلات عربية معروفة ★
     "اتنين", "المصيدة", "الاختيار", "الحشاشين", "المداح",
     "جعفر العمدة", "بيت الرفاعي", "العتاولة", "نسل الأغراب",
     "مافيا", "بابا المجال", "كوبرا", "سيد الناس", "الهيبة",
-    "عربي", "مصري", "خليجي", "سوري", "لبناني", "مغربي",
     "أم الدنيا", "قصر السيد", "الأب الروحي", "لعبة نيوتن",
+    "الملك", "موسى", "شقة 6", "الاختيار 3", "الاختيار 4",
+    "بـ100 وش", "أبو العروسة", "نصيبي وقسمتك", "البرنس",
+    "حكايات بنات", "السر", "الديفا", "الوعد", "الحرملك",
+    "الطوفان", "الجزء الثاني", "الزوجة 18", "الهيبة الحصاد",
+    "ولاد رزق", "الكنز", "الخلية", "الديزل", "حرب أهلية",
+    "لما كنا صغيرين", "نسل الأغراب", "المداح أسطورة العشق",
+    "المداح أسطورة الوادي", "طريق", "خيانة عهد", "الفتوة",
+    "ما وراء الطبيعة", "يوم الدين", "الكنز 2", "الفيل الأزرق",
+    # ★ كلمات عامة ★
+    "مصري", "خليجي", "سوري", "لبناني", "مغربي", "كويتي",
+    "سعودي", "إماراتي", "قطري", "بحريني", "عماني",
+    "أردني", "فلسطيني", "عراقي", "تونسي", "جزائري",
 ]
 
-MOVIE_KW = ["فيلم", "movie", "film", "فيلمو"]
+MOVIE_KW = ["فيلم", "فيلمو", "movie", "film", "سينما"]
 
-# ═══════════════════════════════════════════════════════════════
-# تحميل/حفظ الـ Cache
-# ═══════════════════════════════════════════════════════════════
+
 def load_cache():
     if CACHE_FILE.exists():
         try:
             return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except: pass
+        except:
+            pass
     return {"posters": {}, "categories": {}}
 
 
@@ -73,34 +97,25 @@ def save_cache(cache):
 
 
 # ═══════════════════════════════════════════════════════════════
-# التصنيف التلقائي
+# ★ التصنيف التلقائي — النسخة المحسّنة ★
 # ═══════════════════════════════════════════════════════════════
 def detect_type(name, episodes):
-    """
-    يحدد نوع المحتوى: series أو movie
-    - عدد حلقات <= 1 → فيلم
-    - مدة > 80 دقيقة والحلقة غير مرقّمة → فيلم
-    - كلمة "فيلم" في الاسم → فيلم
-    """
+    """series أو movie"""
     name_lower = name.lower()
 
-    # إذا الاسم يحتوي "فيلم"
     if any(k in name or k in name_lower for k in MOVIE_KW):
         return "movie"
 
-    # إذا حلقة واحدة فقط → فيلم
     if len(episodes) <= 1:
-        # تحقق من المدة
         if episodes:
             dur = episodes[0].get("duration", 0) or 0
             if dur >= 4800:  # 80 دقيقة
                 return "movie"
         return "movie"
 
-    # إذا 2 حلقات والمدة > 80 دقيقة لكل منهما → ممكن فيلمين
     if len(episodes) <= 3:
         long_count = sum(1 for e in episodes if (e.get("duration", 0) or 0) >= 4800)
-        if long_count >= len(episodes):
+        if long_count == len(episodes):
             return "movie"
 
     return "series"
@@ -108,59 +123,58 @@ def detect_type(name, episodes):
 
 def detect_origin(name, episodes):
     """
-    يحدد الأصل: arabic أو turkish أو foreign
+    ★ النسخة المحسّنة ★
+    - أولاً: كلمة "مدبلج" أو "تركي" → turkish
+    - ثانياً: كلمات مفتاحية تركية
+    - ثالثاً: كلمات مفتاحية عربية
+    - رابعاً: تحليل الحروف
     """
     name_lower = name.lower()
 
-    # كلمات تركية
+    # ★ أولاً: كلمات صريحة ★
+    if "مدبلج" in name or "تركي" in name or "تركية" in name:
+        return "turkish"
+
+    # ★ ثانياً: كلمات مفتاحية تركية ★
     for kw in TURKISH_KW:
         if kw in name or kw.lower() in name_lower:
             return "turkish"
 
-    # كلمات عربية
+    # ★ ثالثاً: كلمات مفتاحية عربية ★
     for kw in ARABIC_KW:
         if kw in name or kw.lower() in name_lower:
             return "arabic"
 
-    # إذا الاسم يحتوي حروفاً عربية (بدون كلمات إنجليزية) → عربي
+    # ★ رابعاً: تحليل الحروف ★
     arabic_chars = len(re.findall(r"[\u0600-\u06FF]", name))
     english_chars = len(re.findall(r"[a-zA-Z]", name))
+
     if arabic_chars > 0 and english_chars == 0:
-        # ربما عربي — خاصة إذا كان الاسم من قناة عربية
+        # اسم عربي بالكامل — لكن قد يكون تركي مترجم
+        # نستخدم heuristic: إذا كان الاسم طويلاً وفيه كلمات شائعة
         return "arabic"
 
-    # افتراضي: أجنبي
+    # ★ افتراضي: أجنبي ★
     return "foreign"
 
 
-def detect_category_slug(name, episodes):
-    """يُعيد slug للتصنيف: series-arabic, movie-turkish, etc."""
-    ctype = detect_type(name, episodes)
-    origin = detect_origin(name, episodes)
-    return f"{ctype}-{origin}"
-
-
 # ═══════════════════════════════════════════════════════════════
-# جلب الصور — TMDB
+# جلب الصور
 # ═══════════════════════════════════════════════════════════════
 def clean_for_search(name):
     name = re.sub(r"\s+", " ", name).strip()
     name = re.sub(r"^(مسلسل|مشاهدة|فيلم)\s+", "", name)
-    # إزالة "مدبلج" للبحث
     name = re.sub(r"\s*(مدبلج|مترجم)\s*", " ", name)
     return name.strip()
 
 
 def tmdb_search(session, name, year=""):
-    """يبحث في TMDB"""
     if not TMDB_API_KEY:
         return ""
-
     clean = clean_for_search(name)
     if not clean:
         return ""
 
-    # جرب TV ثم Movie
     for endpoint in ("tv", "movie"):
         try:
             params = {
@@ -169,18 +183,18 @@ def tmdb_search(session, name, year=""):
                 "language": "ar",
             }
             if year:
-                params["year"] = year if endpoint == "movie" else None
-                if endpoint == "tv":
+                if endpoint == "movie":
+                    params["year"] = year
+                else:
                     params["first_air_date_year"] = year
 
             r = session.get(
                 f"{TMDB_BASE}/search/{endpoint}",
-                params={k: v for k, v in params.items() if v},
+                params=params,
                 timeout=TIMEOUT,
             )
             if r.status_code == 200:
                 results = r.json().get("results", [])
-                # رتب حسب popularity
                 results.sort(key=lambda x: x.get("popularity", 0), reverse=True)
                 for result in results[:3]:
                     poster = result.get("poster_path")
@@ -192,9 +206,6 @@ def tmdb_search(session, name, year=""):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# جلب الصور — Bing Images (بدون API key)
-# ═══════════════════════════════════════════════════════════════
 BING_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -206,26 +217,20 @@ BING_HEADERS = {
 
 
 def bing_images(session, name):
-    """يبحث في Bing Images ويستخرج أول صورة كبيرة"""
     clean = clean_for_search(name)
     if not clean:
         return ""
 
     try:
-        # أضف "بوستر" لتحسين النتائج
         query = f"{clean} بوستر مسلسل"
         url = f"https://www.bing.com/images/search?q={quote(query)}&qft=+filterui:imagesize-large"
-
         r = session.get(url, headers=BING_HEADERS, timeout=TIMEOUT)
         if r.status_code != 200:
             return ""
 
-        # استخراج murl (media URL)
         matches = re.findall(r'"murl":"(https?://[^"]+)"', r.text)
         for m_url in matches[:5]:
-            # تنظيف
             m_url = m_url.replace("\\/", "/")
-            # تجاهل الصور الصغيرة أو من مواقع غير موثوقة
             if any(ext in m_url.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
                 if not any(bad in m_url.lower() for bad in ["logo", "icon", "avatar"]):
                     return m_url
@@ -235,15 +240,8 @@ def bing_images(session, name):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# Placeholder SVG كخيار أخير
-# ═══════════════════════════════════════════════════════════════
 def make_placeholder_svg(name):
-    """يُنشئ SVG جميل كصورة احتياطية"""
-    # أخذ أول حرف
     first = name.strip()[:1] if name.strip() else "?"
-
-    # اختيار لون حسب hash الاسم
     h = hash(name) % 360
     color1 = f"hsl({h}, 60%, 25%)"
     color2 = f"hsl({(h+40)%360}, 60%, 15%)"
@@ -261,21 +259,18 @@ def make_placeholder_svg(name):
         text-anchor="middle" dominant-baseline="middle">{first}</text>
 </svg>'''
 
-    # ترميز كـ data URI
     from urllib.parse import quote as q
     return "data:image/svg+xml;charset=utf-8," + q(svg, safe="")
 
 
 # ═══════════════════════════════════════════════════════════════
-# إثراء مسلسل واحد
+# إثراء واحد
 # ═══════════════════════════════════════════════════════════════
 def enrich_one(series, cache, session):
-    """يُثري مسلسلاً واحداً: تصنيف + صورة"""
     name = series.get("name", "").strip()
     if not name:
         return series
 
-    # ─── التصنيف ───
     episodes = []
     seasons = series.get("seasons", {})
     if isinstance(seasons, dict):
@@ -290,21 +285,16 @@ def enrich_one(series, cache, session):
     series["origin"] = origin
     series["category_slug"] = f"{ctype}-{origin}"
 
-    # ─── الصورة ───
     existing = series.get("poster_url", "").strip()
     if existing and not existing.startswith("data:"):
-        # تحقق من صلاحيتها
-        series["poster_url"] = existing
         return series
 
-    # من الـ cache؟
     cache_key = f"{name}|{series.get('tmdb_year','')}"
     cached = cache["posters"].get(cache_key)
     if cached:
         series["poster_url"] = cached
         return series
 
-    # جرب TMDB أولاً
     poster = tmdb_search(session, name, series.get("tmdb_year", ""))
     if poster:
         print(f"   ✅ TMDB: {name}")
@@ -312,7 +302,6 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # Bing Images
     poster = bing_images(session, name)
     if poster:
         print(f"   🖼️  Bing: {name}")
@@ -320,7 +309,6 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # Placeholder
     print(f"   ⚠️  Placeholder: {name}")
     poster = make_placeholder_svg(name)
     series["poster_url"] = poster
@@ -333,34 +321,28 @@ def enrich_one(series, cache, session):
 # ═══════════════════════════════════════════════════════════════
 def main():
     if not DATA_FILE.exists():
-        print(f"❌ لم يُعثر على {DATA_FILE}")
+        print(f"❌ {DATA_FILE} غير موجود")
         raise SystemExit(1)
 
     data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     series_list = data.get("series", [])
     cache = load_cache()
 
-    print(f"📚 {len(series_list)} مسلسل/فيلم")
-    print(f"🔧 معالجة متوازية بـ {MAX_WORKERS} threads\n")
+    print(f"📚 {len(series_list)} عمل")
+    print(f"🔧 {MAX_WORKERS} threads\n")
 
-    # Session مشترك
     session = requests.Session()
     session.headers.update({"Accept-Encoding": "gzip, deflate"})
 
-    # ─── معالجة متوازية ───
     start = time.time()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futures = {
-            ex.submit(enrich_one, s, cache, session): i
-            for i, s in enumerate(series_list)
-        }
-        for fut in as_completed(futures):
-            pass  # النتائج تُحدَّث في المكان
+        futures = [ex.submit(enrich_one, s, cache, session) for s in series_list]
+        for _ in as_completed(futures):
+            pass
 
     elapsed = time.time() - start
-    print(f"\n⏱️  الوقت: {elapsed:.1f}s")
+    print(f"\n⏱️  {elapsed:.1f}s")
 
-    # ─── إحصائيات ───
     from collections import Counter
     types = Counter(s.get("type", "?") for s in series_list)
     origins = Counter(s.get("origin", "?") for s in series_list)
@@ -376,14 +358,13 @@ def main():
         print(f"   • {k}: {v}")
     print(f"   • صور حقيقية: {with_poster}/{len(series_list)}")
 
-    # ─── حفظ ───
     DATA_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     save_cache(cache)
-    print(f"\n💾 حفظ {DATA_FILE.name}")
-    print(f"💾 حفظ Cache ({len(cache['posters'])} صورة)")
+    print(f"\n💾 {DATA_FILE.name}")
+    print(f"💾 Cache ({len(cache['posters'])} صورة)")
 
 
 if __name__ == "__main__":
