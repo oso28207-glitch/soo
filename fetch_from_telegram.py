@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 fetch_from_telegram.py — جالب البيانات من قنوات Telegram
-يدعم قناتين + توحيد المواسم + تصحيح الأسماء
+تصنيف ذكي حسب بنية الـ Caption
 """
 
 import os
@@ -48,24 +48,22 @@ log = logging.getLogger("fetch")
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ خريطة تصحيح الأسماء — الإصلاح الرئيسي ★★★
+# خريطة تصحيح الأسماء
 # ═══════════════════════════════════════════════════════════════
 NAME_CORRECTIONS = {
-    # اسم في القناة → (الاسم الصحيح، الموسم)
     "النص التاني": ("النص", 2),
     "النص الثاني": ("النص", 2),
     "النص 2": ("النص", 2),
+    "النص الموسم الثاني": ("النص", 2),
     "البيت بيتك": ("البيت بيتي", 1),
     "البيت بيتك 2": ("البيت بيتي", 2),
     "البيت بيتي 2": ("البيت بيتي", 2),
-    "البيت بيتي 3": ("البيت بيتي", 3),
     "الخياط الموسم الثاني": ("الخياط", 2),
     "الخياط الموسم الأول": ("الخياط", 1),
 }
 
 
 def apply_name_correction(name: str, season: int) -> tuple:
-    """يُصحح الاسم والموسم"""
     name = name.strip()
     if name in NAME_CORRECTIONS:
         corrected, corrected_season = NAME_CORRECTIONS[name]
@@ -74,111 +72,202 @@ def apply_name_correction(name: str, season: int) -> tuple:
 
 
 # ═══════════════════════════════════════════════════════════════
-# أنماط التنظيف
+# تنظيف النص — إزالة جميع الرموز والزخارف
 # ═══════════════════════════════════════════════════════════════
-CLEANUP_PATTERNS = [
-    re.compile(r"^(?:مشاهدة|تحميل)\s+", re.I),
-    re.compile(r"^(?:مسلسل|فيلم|فيلمو)\s+", re.I),
-    # إزالة "حلقة N"
-    re.compile(r"\s+(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+.*$", re.I),
-    # إزالة "الموسم N"
-    re.compile(r"\s+(?:الموسم|موسم)\s*\d+.*$", re.I),
-    # إزالة "S01E01"
-    re.compile(r"\s+S\d+\s*E\d+.*$", re.I),
-    re.compile(r"\s+S\d+\s*$", re.I),
-    re.compile(r"\s+E\d+\s*$", re.I),
-    # إزالة الامتدادات
-    re.compile(r"\.(?:mp4|mkv|avi|mov|wmv|flv|webm)$", re.I),
-    # إزالة الأقواس
-    re.compile(r"\[[^\]]*\]"),
-    re.compile(r"\([^)]*\)"),
-    re.compile(r"【[^】]*】"),
-    re.compile(r"_+"),
-    re.compile(r"\s*[-–—]+\s*$"),
-    re.compile(r"^\s*[-–—]+\s*"),
+# رموز يجب إزالتها من الاسم
+SYMBOL_CHARS = r'[_\-–—\[\]\(\)\{\}【】<>«»""\'\`\~\!\?\.,:;\/\\\|\+\=\^\&\*\%\$#@♦◆●▪▫◦•★☆✦✧✪✩✫✬✭✮✯]'
+
+# زخارف إيموجي شائعة في القنوات
+DECORATIVE_PATTERNS = [
+    re.compile(r"[\U0001F300-\U0001F9FF]+"),  # emojis
+    re.compile(r"[★☆✦✧✪✩✫✬✭✮✯♦◆●▪▫◦•]+"),
+    re.compile(r"[─═━┄┅┈┉]+"),
+    re.compile(r"[◄►◄►▲▼◀▶]+"),
 ]
 
 
-def clean_series_name(name: str) -> str:
-    if not name:
+def normalize_text(text: str) -> str:
+    """تنظيف شامل للنص"""
+    if not text:
         return ""
-    name = name.strip()
-    for pat in CLEANUP_PATTERNS:
-        name = pat.sub(" ", name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name or "غير معروف"
+    # إزالة الزخارف
+    for pat in DECORATIVE_PATTERNS:
+        text = pat.sub(" ", text)
+    # إزالة الرموز
+    text = re.sub(SYMBOL_CHARS, " ", text)
+    # توحيد المسافات
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 # ═══════════════════════════════════════════════════════════════
-# أنماط تحليل الـ Captions
+# أنماط الاستخراج
 # ═══════════════════════════════════════════════════════════════
-PATTERNS = {
-    "series_ar": re.compile(r"(?:المسلسل|مسلسل|اسم\s*المسلسل)\s*[:\-]?\s*(.+?)(?:\n|$)", re.I),
-    "series_en": re.compile(r"^([^\n—\-:]+?)(?:\s*[—\-:]|\s*$)", re.I),
-    "season_ar": re.compile(r"(?:الموسم|موسم)\s*[:\-]?\s*(\d+)", re.I),
-    "season_en": re.compile(r"\bS(\d{1,2})\b", re.I),
-    "episode_ar": re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*[:\-]?\s*(\d+)", re.I),
-    "episode_en": re.compile(r"\bE(\d{1,3})\b", re.I),
-    "episode_word": re.compile(r"\b(?:Episode)\s*[:\-]?\s*(\d{1,3})\b", re.I),
-    "movie_hint": re.compile(r"(?:فيلم|movie|film)", re.I),
-}
+EPISODE_PATTERNS = [
+    re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*(\d+)", re.I),
+    re.compile(r"\b(?:Episode|EP)\s*(\d{1,4})\b", re.I),
+    re.compile(r"\bE(\d{1,4})\b", re.I),
+]
+
+SEASON_PATTERNS = [
+    re.compile(r"(?:الموسم|موسم)\s*(\d+)", re.I),
+    re.compile(r"\bS(\d{1,2})\b", re.I),
+    re.compile(r"\bSeason\s*(\d{1,2})\b", re.I),
+]
+
+PART_PATTERNS = [
+    re.compile(r"(?:الجزء|جزء)\s*(\d+)", re.I),
+    re.compile(r"\bPart\s*(\d+)\b", re.I),
+]
+
+# بادئات الفيلم
+MOVIE_PREFIXES = [
+    re.compile(r"^(?:فيلم|فيلمو|movie|film)\s+", re.I),
+]
+
+# بادئات المسلسل
+SERIES_PREFIXES = [
+    re.compile(r"^(?:مسلسل|series)\s+", re.I),
+]
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★★★ الدالة الرئيسية — تحليل الـ Caption ★★★
+# ═══════════════════════════════════════════════════════════════
 def parse_caption(caption: str) -> Optional[dict]:
+    """
+    يحلل الـ Caption ويُعيد:
+    {
+        name: str,
+        season: int,
+        episode: int | None,
+        content_type: "series" | "movie",
+        part: int | None,
+    }
+    """
     if not caption:
         return None
-    caption = caption.strip()
 
-    # الموسم
-    season = 1
-    for key in ("season_ar", "season_en"):
-        m = PATTERNS[key].search(caption)
-        if m:
-            try:
-                season = int(m.group(1))
-                break
-            except (ValueError, IndexError):
-                pass
+    # احصل على أول سطر أو سطرين فقط (غالباً الاسم)
+    lines = caption.strip().split("\n")
+    # ابحث في السطر الأول عن الاسم
+    raw = lines[0].strip() if lines else caption.strip()
 
-    # الحلقة
+    if not raw:
+        return None
+
+    text = normalize_text(raw)
+    if not text:
+        return None
+
+    # ─── 1) استخراج الحلقة ───
     episode = None
-    for key in ("episode_ar", "episode_en", "episode_word"):
-        m = PATTERNS[key].search(caption)
+    episode_span = None
+    for pat in EPISODE_PATTERNS:
+        m = pat.search(text)
         if m:
             try:
                 episode = int(m.group(1))
+                episode_span = m.span()
                 break
             except (ValueError, IndexError):
                 pass
 
-    if episode is None:
-        return None
-
-    # اسم المسلسل
-    name = ""
-    m = PATTERNS["series_ar"].search(caption)
-    if m:
-        name = m.group(1)
-    else:
-        m = PATTERNS["series_en"].search(caption)
+    # ─── 2) استخراج الموسم ───
+    season = 1
+    season_span = None
+    for pat in SEASON_PATTERNS:
+        m = pat.search(text)
         if m:
-            name = m.group(1)
+            try:
+                season = int(m.group(1))
+                season_span = m.span()
+                break
+            except (ValueError, IndexError):
+                pass
 
-    name = clean_series_name(name)
-    if not name or name == "غير معروف":
+    # ─── 3) استخراج الجزء ───
+    part = None
+    part_span = None
+    for pat in PART_PATTERNS:
+        m = pat.search(text)
+        if m:
+            try:
+                part = int(m.group(1))
+                part_span = m.span()
+                break
+            except (ValueError, IndexError):
+                pass
+
+    # ─── 4) اكتشاف نوع المحتوى ───
+    is_movie_prefix = False
+    for pat in MOVIE_PREFIXES:
+        if pat.match(text):
+            is_movie_prefix = True
+            text = pat.sub("", text).strip()
+            break
+
+    is_series_prefix = False
+    for pat in SERIES_PREFIXES:
+        if pat.match(text):
+            is_series_prefix = True
+            text = pat.sub("", text).strip()
+            break
+
+    # ─── 5) تحديد النوع ───
+    if episode is not None:
+        content_type = "series"
+    elif part is not None:
+        content_type = "movie"
+    elif is_movie_prefix:
+        content_type = "movie"
+    elif is_series_prefix:
+        content_type = "series"
+    else:
+        # لا إشارة → نفترض أنه فيلم (سيتم التحقق لاحقاً بالمدة)
+        content_type = "movie"
+
+    # ─── 6) استخراج الاسم (إزالة المؤشرات) ───
+    name = text
+
+    # إزالة كل ما يتعلق بالحلقة/الموسم/الجزء
+    for span in [episode_span, season_span, part_span]:
+        if span:
+            # إزالة النص قبل span (المؤشر نفسه)
+            # لكن نبقى حذرين: span يشير لموضع المؤشر
+            # نزيل "الحلقة N" وليس "اسم الحلقة"
+            pass
+
+    # طريقة أسهل: بعد normalize_text، نزيل المؤشرات بـ regex
+    name = re.sub(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+", "", name, flags=re.I)
+    name = re.sub(r"(?:الموسم|موسم)\s*\d+", "", name, flags=re.I)
+    name = re.sub(r"(?:الجزء|جزء)\s*\d+", "", name, flags=re.I)
+    name = re.sub(r"\bS\d{1,2}\s*E\d{1,4}\b", "", name, flags=re.I)
+    name = re.sub(r"\bS\d{1,2}\b", "", name, flags=re.I)
+    name = re.sub(r"\bE\d{1,4}\b", "", name, flags=re.I)
+    name = re.sub(r"\b(?:Episode|EP|Part|Season)\s*\d+\b", "", name, flags=re.I)
+
+    # إزالة الكلمات المتبقية الفارغة
+    name = re.sub(r"\s+", " ", name).strip(" -–—.,")
+    name = name.strip()
+
+    if not name or len(name) < 2:
         return None
 
-    # ★★★ تصحيح الاسم والموسم ★★★
+    # ─── 7) تطبيق التصحيح ───
     name, season = apply_name_correction(name, season)
 
-    # نوع المحتوى
-    is_movie = bool(PATTERNS["movie_hint"].search(caption))
+    # للأفلام: ضع الموسم = 1، الحلقة = 1 (سنميز بالنوع)
+    if content_type == "movie":
+        season = 1
+        episode = 1
 
     return {
         "name": name,
         "season": season,
         "episode": episode,
-        "is_movie_hint": is_movie,
+        "content_type": content_type,
+        "part": part,
     }
 
 
@@ -212,9 +301,16 @@ def clean_duplicates(data: dict) -> dict:
         if not isinstance(s, dict):
             continue
         name = s.get("name", "").strip()
-        if not name or name in seen_series:
+        ctype = s.get("type", "series")
+        # للأفلام، لا تعتمد على الاسم فقط بل على (الاسم + القناة)
+        if ctype == "movie":
+            name_key = f"M::{name}::{s.get('source_channel', '')}"
+        else:
+            name_key = name
+
+        if not name or name_key in seen_series:
             continue
-        seen_series.add(name)
+        seen_series.add(name_key)
 
         clean_seasons = {}
         seasons = s.get("seasons", {})
@@ -269,15 +365,27 @@ def save_data(data: dict):
         log.error(f"فشل حفظ: {e}")
 
 
-def find_or_create_series(data: dict, name: str) -> dict:
+def find_or_create_series(data: dict, name: str, content_type: str, channel: str) -> dict:
+    """يبحث عن العمل أو يُنشئه — مع التمييز حسب النوع"""
     for s in data["series"]:
-        if s.get("name") == name:
-            return s
+        s_name = s.get("name", "")
+        s_type = s.get("type", "")
+        s_channel = s.get("_source_channel", "")
+        # المطابقة: نفس الاسم + نفس النوع + نفس القناة (للأفلام)
+        if s_name == name and s_type == content_type:
+            if content_type == "movie":
+                if s_channel == channel:
+                    return s
+            else:
+                return s
+
     new_series = {
         "name": name,
+        "type": content_type,
         "poster_url": "",
         "description": "",
         "seasons": {},
+        "_source_channel": channel,
     }
     data["series"].append(new_series)
     return new_series
@@ -313,8 +421,6 @@ def extract_media_info(msg) -> Optional[dict]:
         media, media_type = msg.document, "document"
     elif msg.animation:
         media, media_type = msg.animation, "animation"
-    elif msg.audio:
-        media, media_type = msg.audio, "audio"
 
     if not media:
         return None
@@ -354,6 +460,13 @@ async def process_message(client, msg, data, progress, channel) -> bool:
     if media_info["file_size"] < 1024 * 1024:
         return False
 
+    # ★ تحقق إضافي: إذا كان النوع "movie" لكن الملف كبير جداً (>80 دقيقة)
+    # نبقيه فيلم. إذا كان صغير المدة (<5 دقائق)، نعتبره فيديو قصير ونتجاهله
+    dur = media_info["duration"] or 0
+    if parsed["content_type"] == "movie" and dur < 300:  # أقل من 5 دقائق
+        # قد يكون مقطع قصير، نتجاهله
+        pass
+
     if channel.startswith("-100"):
         tg_url = f"https://t.me/c/{channel.replace('-100', '')}/{msg.id}"
     elif channel.startswith("-"):
@@ -376,15 +489,18 @@ async def process_message(client, msg, data, progress, channel) -> bool:
         "thumb_url": "",
         "date": msg.date.isoformat() if msg.date else "",
         "source_channel": channel,
-        "is_movie_hint": parsed.get("is_movie_hint", False),
     }
 
-    series = find_or_create_series(data, parsed["name"])
+    series = find_or_create_series(
+        data, parsed["name"], parsed["content_type"], channel
+    )
     added = add_episode(series, parsed["season"], episode)
 
     if added:
+        icon = "🎬" if parsed["content_type"] == "movie" else "📺"
         log.info(
-            f"[{parsed['name']}] S{parsed['season']:02d}E{parsed['episode']:02d} "
+            f"{icon} [{parsed['name']}] "
+            f"{'جزء ' + str(parsed.get('part')) if parsed.get('part') else 'S' + str(parsed['season']).zfill(2) + 'E' + str(parsed['episode']).zfill(2)} "
             f"({media_info['file_size'] / 1024 / 1024:.1f}MB) [{channel}]"
         )
     return added
@@ -485,14 +601,13 @@ async def main():
     save_data(data)
     save_progress(progress)
 
-    total_series = len(data["series"])
-    total_eps = sum(
-        len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
-    )
-
+    # إحصائيات
+    from collections import Counter
+    types = Counter(s.get("type", "?") for s in data["series"])
     log.info(f"\nاكتمل الجلب:")
-    log.info(f"   أعمال: {total_series}")
-    log.info(f"   حلقات: {total_eps}")
+    log.info(f"   أعمال: {len(data['series'])}")
+    for t, c in types.items():
+        log.info(f"   {t}: {c}")
 
 
 if __name__ == "__main__":
