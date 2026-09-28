@@ -59,7 +59,6 @@ jobs:
           CHANNEL: ${{ secrets.CHANNEL }}
           CHANNEL2: ${{ secrets.CHANNEL2 }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           missing=""
           [ -z "$API_ID" ] && missing="$missing API_ID"
@@ -72,10 +71,9 @@ jobs:
           fi
           echo "Required secrets present"
           if [ -n "$CHANNEL2" ]; then
-            echo "Secondary channel configured: $CHANNEL2"
-          fi
-          if [ -z "$TMDB_API_KEY" ]; then
-            echo "Warning: TMDB_API_KEY not set"
+            echo "Secondary channel: $CHANNEL2"
+          else
+            echo "No secondary channel"
           fi
 
       - name: Fetch from Telegram
@@ -112,7 +110,7 @@ jobs:
               1 for x in s
               if x.get('poster_url', '') and not x.get('poster_url', '').startswith('data:')
           )
-          print(f'Series/Movies: {len(s)}')
+          print(f'Items: {len(s)}')
           print(f'Episodes: {total}')
           print(f'Real posters: {with_poster}/{len(s)}')
           print(f'Types: {dict(types)}')
@@ -128,10 +126,14 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Update data + cache [skip ci]"
-            for i in 1 2 3; do
-              git pull --rebase origin main && git push origin main && break
-              echo "Retry $i..."
-              sleep 3
+            for i in 1 2 3 4 5; do
+              if git pull --rebase --autostash --strategy-option=theirs origin main && git push origin main; then
+                echo "Push succeeded on attempt $i"
+                break
+              fi
+              echo "Retry $i failed"
+              git rebase --abort 2>/dev/null || true
+              sleep 5
             done
           fi
 
@@ -214,15 +216,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
-  notify-failure:
-    name: Notify on failure
-    runs-on: ubuntu-latest
-    needs: [fetch-data, build, deploy]
-    if: failure()
-    steps:
-      - name: Failure summary
-        run: |
-          echo "### Build Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "One of the jobs failed. Check logs above." >> $GITHUB_STEP_SUMMARY
