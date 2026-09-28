@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 enrich_data.py — إثراء data.json بالتصنيفات والصور
-تصنيف محافظ (لا يخطئ) + جلب صور ذكي
+تصنيف دقيق + جلب صور متعدد المصادر
 """
 
 import os
@@ -26,48 +26,31 @@ MAX_WORKERS = 8
 TIMEOUT = 10
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ قوائم تركية — مُقلّصة لتجنب الأخطاء ★★★
-# فقط الكلمات الفريدة التي لا توجد في العربية
+# قوائم الكلمات المفتاحية
 # ═══════════════════════════════════════════════════════════════
 TURKISH_KW = [
-    # صريحة
     "مدبلج", "تركي", "تركية",
-
-    # تاريخية فريدة
     "قيامة أرطغرل", "المؤسس عثمان", "حريم السلطان", "وادي الذئاب",
-    "قيامة عثمان", "أرطغرل",
-
-    # أسماء تركية فريدة
+    "قيامة عثمان", "أرطغرل", "ملحمة", "قبيلة",
     "لعبة حب", "التفاح الحرام", "كذبتي الحلوة", "حب للايجار",
     "الحب ورطة", "احتمال حب", "ورود وذنوب", "الغرفة 309",
-    "كيزيلجيك", "على مر الزمان", "سنوات الضياع",
-    "العشق الأسود", "العشق المشبوه", "عشق ودموع",
-    "جسور والجميلة", "أنت اطرق بابي", "كان يا مكان",
-    "فتاة النافذة", "حب أعمى", "قلب الأسد", "الحفرة",
-    "الطبيب المعجزة", "الأزهار الحزينة",
-    "زهرة الثالوث", "طائر الرفراف", "ثلاثة أجساد",
-    "سجين الحب", "دموع الغجرية", "فيلينتا",
-
-    # ★★★ الكلمات المُضافة ★★★
-    "الخياط", "المحافظ",
+    "كيزيلجيك", "على مر الزمان", "سنوات الضياع", "العشق الأسود",
+    "العشق المشبوه", "عشق ودموع", "جسور والجميلة", "أنت اطرق بابي",
+    "كان يا مكان", "فتاة النافذة", "حب أعمى", "قلب الأسد",
+    "الحفرة", "الطبيب المعجزة", "الأزهار الحزينة", "زهرة الثالوث",
+    "طائر الرفراف", "ثلاثة أجساد", "سجين الحب", "دموع الغجرية",
+    "فيلينتا", "الخياط", "المحافظ",
 ]
 
-# ★★★ الأسماء العربية الصريحة (لتفادي التصنيف الخاطئ) ★★★
 ARABIC_HARDCODED = [
-    "منورة باهلها", "منورة بأهلها",
-    "الاخ الكبير", "الأخ الكبير",
-    "النص", "البيت بيتي", "البيت بيتك",
-    "صحاب الارض", "صحاب الأرض",
-    "عين سحرية", "الست موناليزا",
-    "مناعة", "اوراق النسيان", "أوراق النسيان",
-    "كارثة طبيعية", "مملكة الحرير",
-    "موعد مع الماضي", "بـ 100 وش", "ضربة معلم",
-    "بدون سابق انذار", "بدون سابق إنذار",
-    "فن الحرب", "حد اقصى", "حد أقصى",
-    "الف ليله وليله", "ألف ليلة وليلة",
-    "اتنين غيرنا", "المصيدة", "الاختيار", "الحشاشين",
-    "المداح", "جعفر العمدة", "بيت الرفاعي",
-    "العتاولة", "نسل الأغراب", "الهيبة",
+    "منورة باهلها", "منورة بأهلها", "الاخ الكبير", "الأخ الكبير",
+    "النص", "البيت بيتي", "البيت بيتك", "صحاب الارض", "صحاب الأرض",
+    "عين سحرية", "الست موناليزا", "مناعة", "اوراق النسيان",
+    "أوراق النسيان", "كارثة طبيعية", "مملكة الحرير", "موعد مع الماضي",
+    "بـ 100 وش", "ضربة معلم", "بدون سابق انذار", "بدون سابق إنذار",
+    "فن الحرب", "حد اقصى", "حد أقصى", "الف ليله وليله", "ألف ليلة وليلة",
+    "اتنين غيرنا", "المصيدة", "الاختيار", "الحشاشين", "المداح",
+    "جعفر العمدة", "بيت الرفاعي", "العتاولة", "نسل الأغراب", "الهيبة",
 ]
 
 
@@ -88,34 +71,26 @@ def save_cache(cache):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ تصنيف الأصل — محافظ جداً ★★★
+# تصنيف الأصل — محافظ جداً
 # ═══════════════════════════════════════════════════════════════
 def detect_origin(name: str, existing_type: str = "") -> str:
-    """
-    ترتيب الأولوية:
-    1. الكلمة الصريحة "مدبلج" / "تركي" → turkish
-    2. القائمة العربية الصريحة → arabic
-    3. الكلمات التركية الفريدة → turkish
-    4. حروف عربية فقط → arabic
-    5. غير ذلك → foreign
-    """
     name_lower = name.lower().strip()
 
-    # 1. صريح تركي
+    # صريح تركي
     if "مدبلج" in name or "تركي" in name or "تركية" in name:
         return "turkish"
 
-    # 2. صريح عربي (قبل التركي!)
+    # صريح عربي (قبل التركي)
     for kw in ARABIC_HARDCODED:
         if kw in name or kw.lower() in name_lower:
             return "arabic"
 
-    # 3. تركي فريد
+    # تركي فريد
     for kw in TURKISH_KW:
         if kw in name or kw.lower() in name_lower:
             return "turkish"
 
-    # 4. حروف عربية فقط → عربي
+    # حروف عربية فقط
     arabic_chars = len(re.findall(r"[\u0600-\u06FF]", name))
     english_chars = len(re.findall(r"[a-zA-Z]", name))
 
@@ -126,23 +101,15 @@ def detect_origin(name: str, existing_type: str = "") -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# تصنيف النوع — يعتمد على عدد الحلقات فقط
+# تصنيف النوع — يعتمد على عدد الحلقات والنوع المُحدّد مسبقاً
 # ═══════════════════════════════════════════════════════════════
 def detect_type(name, episodes, existing_type=""):
-    """
-    - إذا كان النوع مُحدّد مسبقاً (من fetch_from_telegram) → نحترمه
-    - إذا كانت هناك > 3 حلقات → series
-    - إذا كانت هناك 1 حلقة + اسم بدون مؤشرات → movie
-    """
-    # احترم النوع المُحدّد مسبقاً
     if existing_type in ("series", "movie"):
         n = len(episodes)
-        # إذا كان "movie" لكن > 3 حلقات، صحّح إلى series
         if existing_type == "movie" and n > 3:
             return "series"
-        # إذا كان "series" لكن 1 حلقة فقط، قد يكون فيلم
         if existing_type == "series" and n == 1:
-            return "series"  # نبقيه كما هو
+            return "series"
         return existing_type
 
     n = len(episodes)
@@ -166,13 +133,12 @@ def clean_for_search(name):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ تقييم نتائج البحث ★★★
+# تقييم نتائج البحث
 # ═══════════════════════════════════════════════════════════════
 def normalize_arabic(text):
-    """توحيد الأحرف العربية للمقارنة"""
     if not text:
         return ""
-    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)  # تشكيل
+    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
     text = re.sub(r"[إأآا]", "ا", text)
     text = re.sub(r"[ىي]", "ي", text)
     text = re.sub(r"[ةه]", "ه", text)
@@ -181,7 +147,6 @@ def normalize_arabic(text):
 
 
 def score_tmdb_result(result, query):
-    """يقيّم نتيجة TMDB من 0 إلى 100"""
     title = result.get("name") or result.get("title") or ""
     original = result.get("original_name") or result.get("original_title") or ""
 
@@ -192,19 +157,15 @@ def score_tmdb_result(result, query):
     if not n_query:
         return 0
 
-    # مطابقة تامة
     if n_title == n_query or n_original == n_query:
         return 100
 
-    # بداية مطابقة
     if n_title.startswith(n_query) or n_query.startswith(n_title):
         return 85
 
-    # احتواء
     if n_query in n_title or n_query in n_original:
         return 70
 
-    # تقاطع كلمات
     q_words = set(n_query.split())
     t_words = set(n_title.split())
     o_words = set(n_original.split())
@@ -228,16 +189,12 @@ def tmdb_search(session, name, content_type="", year=""):
     if not clean:
         return ""
 
-    # جرب الاستعلامات المتعددة
     queries = [clean]
-    # بدون "ال"
     if clean.startswith("ال") and len(clean) > 3:
         queries.append(clean[2:])
-    # بدون "ة" في النهاية
     if clean.endswith("ة"):
         queries.append(clean[:-1])
 
-    # حدد الـ endpoints حسب النوع
     if content_type == "movie":
         endpoints = ["movie", "tv"]
     elif content_type == "series":
@@ -272,13 +229,11 @@ def tmdb_search(session, name, content_type="", year=""):
                         best_score = score
                         best_poster = f"{TMDB_IMG}{poster}"
 
-                # إذا وجدنا تطابقاً ممتازاً، توقف
                 if best_score >= 85:
                     return best_poster
             except Exception:
                 continue
 
-    # اقبل فقط النتائج بدرجة معقولة
     if best_score >= 40:
         return best_poster
 
@@ -303,7 +258,6 @@ def tvmaze_search(session, name):
         if not results:
             return ""
 
-        # أعلى نتيجة
         best = results[0]
         score = score_tmdb_result(
             {"name": best.get("show", {}).get("name", "")},
@@ -422,8 +376,6 @@ def make_placeholder_svg(name, content_type=""):
     color2 = f"hsl({(h+40)%360}, 55%, 12%)"
     color3 = f"hsl({(h+180)%360}, 70%, 60%)"
 
-    icon = "🎬" if content_type == "movie" else "📺"
-
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 450">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
@@ -460,7 +412,6 @@ def enrich_one(series, cache, session):
             if isinstance(eps, list):
                 episodes.extend(eps)
 
-    # ★ استخدم النوع المُحدّد مسبقاً ★
     existing_type = series.get("type", "")
     ctype = detect_type(name, episodes, existing_type)
     origin = detect_origin(name, ctype)
@@ -469,7 +420,6 @@ def enrich_one(series, cache, session):
     series["origin"] = origin
     series["category_slug"] = f"{ctype}-{origin}"
 
-    # ─── الصورة ───
     existing = series.get("poster_url", "").strip()
     if existing and not existing.startswith("data:"):
         return series
