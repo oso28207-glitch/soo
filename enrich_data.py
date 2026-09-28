@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 enrich_data.py — إثراء data.json بالتصنيفات والصور
-تصنيف محسّن (الأولوية لعدد الحلقات) + جلب صور متعدد المصادر
 """
 
 import os
@@ -26,17 +25,14 @@ MAX_WORKERS = 8
 TIMEOUT = 10
 
 # ═══════════════════════════════════════════════════════════════
-# قوائم الكلمات المفتاحية — محدّثة
+# قوائم الكلمات — محدّثة
 # ═══════════════════════════════════════════════════════════════
 TURKISH_KW = [
-    # كلمات عامة
     "تركي", "مدبلج", "تركية",
-
     # مسلسلات تاريخية
     "قيامة", "عثمان", "أرطغرل", "حريم السلطان", "وادي الذئاب",
     "المؤسس عثمان", "قيامة أرطغرل", "ملحمة", "قبيلة",
-
-    # ★★★ مسلسلات تركية شائعة ★★★
+    # مسلسلات رومانسية
     "لعبة حب", "التفاح الحرام", "كذبتي الحلوة", "حب للايجار",
     "الحب ورطة", "حياتي الرائعة", "احتمال حب", "ورود وذنوب",
     "النص الثاني", "الغرفة", "اسمه السعادة", "في الظل",
@@ -54,13 +50,11 @@ TURKISH_KW = [
     "غرفة الانتظار", "الجراح", "الخلية", "سجين الحب",
     "الوعد", "قلب الأم", "عائلة الحاج", "الوصية", "جسر",
     "دموع الغجرية", "أمل الحياة", "فتاة القمر",
-
-    # ★★★ الكلمات المُضافة حديثًا ★★★
+    # ★★★ الكلمات المُضافة ★★★
     "الخياط", "Terzi", "فيلينتا", "المحافظ",
 ]
 
 ARABIC_KW = [
-    # مسلسلات عربية معروفة
     "اتنين", "المصيدة", "الاختيار", "الحشاشين", "المداح",
     "جعفر العمدة", "بيت الرفاعي", "العتاولة", "نسل الأغراب",
     "مافيا", "بابا المجال", "كوبرا", "سيد الناس", "الهيبة",
@@ -68,18 +62,15 @@ ARABIC_KW = [
     "الملك", "موسى", "شقة 6", "البرنس", "السر",
     "الحرملك", "الطوفان", "ولاد رزق", "الكنز", "الديزل",
     "حرب أهلية", "خيانة عهد", "الفتوة", "الفيل الأزرق",
-
-    # كلمات عامة
     "مصري", "خليجي", "سوري", "لبناني", "مغربي", "كويتي",
     "سعودي", "إماراتي", "قطري", "بحريني", "عماني",
     "أردني", "فلسطيني", "عراقي", "تونسي", "جزائري",
-
-    # ★★★ مسلسلات عربية من الموقع ★★★
+    # ★★★ مسلسلات الموقع ★★★
     "صحاب الارض", "عين سحرية", "الست موناليزا", "مناعة",
-    "الخياط المصري", "اوراق النسيان", "كارثة طبيعية", "النص",
+    "اوراق النسيان", "كارثة طبيعية", "النص",
     "اسود باهت", "ساعته وتاريخه", "مملكة الحرير",
     "موعد مع الماضي", "بـ 100 وش", "ضربة معلم",
-    "الاخ الكبير", "بدون سابق انذار", "البيت بيتك",
+    "الاخ الكبير", "بدون سابق انذار", "البيت بيتي",
     "منورة باهلها", "منورة بأهلها", "فن الحرب",
     "حد اقصى", "الف ليله وليله",
 ]
@@ -104,32 +95,38 @@ def save_cache(cache):
 
 
 # ═══════════════════════════════════════════════════════════════
-# التصنيف المحسّن — الأولوية لعدد الحلقات
+# التصنيف المحسّن
 # ═══════════════════════════════════════════════════════════════
 def detect_type(name, episodes):
     """
-    يحدد النوع: series أو movie
-    الأولوية لعدد الحلقات قبل الاسم
+    series أو movie
+    ★ الأولوية لعدد الحلقات ★
     """
     n = len(episodes)
 
-    # ★★★ إذا كان هناك أكثر من 3 حلقات، فهو مسلسل بالتأكيد ★★★
+    # أكثر من 3 حلقات = مسلسل
     if n > 3:
         return "series"
 
-    # ★★★ 2-3 حلقات: فحص المدة ★★★
+    # 2-3 حلقات: فحص المدة
     if 2 <= n <= 3:
         long_count = sum(1 for e in episodes if (e.get("duration", 0) or 0) >= 4800)
         if long_count == n:
             return "movie"
         return "series"
 
-    # ★★★ حلقة واحدة أو صفر ★★★
+    # حلقة واحدة
     name_lower = name.lower()
 
+    # ★★★ إشارة "فيلم" في الاسم ★★★
     if any(k in name or k in name_lower for k in MOVIE_KW):
         return "movie"
 
+    # ★★★ فحص is_movie_hint ★★★
+    if episodes and episodes[0].get("is_movie_hint"):
+        return "movie"
+
+    # فحص المدة
     if episodes:
         dur = episodes[0].get("duration", 0) or 0
         if dur >= 4800:
@@ -139,13 +136,15 @@ def detect_type(name, episodes):
 
 
 def detect_origin(name, episodes):
-    """
-    يحدد الأصل: arabic أو turkish أو foreign
-    """
+    """arabic أو turkish أو foreign"""
     name_lower = name.lower()
 
     # كلمات صريحة
     if "مدبلج" in name or "تركي" in name or "تركية" in name:
+        return "turkish"
+
+    # ★★★ "الخياط" صريحًا ★★★
+    if name.strip() == "الخياط":
         return "turkish"
 
     # كلمات تركية
@@ -168,9 +167,6 @@ def detect_origin(name, episodes):
     return "foreign"
 
 
-# ═══════════════════════════════════════════════════════════════
-# تنظيف اسم البحث
-# ═══════════════════════════════════════════════════════════════
 def clean_for_search(name):
     name = re.sub(r"\s+", " ", name).strip()
     name = re.sub(r"^(?:مسلسل|مشاهدة|فيلم|فيلمو)\s+", "", name)
@@ -182,7 +178,7 @@ def clean_for_search(name):
 
 
 # ═══════════════════════════════════════════════════════════════
-# جلب الصور - TMDB
+# TMDB
 # ═══════════════════════════════════════════════════════════════
 def tmdb_search(session, name, year=""):
     if not TMDB_API_KEY:
@@ -192,10 +188,8 @@ def tmdb_search(session, name, year=""):
         return ""
 
     queries = [clean]
-    # إذا بدأ بـ "ال"، جرب بدونها
     if clean.startswith("ال"):
         queries.append(clean[2:])
-    # جرب أيضاً الكلمة الأولى فقط
     parts = clean.split()
     if len(parts) > 2:
         queries.append(" ".join(parts[:2]))
@@ -233,7 +227,7 @@ def tmdb_search(session, name, year=""):
 
 
 # ═══════════════════════════════════════════════════════════════
-# TVMaze (مجاني، بدون API key)
+# TVMaze
 # ═══════════════════════════════════════════════════════════════
 def tvmaze_search(session, name):
     clean = clean_for_search(name)
@@ -260,7 +254,47 @@ def tvmaze_search(session, name):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Bing Images — استعلامات متعددة
+# ★★★ ElCinema — مصدر عربي ★★★
+# ═══════════════════════════════════════════════════════════════
+ELCINEMA_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "ar,en;q=0.9",
+}
+
+
+def elcinema_search(session, name):
+    """يبحث في ElCinema (موقع سينمائي عربي)"""
+    clean = clean_for_search(name)
+    if not clean:
+        return ""
+
+    try:
+        url = f"https://elcinema.com/search?q={quote(clean)}"
+        r = session.get(url, headers=ELCINEMA_HEADERS, timeout=TIMEOUT)
+        if r.status_code != 200:
+            return ""
+
+        # استخراج أول صورة كبيرة
+        matches = re.findall(
+            r'<img[^>]+src="(https?://[^"]+\.(?:jpg|jpeg|png|webp))"',
+            r.text, re.I,
+        )
+        for img_url in matches[:5]:
+            if any(bad in img_url.lower() for bad in ["logo", "icon", "avatar", "banner"]):
+                continue
+            return img_url
+    except Exception:
+        pass
+
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════
+# Bing Images
 # ═══════════════════════════════════════════════════════════════
 BING_HEADERS = {
     "User-Agent": (
@@ -277,7 +311,6 @@ def bing_images(session, name):
     if not clean:
         return ""
 
-    # عدة استعلامات
     queries = [
         f"{clean} بوستر مسلسل",
         f"{clean} مسلسل",
@@ -306,7 +339,7 @@ def bing_images(session, name):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Placeholder SVG محسّن
+# Placeholder SVG
 # ═══════════════════════════════════════════════════════════════
 def make_placeholder_svg(name):
     first = name.strip()[:1] if name.strip() else "?"
@@ -337,14 +370,13 @@ def make_placeholder_svg(name):
 
 
 # ═══════════════════════════════════════════════════════════════
-# إثراء عمل واحد
+# إثراء واحد
 # ═══════════════════════════════════════════════════════════════
 def enrich_one(series, cache, session):
     name = series.get("name", "").strip()
     if not name:
         return series
 
-    # جمع الحلقات
     episodes = []
     seasons = series.get("seasons", {})
     if isinstance(seasons, dict):
@@ -352,7 +384,6 @@ def enrich_one(series, cache, session):
             if isinstance(eps, list):
                 episodes.extend(eps)
 
-    # تصنيف
     ctype = detect_type(name, episodes)
     origin = detect_origin(name, episodes)
 
@@ -360,7 +391,6 @@ def enrich_one(series, cache, session):
     series["origin"] = origin
     series["category_slug"] = f"{ctype}-{origin}"
 
-    # صورة
     existing = series.get("poster_url", "").strip()
     if existing and not existing.startswith("data:"):
         return series
@@ -387,7 +417,15 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # 3. Bing Images
+    # ★★★ 3. ElCinema ★★★
+    poster = elcinema_search(session, name)
+    if poster:
+        print(f"   ElCinema: {name}")
+        series["poster_url"] = poster
+        cache["posters"][cache_key] = poster
+        return series
+
+    # 4. Bing
     poster = bing_images(session, name)
     if poster:
         print(f"   Bing: {name}")
@@ -395,7 +433,7 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # 4. Placeholder
+    # 5. Placeholder
     print(f"   Placeholder: {name}")
     poster = make_placeholder_svg(name)
     series["poster_url"] = poster

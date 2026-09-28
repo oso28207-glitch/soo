@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fetch_from_telegram.py — جالب بيانات المسلسلات من قنوات Telegram
-يدعم قناتين + حماية من التكرار + تنظيف محسّن للأسماء
+fetch_from_telegram.py — جالب البيانات من قنوات Telegram
+يدعم قناتين + توحيد المواسم + تصحيح الأسماء
 """
 
 import os
@@ -32,9 +32,6 @@ CHANNEL2_CLEAN = CHANNEL2.lstrip("@") if CHANNEL2 else ""
 
 STRING_SESSION = os.getenv("STRING_SESSION", "")
 STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
-STORAGE_CHANNEL = os.getenv("STORAGE_CHANNEL", "")
-STREAM_BASE = os.getenv("STREAM_BASE", "")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "5000"))
 MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "2000"))
 
@@ -51,43 +48,58 @@ log = logging.getLogger("fetch")
 
 
 # ═══════════════════════════════════════════════════════════════
-# أنماط التنظيف — الإصلاح الرئيسي لمشكلة "حلقة N"
+# ★★★ خريطة تصحيح الأسماء — الإصلاح الرئيسي ★★★
+# ═══════════════════════════════════════════════════════════════
+NAME_CORRECTIONS = {
+    # اسم في القناة → (الاسم الصحيح، الموسم)
+    "النص التاني": ("النص", 2),
+    "النص الثاني": ("النص", 2),
+    "النص 2": ("النص", 2),
+    "البيت بيتك": ("البيت بيتي", 1),
+    "البيت بيتك 2": ("البيت بيتي", 2),
+    "البيت بيتي 2": ("البيت بيتي", 2),
+    "البيت بيتي 3": ("البيت بيتي", 3),
+    "الخياط الموسم الثاني": ("الخياط", 2),
+    "الخياط الموسم الأول": ("الخياط", 1),
+}
+
+
+def apply_name_correction(name: str, season: int) -> tuple:
+    """يُصحح الاسم والموسم"""
+    name = name.strip()
+    if name in NAME_CORRECTIONS:
+        corrected, corrected_season = NAME_CORRECTIONS[name]
+        return corrected, max(season, corrected_season)
+    return name, season
+
+
+# ═══════════════════════════════════════════════════════════════
+# أنماط التنظيف
 # ═══════════════════════════════════════════════════════════════
 CLEANUP_PATTERNS = [
-    # إزالة البادئات
     re.compile(r"^(?:مشاهدة|تحميل)\s+", re.I),
     re.compile(r"^(?:مسلسل|فيلم|فيلمو)\s+", re.I),
-
-    # ★★★ إزالة "حلقة N" و "الحلقة N" بجميع الصيغ ★★★
+    # إزالة "حلقة N"
     re.compile(r"\s+(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+.*$", re.I),
-
-    # إزالة "الموسم N" و "موسم N"
+    # إزالة "الموسم N"
     re.compile(r"\s+(?:الموسم|موسم)\s*\d+.*$", re.I),
-
-    # إزالة "S01E01" أو "S01"
+    # إزالة "S01E01"
     re.compile(r"\s+S\d+\s*E\d+.*$", re.I),
     re.compile(r"\s+S\d+\s*$", re.I),
-
-    # إزالة "E01" في النهاية
     re.compile(r"\s+E\d+\s*$", re.I),
-
     # إزالة الامتدادات
     re.compile(r"\.(?:mp4|mkv|avi|mov|wmv|flv|webm)$", re.I),
-
-    # إزالة الأقواس والرموز
+    # إزالة الأقواس
     re.compile(r"\[[^\]]*\]"),
     re.compile(r"\([^)]*\)"),
     re.compile(r"【[^】]*】"),
     re.compile(r"_+"),
-
-    # إزالة الشرطات في النهاية
     re.compile(r"\s*[-–—]+\s*$"),
     re.compile(r"^\s*[-–—]+\s*"),
 ]
 
 
 def clean_series_name(name: str) -> str:
-    """تنظيف اسم المسلسل من الكلمات الزائدة"""
     if not name:
         return ""
     name = name.strip()
@@ -108,6 +120,7 @@ PATTERNS = {
     "episode_ar": re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*[:\-]?\s*(\d+)", re.I),
     "episode_en": re.compile(r"\bE(\d{1,3})\b", re.I),
     "episode_word": re.compile(r"\b(?:Episode)\s*[:\-]?\s*(\d{1,3})\b", re.I),
+    "movie_hint": re.compile(r"(?:فيلم|movie|film)", re.I),
 }
 
 
@@ -155,11 +168,22 @@ def parse_caption(caption: str) -> Optional[dict]:
     if not name or name == "غير معروف":
         return None
 
-    return {"name": name, "season": season, "episode": episode}
+    # ★★★ تصحيح الاسم والموسم ★★★
+    name, season = apply_name_correction(name, season)
+
+    # نوع المحتوى
+    is_movie = bool(PATTERNS["movie_hint"].search(caption))
+
+    return {
+        "name": name,
+        "season": season,
+        "episode": episode,
+        "is_movie_hint": is_movie,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
-# التخزين مع حماية شاملة
+# التخزين
 # ═══════════════════════════════════════════════════════════════
 def load_progress() -> dict:
     if PROGRESS_FILE.exists():
@@ -178,7 +202,6 @@ def save_progress(progress: dict):
 
 
 def clean_duplicates(data: dict) -> dict:
-    """إزالة التكرار من جميع المستويات"""
     if not isinstance(data, dict):
         return {"channels": [], "series": []}
 
@@ -193,7 +216,6 @@ def clean_duplicates(data: dict) -> dict:
             continue
         seen_series.add(name)
 
-        # إزالة تكرار الحلقات
         clean_seasons = {}
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
@@ -205,11 +227,9 @@ def clean_duplicates(data: dict) -> dict:
                 for ep in episodes:
                     if not isinstance(ep, dict):
                         continue
-                    # المفتاح = القناة + message_id
                     ch = str(ep.get("source_channel", "")).strip()
                     mid = str(ep.get("message_id", "")).strip()
                     key = f"{ch}|{mid}" if ch else mid
-
                     if key and key in seen_keys:
                         continue
                     if key:
@@ -226,7 +246,6 @@ def clean_duplicates(data: dict) -> dict:
 
 
 def load_existing_data() -> dict:
-    """حماية ضد الملف التالف"""
     if DATA_FILE.exists():
         try:
             raw = DATA_FILE.read_text(encoding="utf-8")
@@ -234,12 +253,11 @@ def load_existing_data() -> dict:
             if isinstance(data, dict) and "series" in data:
                 return clean_duplicates(data)
         except Exception as e:
-            log.warning(f"data.json تالف - سيتم إعادة البناء: {e}")
-    return {"channels": [], "stream_base": STREAM_BASE, "series": []}
+            log.warning(f"data.json تالف: {e}")
+    return {"channels": [], "series": []}
 
 
 def save_data(data: dict):
-    """حفظ آمن مع التحقق"""
     clean_data = clean_duplicates(data)
     try:
         content = json.dumps(clean_data, ensure_ascii=False, indent=2)
@@ -248,7 +266,7 @@ def save_data(data: dict):
         size_kb = DATA_FILE.stat().st_size / 1024
         log.info(f"حفظ {DATA_FILE.name} ({size_kb:.1f} KB)")
     except Exception as e:
-        log.error(f"فشل حفظ data.json: {e}")
+        log.error(f"فشل حفظ: {e}")
 
 
 def find_or_create_series(data: dict, name: str) -> dict:
@@ -302,8 +320,7 @@ def extract_media_info(msg) -> Optional[dict]:
         return None
 
     size_bytes = getattr(media, "file_size", 0) or 0
-    size_mb = size_bytes / (1024 * 1024)
-    if size_mb > MAX_FILE_MB:
+    if size_bytes / (1024 * 1024) > MAX_FILE_MB:
         return None
 
     return {
@@ -322,7 +339,7 @@ def extract_media_info(msg) -> Optional[dict]:
 # ═══════════════════════════════════════════════════════════════
 # معالجة رسالة
 # ═══════════════════════════════════════════════════════════════
-async def process_message(client: Client, msg, data: dict, progress: dict, channel: str) -> bool:
+async def process_message(client, msg, data, progress, channel) -> bool:
     if not msg or not msg.caption:
         return False
 
@@ -359,6 +376,7 @@ async def process_message(client: Client, msg, data: dict, progress: dict, chann
         "thumb_url": "",
         "date": msg.date.isoformat() if msg.date else "",
         "source_channel": channel,
+        "is_movie_hint": parsed.get("is_movie_hint", False),
     }
 
     series = find_or_create_series(data, parsed["name"])
@@ -372,10 +390,7 @@ async def process_message(client: Client, msg, data: dict, progress: dict, chann
     return added
 
 
-# ═══════════════════════════════════════════════════════════════
-# جلب قناة واحدة
-# ═══════════════════════════════════════════════════════════════
-async def fetch_channel(client: Client, channel: str, data: dict, progress: dict):
+async def fetch_channel(client, channel, data, progress):
     log.info(f"جلب من @{channel}")
     count = added = skipped = errors = 0
 
@@ -395,7 +410,7 @@ async def fetch_channel(client: Client, channel: str, data: dict, progress: dict
                 await asyncio.sleep(wait)
             except Exception as e:
                 errors += 1
-                log.error(f"[{channel}] رسالة {msg.id}: {e}")
+                log.error(f"[{channel}] {msg.id}: {e}")
 
             if count % 100 == 0:
                 log.info(f"[{channel}] {count} رسالة | {added} مضافة")
@@ -406,12 +421,9 @@ async def fetch_channel(client: Client, channel: str, data: dict, progress: dict
     except Exception as e:
         log.error(f"خطأ في {channel}: {e}")
 
-    log.info(f"[{channel}] اكتمل: {count} رسالة | {added} مضافة | {skipped} متجاهلة")
+    log.info(f"[{channel}] اكتمل: {count} | {added} مضافة | {skipped} متجاهلة")
 
 
-# ═══════════════════════════════════════════════════════════════
-# إنشاء العميل
-# ═══════════════════════════════════════════════════════════════
 def create_client() -> Client:
     session = STRING_SESSION or STRING_SESSION2
     if not session:
@@ -429,9 +441,6 @@ def create_client() -> Client:
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# main
-# ═══════════════════════════════════════════════════════════════
 async def main():
     log.info("بدء جلب البيانات")
 
@@ -448,7 +457,6 @@ async def main():
 
     data = load_existing_data()
     data["channels"] = channels
-    data["stream_base"] = STREAM_BASE
     progress = load_progress()
 
     total_before = sum(
@@ -470,7 +478,7 @@ async def main():
     except Exception as e:
         err = str(e)
         if "AUTH_KEY_DUPLICATED" in err or "406" in err:
-            log.error("AUTH_KEY_DUPLICATED - الجلسة مستخدمة في مكان آخر")
+            log.error("AUTH_KEY_DUPLICATED")
             raise SystemExit(1)
         raise
 
@@ -481,16 +489,10 @@ async def main():
     total_eps = sum(
         len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
     )
-    with_file_id = sum(
-        1 for s in data["series"]
-        for eps in s.get("seasons", {}).values()
-        for ep in eps if ep.get("file_id")
-    )
 
     log.info(f"\nاكتمل الجلب:")
     log.info(f"   أعمال: {total_series}")
     log.info(f"   حلقات: {total_eps}")
-    log.info(f"   مع file_id: {with_file_id}")
 
 
 if __name__ == "__main__":
