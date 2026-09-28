@@ -3,6 +3,7 @@
 """
 build_all.py — مُولّد الموقع السريع
 بدون أي اعتماد على proxy - file_id فقط
+مع حماية من تعارض message_id بين القنوات
 """
 
 import re
@@ -73,7 +74,39 @@ def clean_tg_url(url):
 
 
 # ═══════════════════════════════════════════════════════════════
-# تحميل البيانات مع حماية
+# ★★★ دالة اسم ملف الحلقة — تمنع التعارض بين القنوات ★★★
+# ═══════════════════════════════════════════════════════════════
+def watch_filename(ep):
+    """
+    يُنشئ اسم ملف فريد لحلقة.
+    يستخدم:
+    - اسم القناة (source_channel) إن وُجد
+    - message_id
+    مثال: shoofcima_880.html أو shoofFilm_880.html
+    """
+    mid = str(ep.get("message_id", "")).strip()
+    if not mid:
+        mid = "unknown"
+
+    ch = str(ep.get("source_channel", "")).strip()
+    if ch:
+        # أزل @ إن وُجد
+        ch_clean = ch.lstrip("@")
+        # آمن اسم القناة
+        ch_safe = re.sub(r"[^\w\-]+", "_", ch_clean)
+        return f"{ch_safe}_{mid}.html"
+
+    # fallback: استخدم file_unique_id كبصمة
+    fuid = str(ep.get("file_unique_id", "")).strip()
+    if fuid:
+        fuid_safe = re.sub(r"[^\w]+", "", fuid)[:16]
+        return f"{mid}_{fuid_safe}.html"
+
+    return f"{mid}.html"
+
+
+# ═══════════════════════════════════════════════════════════════
+# تحميل البيانات
 # ═══════════════════════════════════════════════════════════════
 def load_data():
     if not DATA_FILE.exists():
@@ -115,15 +148,18 @@ def load_data():
                         e.setdefault("season", sn)
                         all_eps.append(e)
 
-        # إزالة التكرار
-        seen_mid = set()
+        # ★ إزالة التكرار — المفتاح هو (القناة + message_id) ★
+        seen_keys = set()
         unique_eps = []
         for ep in all_eps:
+            ch = str(ep.get("source_channel", "")).strip()
             mid = str(ep.get("message_id", "")).strip()
-            if mid and mid in seen_mid:
+            key = f"{ch}|{mid}" if ch else mid
+
+            if key and key in seen_keys:
                 continue
-            if mid:
-                seen_mid.add(mid)
+            if key:
+                seen_keys.add(key)
             unique_eps.append(ep)
 
         unique_eps.sort(key=lambda e: (
@@ -390,7 +426,7 @@ def render_index(series_list):
 
 
 # ═══════════════════════════════════════════════════════════════
-# صفحة المسلسل
+# ★★★ بطاقة الحلقة — تستخدم watch_filename ★★★
 # ═══════════════════════════════════════════════════════════════
 def _render_episode_card(ep):
     dur = fmt_dur(ep.get("duration", 0))
@@ -398,8 +434,12 @@ def _render_episode_card(ep):
     date = format_date_ar(ep.get("date", ""))
     date_html = f'<span class="ep-date">{esc(date)}</span>' if date else ""
     ep_num = ep.get("episode", "?")
+
+    # ★ اسم فريد للملف ★
+    fname = watch_filename(ep)
+
     return (
-        f'<a class="episode-card" href="../watch/{ep.get("message_id", "")}.html">'
+        f'<a class="episode-card" href="../watch/{fname}">'
         f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
         f'<div class="episode-body">'
         f'<div class="episode-num">الحلقة {esc(ep_num)}</div>'
@@ -408,6 +448,9 @@ def _render_episode_card(ep):
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# صفحة المسلسل
+# ═══════════════════════════════════════════════════════════════
 def render_series(series):
     name = series["name"]
     poster = series["poster"]
@@ -500,7 +543,7 @@ def render_series(series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# صفحة المشاهدة - بدون proxy
+# ★★★ صفحة المشاهدة — تستخدم watch_filename في prev/next ★★★
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     file_id = ep.get("file_id", "")
@@ -540,18 +583,29 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
         head = ""
 
-    prev_btn = (f'<a class="btn" href="{prev_ep["message_id"]}.html">السابقة</a>'
-                if prev_ep else '<span class="btn disabled">السابقة</span>')
-    next_btn = (f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية</a>'
-                if next_ep else '<span class="btn disabled">التالية</span>')
+    # ★ أزرار التنقل — تستخدم watch_filename ★
+    prev_btn = (
+        f'<a class="btn" href="{watch_filename(prev_ep)}">السابقة</a>'
+        if prev_ep else
+        '<span class="btn disabled">السابقة</span>'
+    )
+    next_btn = (
+        f'<a class="btn primary" href="{watch_filename(next_ep)}">التالية</a>'
+        if next_ep else
+        '<span class="btn disabled">التالية</span>'
+    )
 
     series_url = "../series/" + enc(safe_name(name)) + ".html"
 
     tg_url = clean_tg_url(ep.get("telegram_url", ""))
-    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
-              if tg_url else "")
+    tg_btn = (
+        f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
+        if tg_url else ""
+    )
 
-    next_json = json.dumps(f'{next_ep["message_id"]}.html' if next_ep else None)
+    next_json = json.dumps(
+        watch_filename(next_ep) if next_ep else None
+    )
     scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
 
     body = f'''
@@ -745,6 +799,9 @@ def build_site():
     print(f"{len(series_list)} مسلسل/فيلم")
 
     total = 0
+    # ★ تتبع أسماء الملفات لتجنب الكتابة المكررة ★
+    written_files = set()
+
     for series in series_list:
         name = series["name"]
         episodes = series["episodes"]
@@ -757,11 +814,21 @@ def build_site():
                 name, ep.get("season", 1), ep.get("episode", i + 1),
                 prev_ep, next_ep, ep,
             )
-            write_file(OUT / "watch" / f"{ep.get('message_id', f'ep{i}')}.html", html_ep)
+
+            # ★ اسم فريد للملف ★
+            fname = watch_filename(ep)
+
+            # ★ تحذير عند التعارض (يجب ألا يحدث) ★
+            if fname in written_files:
+                print(f"تحذير: تعارض في اسم الملف {fname}")
+            written_files.add(fname)
+
+            write_file(OUT / "watch" / fname, html_ep)
             total += 1
 
     write_file(OUT / "index.html", render_index(series_list))
     print(f"{len(series_list)} عمل و {total} حلقة")
+    print(f"{len(written_files)} ملف watch فريد")
 
 
 def main():
