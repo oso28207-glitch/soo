@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 build_all.py — مُولّد الموقع السريع
-★ بدون أي اعتماد على proxy — file_id فقط ★
+بدون أي اعتماد على proxy - file_id فقط
 """
 
 import re
@@ -41,15 +41,20 @@ def write_file(p, c):
 
 
 def fmt_dur(sec):
-    try: s = int(sec or 0)
-    except: return ""
-    if s <= 0: return ""
-    h, r = divmod(s, 3600); m, sec = divmod(r, 60)
+    try:
+        s = int(sec or 0)
+    except:
+        return ""
+    if s <= 0:
+        return ""
+    h, r = divmod(s, 3600)
+    m, sec = divmod(r, 60)
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
 def format_date_ar(date_str):
-    if not date_str: return ""
+    if not date_str:
+        return ""
     try:
         from datetime import datetime
         d = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -61,26 +66,33 @@ def format_date_ar(date_str):
 
 
 def clean_tg_url(url):
-    if not url: return ""
+    if not url:
+        return ""
     url = url.split("?")[0].strip()
     return re.sub(r"t\.me/@", "t.me/", url)
 
 
 # ═══════════════════════════════════════════════════════════════
-# تحميل البيانات
+# تحميل البيانات مع حماية
 # ═══════════════════════════════════════════════════════════════
 def load_data():
     if not DATA_FILE.exists():
-        print(f"⚠️ لم يُعثر على {DATA_FILE}")
+        print(f"لم يُعثر على {DATA_FILE}")
         return []
 
-    raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    series_raw = raw if isinstance(raw, list) else raw.get("series", [])
+    try:
+        raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"data.json تالف: {e}")
+        return []
 
+    series_raw = raw if isinstance(raw, list) else raw.get("series", [])
     out = []
     seen_series = set()
 
     for s in series_raw:
+        if not isinstance(s, dict):
+            continue
         name = s.get("name", "").strip()
         if not name or name in seen_series:
             continue
@@ -91,11 +103,17 @@ def load_data():
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
             for sk, eps in seasons.items():
-                try: sn = int(sk)
-                except: sn = sk
+                try:
+                    sn = int(sk)
+                except:
+                    sn = sk
                 if isinstance(eps, list):
                     for ep in eps:
-                        e = dict(ep); e.setdefault("season", sn); all_eps.append(e)
+                        if not isinstance(ep, dict):
+                            continue
+                        e = dict(ep)
+                        e.setdefault("season", sn)
+                        all_eps.append(e)
 
         # إزالة التكرار
         seen_mid = set()
@@ -246,7 +264,7 @@ def render_index(series_list):
 
     for tab_slug, tab_label, tab_icon, items in [
         ("series", "مسلسلات", "📺", series_all),
-        ("movies", "أفلام",   "🎬", movies_all),
+        ("movies", "أفلام", "🎬", movies_all),
     ]:
         if not items:
             continue
@@ -482,7 +500,7 @@ def render_series(series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ صفحة المشاهدة — بدون أي proxy ★★★
+# صفحة المشاهدة - بدون proxy
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     file_id = ep.get("file_id", "")
@@ -498,7 +516,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f"?fid={enc(file_id)}&size={int(file_size)}&mid={int(message_id)}"
         )
 
-    # ─── المشغل ───
     if stream_url:
         player = (
             f'<div class="player-shell">'
@@ -517,22 +534,21 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     else:
         player = (
             '<div class="no-player">'
-            '<div>⚠️ هذا الفيديو غير متاح حاليًا.<br>'
+            '<div>هذا الفيديو غير متاح حاليًا.<br>'
             'استخدم زر "تليجرام" للمشاهدة المباشرة.</div>'
             '</div>'
         )
         head = ""
 
-    # ─── التنقل ───
-    prev_btn = (f'<a class="btn" href="{prev_ep["message_id"]}.html">⏮ السابقة</a>'
-                if prev_ep else '<span class="btn disabled">⏮ السابقة</span>')
-    next_btn = (f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية ⏭</a>'
-                if next_ep else '<span class="btn disabled">التالية ⏭</span>')
+    prev_btn = (f'<a class="btn" href="{prev_ep["message_id"]}.html">السابقة</a>'
+                if prev_ep else '<span class="btn disabled">السابقة</span>')
+    next_btn = (f'<a class="btn primary" href="{next_ep["message_id"]}.html">التالية</a>'
+                if next_ep else '<span class="btn disabled">التالية</span>')
 
     series_url = "../series/" + enc(safe_name(name)) + ".html"
 
     tg_url = clean_tg_url(ep.get("telegram_url", ""))
-    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">📱 تليجرام</a>'
+    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
               if tg_url else "")
 
     next_json = json.dumps(f'{next_ep["message_id"]}.html' if next_ep else None)
@@ -546,7 +562,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         <h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>
         <div class="watch-nav">
           {prev_btn}
-          <a class="btn" href="{series_url}">📺 كل الحلقات</a>
+          <a class="btn" href="{series_url}">كل الحلقات</a>
           {next_btn}
           {tg_btn}
         </div>
@@ -557,7 +573,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
 
 
 # ═══════════════════════════════════════════════════════════════
-# CSS (مختصر — نفس النسخة السابقة)
+# CSS
 # ═══════════════════════════════════════════════════════════════
 CSS = '''
 :root{--bg:#0a0a0e;--surface:#14141c;--surface-2:#1c1c28;--border:#26263a;--text:#f0f0f5;--text-dim:#8a8aa0;--primary:#e50914;--accent:#4ea8de;--gold:#ffc107;--radius:14px;--radius-sm:10px;--shadow:0 8px 32px rgba(0,0,0,.45)}
@@ -726,7 +742,7 @@ def build_static():
 
 def build_site():
     series_list = load_data()
-    print(f"📚 {len(series_list)} مسلسل/فيلم")
+    print(f"{len(series_list)} مسلسل/فيلم")
 
     total = 0
     for series in series_list:
@@ -745,7 +761,7 @@ def build_site():
             total += 1
 
     write_file(OUT / "index.html", render_index(series_list))
-    print(f"✅ {len(series_list)} عمل و {total} حلقة")
+    print(f"{len(series_list)} عمل و {total} حلقة")
 
 
 def main():
@@ -757,7 +773,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     build_static()
     build_site()
-    print(f"\n✨ → {OUT}")
+    print(f"\nتم البناء في {OUT}")
 
 
 if __name__ == "__main__":

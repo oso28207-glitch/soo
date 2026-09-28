@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 enrich_data.py — إثراء data.json بالتصنيفات والصور
-★ تصنيف تلقائي محسّن + جلب صور متعدد المصادر ★
+تصنيف تلقائي محسّن + جلب صور متعدد المصادر
 """
 
 import os
@@ -26,52 +26,39 @@ MAX_WORKERS = 8
 TIMEOUT = 8
 
 # ═══════════════════════════════════════════════════════════════
-# ★ قوائم الكلمات المفتاحية المحسّنة ★
+# قوائم الكلمات المفتاحية
 # ═══════════════════════════════════════════════════════════════
 TURKISH_KW = [
-    # ★ كلمات عامة ★
     "تركي", "مدبلج", "تركية",
-    # ★ مسلسلات تاريخية ★
     "قيامة", "عثمان", "أرطغرل", "حريم السلطان", "وادي الذئاب",
-    "المؤسس عثمان", "قيامة أرطغرل", "ملحمة", "بني", "قبيلة",
-    # ★ مسلسلات رومانسية مشهورة ★
+    "المؤسس عثمان", "قيامة أرطغرل", "ملحمة", "قبيلة",
     "لعبة حب", "التفاح الحرام", "كذبتي الحلوة", "حب للايجار",
     "الحب ورطة", "حياتي الرائعة", "احتمال حب", "ورود وذنوب",
-    "النص الثاني", "الغرفة", "اسمه السعادة", "عائلة", 
-    "في الظل", "كيزيلجيك", "الثمانينات", "على مر الزمان",
-    "سنوات الضياع", "العشق الأسود", "الانتقام", "ياسمين", 
-    "فاتن", "بين", "أمينة", "خديجة", "نور", "لمسة حب",
-    "شمال وجنوب", "حكاية جزيرة", "جسور والجميلة", "الحياة جميلة",
+    "النص الثاني", "الغرفة", "اسمه السعادة", "في الظل",
+    "كيزيلجيك", "الثمانينات", "على مر الزمان", "سنوات الضياع",
+    "العشق الأسود", "الانتقام", "ياسمين", "فاتن", "بين",
+    "أمينة", "خديجة", "نور", "لمسة حب", "شمال وجنوب",
+    "حكاية جزيرة", "جسور والجميلة", "الحياة جميلة",
     "منزل الحب", "أنت اطرق بابي", "قلعة", "خاطفة", "صفقة",
     "الخائن", "كان يا مكان", "مريم", "حكايتنا", "فتاة النافذة",
     "حب أعمى", "قلب الأسد", "الحفرة", "دموع وردة", "إيزيل",
-    "العشق المشبوه", "عشق ودموع", "لا احد يعلم", "المدينة",
-    "الطبيب المعجزة", "لعبة الحظ", "الأزهار الحزينة", "أسمر",
-    # ★ مسلسلات جديدة ★
-    "قلب الجبل", "زهرة الثالوث", "الأمانة", "حب على طريقة",
-    "الطفل", "المعلم", "الوالدة", "سنوات", "طائر الرفراف",
-    "أنت وطني", "وطني أنت", "الحب الطاهر", "ثلاثة أجساد",
-    "غرفة الانتظار", "الجراح", "الخلية", "الحياة سر",
-    "سجين الحب", "الوعد", "الوعد الحلو", "قلب الأم",
-    "عائلة الحاج", "الوصية", "حكاية جزيرة", "جسر",
-    "دموع الغجرية", "أمل الحياة", "فتاة القمر", "الرياض",
+    "العشق المشبوه", "عشق ودموع", "المدينة", "الطبيب المعجزة",
+    "لعبة الحظ", "الأزهار الحزينة", "أسمر", "قلب الجبل",
+    "زهرة الثالوث", "الأمانة", "الطفل", "المعلم", "الوالدة",
+    "طائر الرفراف", "أنت وطني", "وطني أنت", "الحب الطاهر",
+    "غرفة الانتظار", "الجراح", "الخلية", "سجين الحب",
+    "الوعد", "قلب الأم", "عائلة الحاج", "الوصية", "جسر",
+    "دموع الغجرية", "أمل الحياة", "فتاة القمر",
 ]
 
 ARABIC_KW = [
-    # ★ مسلسلات عربية معروفة ★
     "اتنين", "المصيدة", "الاختيار", "الحشاشين", "المداح",
     "جعفر العمدة", "بيت الرفاعي", "العتاولة", "نسل الأغراب",
     "مافيا", "بابا المجال", "كوبرا", "سيد الناس", "الهيبة",
     "أم الدنيا", "قصر السيد", "الأب الروحي", "لعبة نيوتن",
-    "الملك", "موسى", "شقة 6", "الاختيار 3", "الاختيار 4",
-    "بـ100 وش", "أبو العروسة", "نصيبي وقسمتك", "البرنس",
-    "حكايات بنات", "السر", "الديفا", "الوعد", "الحرملك",
-    "الطوفان", "الجزء الثاني", "الزوجة 18", "الهيبة الحصاد",
-    "ولاد رزق", "الكنز", "الخلية", "الديزل", "حرب أهلية",
-    "لما كنا صغيرين", "نسل الأغراب", "المداح أسطورة العشق",
-    "المداح أسطورة الوادي", "طريق", "خيانة عهد", "الفتوة",
-    "ما وراء الطبيعة", "يوم الدين", "الكنز 2", "الفيل الأزرق",
-    # ★ كلمات عامة ★
+    "الملك", "موسى", "شقة 6", "البرنس", "السر",
+    "الحرملك", "الطوفان", "ولاد رزق", "الكنز", "الديزل",
+    "حرب أهلية", "خيانة عهد", "الفتوة", "الفيل الأزرق",
     "مصري", "خليجي", "سوري", "لبناني", "مغربي", "كويتي",
     "سعودي", "إماراتي", "قطري", "بحريني", "عماني",
     "أردني", "فلسطيني", "عراقي", "تونسي", "جزائري",
@@ -84,7 +71,7 @@ def load_cache():
     if CACHE_FILE.exists():
         try:
             return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except:
+        except Exception:
             pass
     return {"posters": {}, "categories": {}}
 
@@ -97,7 +84,7 @@ def save_cache(cache):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★ التصنيف التلقائي — النسخة المحسّنة ★
+# التصنيف التلقائي
 # ═══════════════════════════════════════════════════════════════
 def detect_type(name, episodes):
     """series أو movie"""
@@ -109,7 +96,7 @@ def detect_type(name, episodes):
     if len(episodes) <= 1:
         if episodes:
             dur = episodes[0].get("duration", 0) or 0
-            if dur >= 4800:  # 80 دقيقة
+            if dur >= 4800:
                 return "movie"
         return "movie"
 
@@ -123,43 +110,40 @@ def detect_type(name, episodes):
 
 def detect_origin(name, episodes):
     """
-    ★ النسخة المحسّنة ★
-    - أولاً: كلمة "مدبلج" أو "تركي" → turkish
-    - ثانياً: كلمات مفتاحية تركية
-    - ثالثاً: كلمات مفتاحية عربية
-    - رابعاً: تحليل الحروف
+    النسخة المحسّنة:
+    1. كلمة صريحة (مدبلج/تركي) -> turkish
+    2. كلمات تركية -> turkish
+    3. كلمات عربية -> arabic
+    4. تحليل الحروف -> arabic/foreign
     """
     name_lower = name.lower()
 
-    # ★ أولاً: كلمات صريحة ★
+    # 1. كلمات صريحة
     if "مدبلج" in name or "تركي" in name or "تركية" in name:
         return "turkish"
 
-    # ★ ثانياً: كلمات مفتاحية تركية ★
+    # 2. كلمات تركية
     for kw in TURKISH_KW:
         if kw in name or kw.lower() in name_lower:
             return "turkish"
 
-    # ★ ثالثاً: كلمات مفتاحية عربية ★
+    # 3. كلمات عربية
     for kw in ARABIC_KW:
         if kw in name or kw.lower() in name_lower:
             return "arabic"
 
-    # ★ رابعاً: تحليل الحروف ★
+    # 4. تحليل الحروف
     arabic_chars = len(re.findall(r"[\u0600-\u06FF]", name))
     english_chars = len(re.findall(r"[a-zA-Z]", name))
 
     if arabic_chars > 0 and english_chars == 0:
-        # اسم عربي بالكامل — لكن قد يكون تركي مترجم
-        # نستخدم heuristic: إذا كان الاسم طويلاً وفيه كلمات شائعة
         return "arabic"
 
-    # ★ افتراضي: أجنبي ★
     return "foreign"
 
 
 # ═══════════════════════════════════════════════════════════════
-# جلب الصور
+# جلب الصور - TMDB
 # ═══════════════════════════════════════════════════════════════
 def clean_for_search(name):
     name = re.sub(r"\s+", " ", name).strip()
@@ -206,6 +190,9 @@ def tmdb_search(session, name, year=""):
     return ""
 
 
+# ═══════════════════════════════════════════════════════════════
+# جلب الصور - Bing Images
+# ═══════════════════════════════════════════════════════════════
 BING_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -240,6 +227,9 @@ def bing_images(session, name):
     return ""
 
 
+# ═══════════════════════════════════════════════════════════════
+# Placeholder SVG
+# ═══════════════════════════════════════════════════════════════
 def make_placeholder_svg(name):
     first = name.strip()[:1] if name.strip() else "?"
     h = hash(name) % 360
@@ -297,19 +287,19 @@ def enrich_one(series, cache, session):
 
     poster = tmdb_search(session, name, series.get("tmdb_year", ""))
     if poster:
-        print(f"   ✅ TMDB: {name}")
+        print(f"   TMDB: {name}")
         series["poster_url"] = poster
         cache["posters"][cache_key] = poster
         return series
 
     poster = bing_images(session, name)
     if poster:
-        print(f"   🖼️  Bing: {name}")
+        print(f"   Bing: {name}")
         series["poster_url"] = poster
         cache["posters"][cache_key] = poster
         return series
 
-    print(f"   ⚠️  Placeholder: {name}")
+    print(f"   Placeholder: {name}")
     poster = make_placeholder_svg(name)
     series["poster_url"] = poster
     cache["posters"][cache_key] = poster
@@ -321,15 +311,20 @@ def enrich_one(series, cache, session):
 # ═══════════════════════════════════════════════════════════════
 def main():
     if not DATA_FILE.exists():
-        print(f"❌ {DATA_FILE} غير موجود")
+        print(f"{DATA_FILE} غير موجود")
         raise SystemExit(1)
 
-    data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"data.json تالف: {e}")
+        raise SystemExit(1)
+
     series_list = data.get("series", [])
     cache = load_cache()
 
-    print(f"📚 {len(series_list)} عمل")
-    print(f"🔧 {MAX_WORKERS} threads\n")
+    print(f"{len(series_list)} عمل")
+    print(f"{MAX_WORKERS} threads\n")
 
     session = requests.Session()
     session.headers.update({"Accept-Encoding": "gzip, deflate"})
@@ -341,7 +336,7 @@ def main():
             pass
 
     elapsed = time.time() - start
-    print(f"\n⏱️  {elapsed:.1f}s")
+    print(f"\nالوقت: {elapsed:.1f}s")
 
     from collections import Counter
     types = Counter(s.get("type", "?") for s in series_list)
@@ -351,20 +346,20 @@ def main():
         if s.get("poster_url", "") and not s.get("poster_url", "").startswith("data:")
     )
 
-    print(f"\n📊 الإحصائيات:")
+    print(f"\nالإحصائيات:")
     for k, v in types.items():
-        print(f"   • {k}: {v}")
+        print(f"   {k}: {v}")
     for k, v in origins.items():
-        print(f"   • {k}: {v}")
-    print(f"   • صور حقيقية: {with_poster}/{len(series_list)}")
+        print(f"   {k}: {v}")
+    print(f"   صور حقيقية: {with_poster}/{len(series_list)}")
 
     DATA_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     save_cache(cache)
-    print(f"\n💾 {DATA_FILE.name}")
-    print(f"💾 Cache ({len(cache['posters'])} صورة)")
+    print(f"\nحفظ {DATA_FILE.name}")
+    print(f"حفظ Cache ({len(cache['posters'])} صورة)")
 
 
 if __name__ == "__main__":

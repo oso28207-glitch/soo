@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 fetch_from_telegram.py — جالب بيانات المسلسلات من قنوات Telegram
-★ يدعم قناتين: CHANNEL + CHANNEL2 ★
+يدعم قناتين: CHANNEL + CHANNEL2
+مع حماية من الملف التالف والتكرار
 """
 
 import os
@@ -27,8 +28,6 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 CHANNEL = (os.getenv("CHANNEL") or "").strip()
 CHANNEL2 = (os.getenv("CHANNEL2") or "").strip()
-
-# تنظيف @ من البداية
 CHANNEL_CLEAN = CHANNEL.lstrip("@")
 CHANNEL2_CLEAN = CHANNEL2.lstrip("@") if CHANNEL2 else ""
 
@@ -63,7 +62,6 @@ PATTERNS = {
     "episode_ar": re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*[:\-]?\s*(\d+)", re.I),
     "episode_en": re.compile(r"\bE(\d{1,3})\b", re.I),
     "episode_word": re.compile(r"\b(?:Episode)\s*[:\-]?\s*(\d{1,3})\b", re.I),
-    "year": re.compile(r"\b(19\d{2}|20\d{2})\b"),
 }
 
 CLEANUP_PATTERNS = [
@@ -77,7 +75,6 @@ CLEANUP_PATTERNS = [
     re.compile(r"\[[^\]]*\]"),
     re.compile(r"\([^)]*\)"),
     re.compile(r"_+"),
-    re.compile(r"\s+"),
 ]
 
 
@@ -96,7 +93,6 @@ def parse_caption(caption: str) -> Optional[dict]:
         return None
     caption = caption.strip()
 
-    # الموسم
     season = 1
     for key in ("season_ar", "season_en"):
         m = PATTERNS[key].search(caption)
@@ -107,7 +103,6 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError):
                 pass
 
-    # الحلقة
     episode = None
     for key in ("episode_ar", "episode_en", "episode_word"):
         m = PATTERNS[key].search(caption)
@@ -121,7 +116,6 @@ def parse_caption(caption: str) -> Optional[dict]:
     if episode is None:
         return None
 
-    # اسم المسلسل
     name = ""
     m = PATTERNS["series_ar"].search(caption)
     if m:
@@ -139,7 +133,7 @@ def parse_caption(caption: str) -> Optional[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# التخزين
+# التخزين مع حماية شاملة
 # ═══════════════════════════════════════════════════════════════
 def load_progress() -> dict:
     if PROGRESS_FILE.exists():
@@ -157,22 +151,75 @@ def save_progress(progress: dict):
     )
 
 
+def clean_duplicates(data: dict) -> dict:
+    """إزالة التكرار من جميع المستويات"""
+    if not isinstance(data, dict):
+        return {"channels": [], "series": []}
+
+    seen_series = set()
+    clean_series = []
+
+    for s in data.get("series", []):
+        if not isinstance(s, dict):
+            continue
+        name = s.get("name", "").strip()
+        if not name or name in seen_series:
+            continue
+        seen_series.add(name)
+
+        # إزالة تكرار الحلقات
+        clean_seasons = {}
+        seasons = s.get("seasons", {})
+        if isinstance(seasons, dict):
+            for season_key, episodes in seasons.items():
+                if not isinstance(episodes, list):
+                    continue
+                seen_mids = set()
+                clean_eps = []
+                for ep in episodes:
+                    if not isinstance(ep, dict):
+                        continue
+                    mid = str(ep.get("message_id", "")).strip()
+                    if mid and mid in seen_mids:
+                        continue
+                    if mid:
+                        seen_mids.add(mid)
+                    clean_eps.append(ep)
+                if clean_eps:
+                    clean_seasons[season_key] = clean_eps
+
+        s["seasons"] = clean_seasons
+        clean_series.append(s)
+
+    data["series"] = clean_series
+    return data
+
+
 def load_existing_data() -> dict:
+    """حماية ضد الملف التالف"""
     if DATA_FILE.exists():
         try:
-            return json.loads(DATA_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"channels": [CHANNEL_CLEAN], "stream_base": STREAM_BASE, "series": []}
+            raw = DATA_FILE.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            if isinstance(data, dict) and "series" in data:
+                return clean_duplicates(data)
+        except Exception as e:
+            log.warning(f"data.json تالف - سيتم إعادة البناء: {e}")
+    return {"channels": [], "stream_base": STREAM_BASE, "series": []}
 
 
 def save_data(data: dict):
-    DATA_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    size_kb = DATA_FILE.stat().st_size / 1024
-    log.info(f"💾 حفظ {DATA_FILE.name} ({size_kb:.1f} KB)")
+    """حفظ آمن مع التحقق"""
+    clean_data = clean_duplicates(data)
+    try:
+        content = json.dumps(clean_data, ensure_ascii=False, indent=2)
+        # التحقق من الصحة قبل الكتابة
+        json.loads(content)
+        DATA_FILE.write_text(content, encoding="utf-8")
+        size_kb = DATA_FILE.stat().st_size / 1024
+        log.info(f"حفظ {DATA_FILE.name} ({size_kb:.1f} KB)")
+    except Exception as e:
+        log.error(f"فشل حفظ data.json: {e}")
 
 
 def find_or_create_series(data: dict, name: str) -> dict:
@@ -228,7 +275,6 @@ def extract_media_info(msg) -> Optional[dict]:
     size_bytes = getattr(media, "file_size", 0) or 0
     size_mb = size_bytes / (1024 * 1024)
     if size_mb > MAX_FILE_MB:
-        log.warning(f"⚠️ الملف {size_mb:.1f}MB يتجاوز الحد")
         return None
 
     return {
@@ -262,7 +308,6 @@ async def process_message(client: Client, msg, data: dict, progress: dict, chann
     if media_info["file_size"] < 1024 * 1024:
         return False
 
-    # بناء رابط t.me
     if channel.startswith("-100"):
         tg_url = f"https://t.me/c/{channel.replace('-100', '')}/{msg.id}"
     elif channel.startswith("-"):
@@ -292,7 +337,7 @@ async def process_message(client: Client, msg, data: dict, progress: dict, chann
 
     if added:
         log.info(
-            f"✅ [{parsed['name']}] S{parsed['season']:02d}E{parsed['episode']:02d} "
+            f"[{parsed['name']}] S{parsed['season']:02d}E{parsed['episode']:02d} "
             f"({media_info['file_size'] / 1024 / 1024:.1f}MB) [{channel}]"
         )
     return added
@@ -302,14 +347,12 @@ async def process_message(client: Client, msg, data: dict, progress: dict, chann
 # جلب قناة واحدة
 # ═══════════════════════════════════════════════════════════════
 async def fetch_channel(client: Client, channel: str, data: dict, progress: dict):
-    log.info(f"📥 جلب من @{channel}")
+    log.info(f"جلب من @{channel}")
     count = added = skipped = errors = 0
-    last_id = 0
 
     try:
         async for msg in client.get_chat_history(channel, limit=HISTORY_LIMIT):
             count += 1
-            last_id = msg.id
             await asyncio.sleep(BASE_DELAY / 4)
 
             try:
@@ -319,22 +362,22 @@ async def fetch_channel(client: Client, channel: str, data: dict, progress: dict
                     skipped += 1
             except FloodWait as e:
                 wait = min(e.value + SAFETY_BUFFER, MAX_DELAY)
-                log.warning(f"⏳ FloodWait: {e.value}s")
+                log.warning(f"FloodWait: {e.value}s")
                 await asyncio.sleep(wait)
             except Exception as e:
                 errors += 1
-                log.error(f"❌ [{channel}] رسالة {msg.id}: {e}")
+                log.error(f"[{channel}] رسالة {msg.id}: {e}")
 
             if count % 100 == 0:
-                log.info(f"📊 [{channel}] {count} رسالة | {added} مضافة | {skipped} متجاهلة")
+                log.info(f"[{channel}] {count} رسالة | {added} مضافة")
                 save_data(data)
 
     except FloodWait as e:
         await asyncio.sleep(min(e.value + SAFETY_BUFFER, MAX_DELAY))
     except Exception as e:
-        log.error(f"❌ خطأ في {channel}: {e}")
+        log.error(f"خطأ في {channel}: {e}")
 
-    log.info(f"✅ [{channel}] اكتمل: {count} رسالة | {added} مضافة | {skipped} متجاهلة")
+    log.info(f"[{channel}] اكتمل: {count} رسالة | {added} مضافة | {skipped} متجاهلة")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -343,9 +386,9 @@ async def fetch_channel(client: Client, channel: str, data: dict, progress: dict
 def create_client() -> Client:
     session = STRING_SESSION or STRING_SESSION2
     if not session:
-        raise ValueError("❌ يجب ضبط STRING_SESSION")
+        raise ValueError("يجب ضبط STRING_SESSION")
     if not API_ID or not API_HASH:
-        raise ValueError("❌ يجب ضبط API_ID و API_HASH")
+        raise ValueError("يجب ضبط API_ID و API_HASH")
 
     return Client(
         name="fetch_session",
@@ -361,9 +404,8 @@ def create_client() -> Client:
 # main
 # ═══════════════════════════════════════════════════════════════
 async def main():
-    log.info("🚀 بدء جلب البيانات")
+    log.info("بدء جلب البيانات")
 
-    # قائمة القنوات
     channels = []
     if CHANNEL_CLEAN:
         channels.append(CHANNEL_CLEAN)
@@ -371,9 +413,9 @@ async def main():
         channels.append(CHANNEL2_CLEAN)
 
     if not channels:
-        raise ValueError("❌ يجب ضبط CHANNEL على الأقل")
+        raise ValueError("يجب ضبط CHANNEL على الأقل")
 
-    log.info(f"📺 القنوات: {', '.join('@' + c for c in channels)}")
+    log.info(f"القنوات: {', '.join('@' + c for c in channels)}")
 
     data = load_existing_data()
     data["channels"] = channels
@@ -383,25 +425,23 @@ async def main():
     total_before = sum(
         len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
     )
-    log.info(f"📂 محمّل: {len(data['series'])} عمل | {total_before} حلقة")
+    log.info(f"محمّل: {len(data['series'])} عمل | {total_before} حلقة")
 
     client = create_client()
     try:
         async with client:
             me = await client.get_me()
-            log.info(f"✅ متصل كـ @{me.username or me.id}")
+            log.info(f"متصل كـ @{me.username or me.id}")
             for ch in channels:
                 try:
                     await fetch_channel(client, ch, data, progress)
                 except Exception as e:
-                    log.error(f"❌ فشل {ch}: {e}")
+                    log.error(f"فشل {ch}: {e}")
                     continue
     except Exception as e:
         err = str(e)
         if "AUTH_KEY_DUPLICATED" in err or "406" in err:
-            log.error("🔴 AUTH_KEY_DUPLICATED — الجلسة مستخدمة في مكان آخر")
-            log.error("   افتح Telegram → Settings → Devices → Terminate All")
-            log.error("   ثم أنشئ STRING_SESSION جديد")
+            log.error("AUTH_KEY_DUPLICATED - الجلسة مستخدمة في مكان آخر")
             raise SystemExit(1)
         raise
 
@@ -418,7 +458,7 @@ async def main():
         for ep in eps if ep.get("file_id")
     )
 
-    log.info(f"\n✨ اكتمل الجلب:")
+    log.info(f"\nاكتمل الجلب:")
     log.info(f"   أعمال: {total_series}")
     log.info(f"   حلقات: {total_eps}")
     log.info(f"   مع file_id: {with_file_id}")
