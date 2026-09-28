@@ -51,7 +51,7 @@ log = logging.getLogger("fetch")
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ أنماط التنظيف المُحسّنة — الإصلاح الرئيسي ★★★
+# أنماط التنظيف — الإصلاح الرئيسي لمشكلة "حلقة N"
 # ═══════════════════════════════════════════════════════════════
 CLEANUP_PATTERNS = [
     # إزالة البادئات
@@ -200,16 +200,20 @@ def clean_duplicates(data: dict) -> dict:
             for season_key, episodes in seasons.items():
                 if not isinstance(episodes, list):
                     continue
-                seen_mids = set()
+                seen_keys = set()
                 clean_eps = []
                 for ep in episodes:
                     if not isinstance(ep, dict):
                         continue
+                    # المفتاح = القناة + message_id
+                    ch = str(ep.get("source_channel", "")).strip()
                     mid = str(ep.get("message_id", "")).strip()
-                    if mid and mid in seen_mids:
+                    key = f"{ch}|{mid}" if ch else mid
+
+                    if key and key in seen_keys:
                         continue
-                    if mid:
-                        seen_mids.add(mid)
+                    if key:
+                        seen_keys.add(key)
                     clean_eps.append(ep)
                 if clean_eps:
                     clean_seasons[season_key] = clean_eps
