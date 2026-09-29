@@ -98,28 +98,38 @@ def clean_tg_url(url):
     return re.sub(r"t\.me/@", "t.me/", url)
 
 
-def watch_filename(ep):
-    mid = str(ep.get("message_id") or "").strip() or "unknown"
+# ═══════════════════════════════════════════════════════════════
+# ★★★ اسم ملف الحلقة — لا يستخدم file_id أو file_unique_id أبدًا ★★★
+# ═══════════════════════════════════════════════════════════════
+def watch_filename(ep, fallback_index=0):
+    """
+    يولّد اسم ملف آمن وقصير.
+    - إذا وُجد source_channel و message_id: {channel}_{message_id}.html
+    - إذا وُجد message_id فقط: {message_id}.html
+    - إذا لم يوجد message_id: {fallback_index}.html
+    لا يستخدم file_id أو file_unique_id إطلاقًا.
+    """
+    mid = str(ep.get("message_id") or "").strip()
     ch = str(ep.get("source_channel") or "").strip()
-    if ch:
+
+    if ch and mid:
         ch_safe = re.sub(r"[^\w\-]+", "_", ch.lstrip("@"))
         return f"{ch_safe}_{mid}.html"
-    fuid = str(ep.get("file_unique_id") or "").strip()
-    if fuid:
-        fuid_safe = re.sub(r"[^\w]+", "", fuid)[:16]
-        return f"{mid}_{fuid_safe}.html"
-    return f"{mid}.html"
+
+    if mid:
+        return f"{mid}.html"
+
+    # احتياطي: فهرس الحلقة داخل المصفوفة
+    return f"ep_{fallback_index}.html"
 
 
 # ═══════════════════════════════════════════════════════════════
 # قراءة آمنة لـ data.json مع محاولة التعافي من النسخ الاحتياطية
 # ═══════════════════════════════════════════════════════════════
 def read_data_safe():
-    """يحاول قراءة data.json، وإن فشل يبحث عن أحدث نسخة احتياطية"""
     if not DATA_FILE.exists():
         return None
 
-    # 1) محاولة قراءة الملف الأصلي
     try:
         content = DATA_FILE.read_text(encoding="utf-8")
         if content.strip():
@@ -127,7 +137,6 @@ def read_data_safe():
     except Exception as e:
         print(f"[build] data.json تالف: {e}")
 
-    # 2) محاولة استرجاع من نسخة احتياطية
     backups = sorted(DATA_FILE.parent.glob("data.backup_*.json"), reverse=True)
     for bk in backups[:5]:
         try:
@@ -144,10 +153,9 @@ def read_data_safe():
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ تحميل البيانات — تصنيف موحّد ★★★
+# تحميل البيانات
 # ═══════════════════════════════════════════════════════════════
 def load_data():
-    # تنظيف تلقائي إن أمكن
     try:
         import clean_data
         clean_data.run(verbose=False)
@@ -170,7 +178,6 @@ def load_data():
         if not name:
             continue
 
-        # جمع الحلقات
         all_eps = []
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
@@ -185,13 +192,12 @@ def load_data():
                         e["episode"] = safe_int(e.get("episode"), 0)
                         all_eps.append(e)
 
-        # إزالة التكرار
         seen_keys = set()
         unique_eps = []
         for ep in all_eps:
             ch = str(ep.get("source_channel") or "").strip()
             mid = str(ep.get("message_id") or "").strip()
-            key = f"{ch}|{mid}" if ch else mid
+            key = f"{ch}|{mid}" if (ch or mid) else ""
             if key and key in seen_keys:
                 continue
             if key:
@@ -421,7 +427,7 @@ document.querySelectorAll('.sub-tab').forEach(tab=>{tab.onclick=()=>{
     return base(f"{SITE_NAME} — الرئيسية", body, scripts=scripts)
 
 
-def _render_episode_card(ep):
+def _render_episode_card(ep, index=0):
     """
     ★★★ الإصلاح: الرابط يجب أن يكون ../watch/ لأن هذه الصفحة داخل مجلد series/ ★★★
     """
@@ -431,7 +437,7 @@ def _render_episode_card(ep):
     date_html = f'<span>{esc(date)}</span>' if date else ""
     ep_num = safe_int(ep.get("episode"), 0)
     label = f"الحلقة {ep_num}" if ep_num > 0 else "مشاهدة"
-    fname = watch_filename(ep)
+    fname = watch_filename(ep, fallback_index=index)
     return (
         f'<a href="../watch/{esc(fname)}" class="episode-card">'
         f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
@@ -456,7 +462,7 @@ def render_series(series):
     sorted_seasons = sorted(seasons.keys())
 
     if len(sorted_seasons) <= 1:
-        ep_cards = [_render_episode_card(ep) for ep in eps]
+        ep_cards = [_render_episode_card(ep, i) for i, ep in enumerate(eps)]
         seasons_content = f'<div class="episodes-grid">{"".join(ep_cards)}</div>'
     else:
         season_tabs = []
@@ -469,7 +475,7 @@ def render_series(series):
                 f'الموسم {sn} <span class="season-count">{len(seasons[sn])}</span>'
                 f'</button>'
             )
-            cards = "".join(_render_episode_card(ep) for ep in seasons[sn])
+            cards = "".join(_render_episode_card(ep, i) for i, ep in enumerate(seasons[sn]))
             season_panels.append(
                 f'<div class="season-panel{hidden}" data-season-panel="{sn}">'
                 f'<div class="episodes-grid">{cards}</div>'
@@ -528,7 +534,7 @@ document.querySelectorAll('.season-tab').forEach(tab=>{tab.onclick=()=>{
     return base(f"{name} — {SITE_NAME}", body, depth=1, scripts=scripts)
 
 
-def render_watch(name, season, episode, prev_ep, next_ep, ep):
+def render_watch(name, season, episode, prev_ep, next_ep, ep, fallback_index=0):
     file_id = ep.get("file_id") or ""
     file_size = safe_int(ep.get("file_size"), 0)
     message_id = safe_int(ep.get("message_id"), 0)
@@ -551,7 +557,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
             f'<button class="unmute-btn" id="unmuteBtn">🔊 تشغيل الصوت</button>'
             f'</div>'
         )
-        head = '<link rel="preload" as="video" href="' + esc(stream_url) + '">'
+        # ★★★ إزالة preload غير المدعوم ★★★
+        head = ""
     else:
         player = (
             '<div class="no-player">'
@@ -563,11 +570,11 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
 
     # داخل مجلد watch/ — الروابط النسبية للملفات المجاورة صحيحة
     prev_btn = (
-        f'<a href="{esc(watch_filename(prev_ep))}" class="nav-btn">السابقة</a>'
+        f'<a href="{esc(watch_filename(prev_ep, fallback_index-1))}" class="nav-btn">السابقة</a>'
         if prev_ep else '<span class="nav-btn disabled">السابقة</span>'
     )
     next_btn = (
-        f'<a href="{esc(watch_filename(next_ep))}" class="nav-btn">التالية</a>'
+        f'<a href="{esc(watch_filename(next_ep, fallback_index+1))}" class="nav-btn">التالية</a>'
         if next_ep else '<span class="nav-btn disabled">التالية</span>'
     )
 
@@ -578,7 +585,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         if tg_url else ""
     )
 
-    next_json = json.dumps(watch_filename(next_ep) if next_ep else None)
+    next_json = json.dumps(watch_filename(next_ep, fallback_index+1) if next_ep else None)
     scripts = f'''<script>
 var nextEp = {next_json};
 var video = document.querySelector('video');
@@ -750,7 +757,6 @@ def main():
 
     if not series_list:
         print("⚠️ لا توجد بيانات لبناء الموقع — تحقق من data.json")
-        # نكتب صفحة فارغة بدل ما يبقى الموقع معطلًا
         write_file(OUT / "index.html", base(
             f"{SITE_NAME} — الرئيسية",
             "<section class='hero'><h1>لا توجد بيانات</h1>"
@@ -764,11 +770,9 @@ def main():
     print(f"  مسلسلات: {series_count}")
     print(f"  أفلام:   {movies_count}")
 
-    # الصفحة الرئيسية
     print("بناء الصفحة الرئيسية ...")
     write_file(OUT / "index.html", render_index(series_list))
 
-    # صفحات الأعمال + الحلقات
     print("بناء صفحات الأعمال ...")
     for s in series_list:
         fname = safe_name(s["name"]) + ".html"
@@ -781,8 +785,8 @@ def main():
             ep_num = safe_int(ep.get("episode"), i + 1)
             sn = safe_int(ep.get("season"), 1)
             write_file(
-                OUT / "watch" / watch_filename(ep),
-                render_watch(s["name"], sn, ep_num, prev_ep, next_ep, ep),
+                OUT / "watch" / watch_filename(ep, fallback_index=i),
+                render_watch(s["name"], sn, ep_num, prev_ep, next_ep, ep, fallback_index=i),
             )
 
     write_file(OUT / ".nojekyll", "")
