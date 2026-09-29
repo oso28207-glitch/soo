@@ -58,7 +58,7 @@ body{
 .series-poster img{width:100%;height:100%;object-fit:cover;transition:.3s}
 .series-card:hover .series-poster img{transform:scale(1.05)}
 .no-poster{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;background:linear-gradient(135deg,var(--bg2),var(--card))}
-.new{position:absolute;top:8px;right:8px;background:var(--success);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.new{position:absolute;top:8px;right:8px;background:var(--success);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;z-index:2}
 .series-overlay{position:absolute;bottom:0;left:0;right:0;padding:8px;background:linear-gradient(to top,rgba(0,0,0,.9),transparent);display:flex;justify-content:space-between;align-items:center;font-size:12px}
 .series-ep-count{color:#fff;background:rgba(0,0,0,.6);padding:2px 8px;border-radius:6px}
 .rating{color:var(--gold);font-weight:600}
@@ -101,7 +101,7 @@ h2{font-size:22px;margin:24px 0 16px;color:var(--text)}
 }
 .unmute-btn:hover{background:var(--accent2)}
 .unmute-btn.hidden{display:none}
-.no-player{aspect-ratio:16/9;background:var(--card);border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--text2);border:1px solid var(--border);margin-bottom:20px}
+.no-player{aspect-ratio:16/9;background:var(--card);border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--text2);border:1px solid var(--border);margin-bottom:20px;max-width:900px;margin-left:auto;margin-right:auto}
 .watch-info{max-width:900px;margin:0 auto;text-align:center}
 .watch-info h1{font-size:24px;margin-bottom:8px}
 .watch-meta{color:var(--text2);font-size:14px;margin-bottom:20px}
@@ -139,7 +139,7 @@ h2{font-size:22px;margin:24px 0 16px;color:var(--text)}
 </header>
 <main class="container">
 
-    <div class="player-shell"><video controls playsinline preload="metadata" poster="AAMCBAADIQYABNLsyycAAgHgarwc2pk3oYruhoFPl_PDEq3Se1wAAhMfAAIEq5hQGPaIPRecEy0ACAEAB20ABx4E" poster="AAMCBAADIQYABNLsyycAAgHgarwc2pk3oYruhoFPl_PDEq3Se1wAAhMfAAIEq5hQGPaIPRecEy0ACAEAB20ABx4E" src="https://soo-production.up.railway.app/stream?fid=BAACAgQAAyEGAATS7MsnAAIB4Gq8HNqZN6GK7oaBT5fzwxKt0ntcAAITHwACBKuYUBj2iD0XnBMtHgQ&amp;size=64945669&amp;mid=480"><source src="https://soo-production.up.railway.app/stream?fid=BAACAgQAAyEGAATS7MsnAAIB4Gq8HNqZN6GK7oaBT5fzwxKt0ntcAAITHwACBKuYUBj2iD0XnBMtHgQ&amp;size=64945669&amp;mid=480" type="video/mp4"></video><button class="unmute-btn" id="unmuteBtn">🔊 تشغيل الصوت</button></div>
+    <div class="player-shell"><video controls playsinline preload="metadata" poster="AAMCBAADIQYABNLsyycAAgHgarwc2pk3oYruhoFPl_PDEq3Se1wAAhMfAAIEq5hQGPaIPRecEy0ACAEAB20ABx4E" src="https://soo-production.up.railway.app/stream?fid=BAACAgQAAyEGAATS7MsnAAIB4Gq8HNqZN6GK7oaBT5fzwxKt0ntcAAITHwACBKuYUBj2iD0XnBMtHgQ&amp;size=64945669&amp;mid=480"><source src="https://soo-production.up.railway.app/stream?fid=BAACAgQAAyEGAATS7MsnAAIB4Gq8HNqZN6GK7oaBT5fzwxKt0ntcAAITHwACBKuYUBj2iD0XnBMtHgQ&amp;size=64945669&amp;mid=480" type="video/mp4"></video><button class="unmute-btn" id="unmuteBtn">🔊 تشغيل الصوت</button></div>
     <div class="watch-info">
       <h1>التفاح الحرام</h1>
       <div class="watch-meta">
