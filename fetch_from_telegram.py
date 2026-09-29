@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 fetch_from_telegram.py — جالب البيانات من قنوات Telegram
-يدعم قناتين + تصنيف ذكي للأفلام والمسلسلات
+تصنيف ذكي + تجميع الحلقات تحت مسلسل واحد
 """
 
 import os
@@ -57,7 +57,6 @@ NAME_CORRECTIONS = {
     "النص الموسم الثاني": ("النص", 2),
     "البيت بيتك": ("البيت بيتي", 1),
     "البيت بيتك 2": ("البيت بيتي", 2),
-    "البيت بيتي 2": ("البيت بيتي", 2),
     "الخياط الموسم الثاني": ("الخياط", 2),
     "الخياط الموسم الأول": ("الخياط", 1),
 }
@@ -124,9 +123,17 @@ SERIES_PREFIXES = [
 
 
 # ═══════════════════════════════════════════════════════════════
-# الدالة الرئيسية — تحليل الـ Caption
+# ★★★ الدالة الرئيسية — تصنيف دقيق ★★★
 # ═══════════════════════════════════════════════════════════════
 def parse_caption(caption: str) -> Optional[dict]:
+    """
+    يحلل الـ Caption ويستخرج:
+    - name: اسم العمل
+    - season: الموسم
+    - episode: الحلقة (أو None للأفلام)
+    - content_type: series | movie
+    - part: الجزء (للأفلام)
+    """
     if not caption:
         return None
 
@@ -173,7 +180,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # ─── 4) اكتشاف نوع المحتوى ───
+    # ─── 4) فحص البادئات ───
     is_movie_prefix = False
     for pat in MOVIE_PREFIXES:
         if pat.match(text):
@@ -188,8 +195,10 @@ def parse_caption(caption: str) -> Optional[dict]:
             text = pat.sub("", text).strip()
             break
 
-    # ─── 5) تحديد النوع ───
+    # ─── 5) ★★★ تحديد النوع — الأولوية للحلقة والموسم ★★★
     if episode is not None:
+        content_type = "series"
+    elif season > 1:
         content_type = "series"
     elif part is not None:
         content_type = "movie"
@@ -219,9 +228,10 @@ def parse_caption(caption: str) -> Optional[dict]:
 
     name, season = apply_name_correction(name, season)
 
+    # للأفلام: season=1, episode=None
     if content_type == "movie":
         season = 1
-        episode = 1
+        episode = None
 
     return {
         "name": name,
@@ -266,7 +276,7 @@ def clean_duplicates(data: dict) -> dict:
         if ctype == "movie":
             name_key = f"M::{name}::{s.get('_source_channel', '')}"
         else:
-            name_key = name
+            name_key = f"S::{name}"
 
         if not name or name_key in seen_series:
             continue
@@ -362,7 +372,6 @@ def add_episode(series: dict, season: int, episode: dict) -> bool:
             return False
 
     existing.append(episode)
-    # ★★★ الإصلاح: استخدام `or 0` لتفادي None ★★★
     existing.sort(key=lambda e: int(e.get("episode") or 0))
     return True
 
@@ -426,9 +435,12 @@ async def process_message(client, msg, data, progress, channel) -> bool:
     else:
         tg_url = f"https://t.me/{channel}/{msg.id}"
 
+    # للأفلام: episode = 1
+    episode_num = parsed["episode"] if parsed["episode"] is not None else 1
+
     episode = {
         "message_id": str(msg.id),
-        "episode": parsed["episode"],
+        "episode": episode_num,
         "season": parsed["season"],
         "duration": media_info["duration"],
         "telegram_url": tg_url,
@@ -450,7 +462,11 @@ async def process_message(client, msg, data, progress, channel) -> bool:
 
     if added:
         icon = "🎬" if parsed["content_type"] == "movie" else "📺"
-        ep_info = "جزء " + str(parsed.get("part")) if parsed.get("part") else f"S{parsed['season']:02d}E{parsed['episode']:02d}"
+        ep_info = f"جزء {parsed.get('part')}" if parsed.get("part") else (
+            f"S{parsed['season']:02d}E{episode_num:02d}"
+            if parsed["content_type"] == "series"
+            else "فيلم"
+        )
         log.info(
             f"{icon} [{parsed['name']}] {ep_info} "
             f"({media_info['file_size'] / 1024 / 1024:.1f}MB) [{channel}]"

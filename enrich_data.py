@@ -51,6 +51,9 @@ ARABIC_HARDCODED = [
     "فن الحرب", "حد اقصى", "حد أقصى", "الف ليله وليله", "ألف ليلة وليلة",
     "اتنين غيرنا", "المصيدة", "الاختيار", "الحشاشين", "المداح",
     "جعفر العمدة", "بيت الرفاعي", "العتاولة", "نسل الأغراب", "الهيبة",
+    "قهوة المحطة", "حالات نادرة", "خالد نور", "ولد وبنت وشايب",
+    "عايشة الدور", "حكيم باشا", "سيد الناس", "الحلانجي", "جودر",
+    "البيت بيتي", "المداح", "النص",
 ]
 
 
@@ -71,26 +74,22 @@ def save_cache(cache):
 
 
 # ═══════════════════════════════════════════════════════════════
-# تصنيف الأصل — محافظ جداً
+# تصنيف الأصل
 # ═══════════════════════════════════════════════════════════════
 def detect_origin(name: str, existing_type: str = "") -> str:
     name_lower = name.lower().strip()
 
-    # صريح تركي
     if "مدبلج" in name or "تركي" in name or "تركية" in name:
         return "turkish"
 
-    # صريح عربي (قبل التركي)
     for kw in ARABIC_HARDCODED:
         if kw in name or kw.lower() in name_lower:
             return "arabic"
 
-    # تركي فريد
     for kw in TURKISH_KW:
         if kw in name or kw.lower() in name_lower:
             return "turkish"
 
-    # حروف عربية فقط
     arabic_chars = len(re.findall(r"[\u0600-\u06FF]", name))
     english_chars = len(re.findall(r"[a-zA-Z]", name))
 
@@ -101,19 +100,25 @@ def detect_origin(name: str, existing_type: str = "") -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# تصنيف النوع — يعتمد على عدد الحلقات والنوع المُحدّد مسبقاً
+# ★★★ تصنيف النوع — احترام النوع المُحدّد ★★★
 # ═══════════════════════════════════════════════════════════════
 def detect_type(name, episodes, existing_type=""):
-    if existing_type in ("series", "movie"):
-        n = len(episodes)
-        if existing_type == "movie" and n > 3:
-            return "series"
-        if existing_type == "series" and n == 1:
-            return "series"
-        return existing_type
-
+    """
+    - إذا كان النوع المُحدّد "series" وعدد الحلقات > 1 → احترمه
+    - إذا كان النوع المُحدّد "movie" وعدد الحلقات > 1 → صحّح إلى series
+    - إذا لم يوجد نوع → احسبه من عدد الحلقات
+    """
     n = len(episodes)
-    if n > 3:
+
+    if existing_type == "series":
+        return "series"  # احترم دائماً
+    if existing_type == "movie":
+        if n > 1:
+            return "series"  # صحّح
+        return "movie"
+
+    # لا نوع مُحدّد
+    if n > 1:
         return "series"
     return "movie"
 
