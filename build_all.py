@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 build_all.py — مُولّد الموقع السريع
-بدون أي اعتماد على proxy - file_id فقط
-مع حماية من تعارض message_id بين القنوات
+بدون proxy - file_id فقط
+مع حماية كاملة ضد None والقيم الفارغة
 """
 
 import re
@@ -41,9 +41,23 @@ def write_file(p, c):
     p.write_text(c, encoding="utf-8")
 
 
+def safe_int(v, default=0):
+    """تحويل آمن للأعداد يتعامل مع None والقيم الفارغة"""
+    try:
+        if v is None:
+            return default
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return default
+        return int(v)
+    except (ValueError, TypeError):
+        return default
+
+
 def fmt_dur(sec):
     try:
-        s = int(sec or 0)
+        s = safe_int(sec, 0)
     except:
         return ""
     if s <= 0:
@@ -58,7 +72,7 @@ def format_date_ar(date_str):
         return ""
     try:
         from datetime import datetime
-        d = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        d = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
         months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو",
                   "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"]
         return f"{d.day} {months[d.month-1]}"
@@ -69,35 +83,25 @@ def format_date_ar(date_str):
 def clean_tg_url(url):
     if not url:
         return ""
-    url = url.split("?")[0].strip()
+    url = str(url).split("?")[0].strip()
     return re.sub(r"t\.me/@", "t.me/", url)
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ دالة اسم ملف الحلقة — تمنع التعارض بين القنوات ★★★
+# اسم ملف الحلقة — فريد لكل قناة
 # ═══════════════════════════════════════════════════════════════
 def watch_filename(ep):
-    """
-    يُنشئ اسم ملف فريد لحلقة.
-    يستخدم:
-    - اسم القناة (source_channel) إن وُجد
-    - message_id
-    مثال: shoofcima_880.html أو shoofFilm_880.html
-    """
-    mid = str(ep.get("message_id", "")).strip()
+    mid = str(ep.get("message_id") or "").strip()
     if not mid:
         mid = "unknown"
 
-    ch = str(ep.get("source_channel", "")).strip()
+    ch = str(ep.get("source_channel") or "").strip()
     if ch:
-        # أزل @ إن وُجد
         ch_clean = ch.lstrip("@")
-        # آمن اسم القناة
         ch_safe = re.sub(r"[^\w\-]+", "_", ch_clean)
         return f"{ch_safe}_{mid}.html"
 
-    # fallback: استخدم file_unique_id كبصمة
-    fuid = str(ep.get("file_unique_id", "")).strip()
+    fuid = str(ep.get("file_unique_id") or "").strip()
     if fuid:
         fuid_safe = re.sub(r"[^\w]+", "", fuid)[:16]
         return f"{mid}_{fuid_safe}.html"
@@ -126,34 +130,43 @@ def load_data():
     for s in series_raw:
         if not isinstance(s, dict):
             continue
-        name = s.get("name", "").strip()
-        if not name or name in seen_series:
-            continue
-        seen_series.add(name)
 
-        # جمع الحلقات
+        name = (s.get("name") or "").strip()
+        if not name:
+            continue
+
+        ctype = s.get("type") or "series"
+        # ★★★ مفتاح فريد للأفلام: الاسم + القناة ★★★
+        if ctype == "movie":
+            name_key = f"M::{name}::{s.get('_source_channel', '')}"
+        else:
+            name_key = f"S::{name}"
+
+        if name_key in seen_series:
+            continue
+        seen_series.add(name_key)
+
+        # ─── جمع الحلقات ───
         all_eps = []
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
             for sk, eps in seasons.items():
-                try:
-                    sn = int(sk)
-                except:
-                    sn = sk
+                sn = safe_int(sk, 1)
                 if isinstance(eps, list):
                     for ep in eps:
                         if not isinstance(ep, dict):
                             continue
                         e = dict(ep)
-                        e.setdefault("season", sn)
+                        e["season"] = safe_int(e.get("season"), sn)
+                        e["episode"] = safe_int(e.get("episode"), 0)
                         all_eps.append(e)
 
-        # ★ إزالة التكرار — المفتاح هو (القناة + message_id) ★
+        # ─── إزالة التكرار ───
         seen_keys = set()
         unique_eps = []
         for ep in all_eps:
-            ch = str(ep.get("source_channel", "")).strip()
-            mid = str(ep.get("message_id", "")).strip()
+            ch = str(ep.get("source_channel") or "").strip()
+            mid = str(ep.get("message_id") or "").strip()
             key = f"{ch}|{mid}" if ch else mid
 
             if key and key in seen_keys:
@@ -162,22 +175,25 @@ def load_data():
                 seen_keys.add(key)
             unique_eps.append(ep)
 
+        # ★★★ ترتيب آمن ضد None ★★★
         unique_eps.sort(key=lambda e: (
-            int(e.get("season", 1)),
-            int(e.get("episode", 0))
+            safe_int(e.get("season"), 1),
+            safe_int(e.get("episode"), 0)
         ))
 
-        ctype = s.get("type") or "series"
         origin = s.get("origin") or "foreign"
         slug = s.get("category_slug") or f"{ctype}-{origin}"
 
+        # ─── أحدث تاريخ ───
         latest = ""
         for ep in unique_eps:
-            if ep.get("date"):
-                latest = max(latest, ep["date"])
+            d = ep.get("date")
+            if d:
+                d_str = str(d)
+                if d_str > latest:
+                    latest = d_str
         if not latest:
-            ids = [int(e.get("message_id", 0)) for e in unique_eps
-                   if str(e.get("message_id", "")).isdigit()]
+            ids = [safe_int(e.get("message_id"), 0) for e in unique_eps]
             latest = str(max(ids)) if ids else "0"
 
         out.append({
@@ -239,7 +255,7 @@ def base(title, body, depth=0, head="", scripts=""):
 
 
 # ═══════════════════════════════════════════════════════════════
-# بطاقة مسلسل
+# بطاقة عمل
 # ═══════════════════════════════════════════════════════════════
 def render_card(s, idx=0, prefix=""):
     name = s["name"]
@@ -251,14 +267,20 @@ def render_card(s, idx=0, prefix=""):
 
     rating_html = ""
     if s.get("rating"):
-        rating_html = f'<span class="rating">★ {s["rating"]:.1f}</span>'
+        try:
+            rating_html = f'<span class="rating">★ {float(s["rating"]):.1f}</span>'
+        except:
+            pass
 
     if poster:
         ph = f'<img src="{esc(poster)}" alt="{esc(name)}" loading="lazy">'
     else:
         ph = '<div class="poster-placeholder">📺</div>'
 
-    count_label = "فيلم" if s["type"] == "movie" else f"{count} حلقة"
+    if s["type"] == "movie":
+        count_label = "فيلم"
+    else:
+        count_label = f"{count} حلقة"
 
     return (
         f'<a class="series-card" href="{url}">'
@@ -426,30 +448,34 @@ def render_index(series_list):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ بطاقة الحلقة — تستخدم watch_filename ★★★
+# بطاقة الحلقة
 # ═══════════════════════════════════════════════════════════════
 def _render_episode_card(ep):
     dur = fmt_dur(ep.get("duration", 0))
     dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
     date = format_date_ar(ep.get("date", ""))
     date_html = f'<span class="ep-date">{esc(date)}</span>' if date else ""
-    ep_num = ep.get("episode", "?")
 
-    # ★ اسم فريد للملف ★
+    ep_num = safe_int(ep.get("episode"), 0)
+    if ep_num > 0:
+        label = f"الحلقة {ep_num}"
+    else:
+        label = "مشاهدة"
+
     fname = watch_filename(ep)
 
     return (
         f'<a class="episode-card" href="../watch/{fname}">'
         f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
         f'<div class="episode-body">'
-        f'<div class="episode-num">الحلقة {esc(ep_num)}</div>'
+        f'<div class="episode-num">{esc(label)}</div>'
         f'<div class="episode-meta">{dur_html} {date_html}</div>'
         f'</div></a>'
     )
 
 
 # ═══════════════════════════════════════════════════════════════
-# صفحة المسلسل
+# صفحة العمل
 # ═══════════════════════════════════════════════════════════════
 def render_series(series):
     name = series["name"]
@@ -457,9 +483,11 @@ def render_series(series):
     backdrop = series.get("backdrop", "")
     eps = series["episodes"]
 
+    # تجميع المواسم
     seasons = defaultdict(list)
     for ep in eps:
-        seasons[int(ep.get("season", 1))].append(ep)
+        sn = safe_int(ep.get("season"), 1)
+        seasons[sn].append(ep)
     sorted_seasons = sorted(seasons.keys())
 
     if len(sorted_seasons) <= 1:
@@ -493,7 +521,13 @@ def render_series(series):
     if backdrop:
         bg_html = f'<div class="series-backdrop" style="background-image:url(\'{esc(backdrop)}\')"></div>'
 
-    rating_html = f'<span class="rating">★ {series["rating"]:.1f}</span>' if series.get("rating") else ""
+    rating_html = ""
+    if series.get("rating"):
+        try:
+            rating_html = f'<span class="rating">★ {float(series["rating"]):.1f}</span>'
+        except:
+            pass
+
     year_html = f'<span class="year">{esc(series["year"])}</span>' if series.get("year") else ""
 
     type_label = "فيلم" if series["type"] == "movie" else "مسلسل"
@@ -543,12 +577,12 @@ def render_series(series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ صفحة المشاهدة — تستخدم watch_filename في prev/next ★★★
+# صفحة المشاهدة
 # ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
-    file_id = ep.get("file_id", "")
-    file_size = ep.get("file_size", 0) or 0
-    message_id = ep.get("message_id", 0)
+    file_id = ep.get("file_id") or ""
+    file_size = safe_int(ep.get("file_size"), 0)
+    message_id = safe_int(ep.get("message_id"), 0)
     thumb = ep.get("thumb_url", "")
     poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
@@ -583,7 +617,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
         head = ""
 
-    # ★ أزرار التنقل — تستخدم watch_filename ★
     prev_btn = (
         f'<a class="btn" href="{watch_filename(prev_ep)}">السابقة</a>'
         if prev_ep else
@@ -796,39 +829,51 @@ def build_static():
 
 def build_site():
     series_list = load_data()
-    print(f"{len(series_list)} مسلسل/فيلم")
+    print(f"{len(series_list)} عمل")
 
     total = 0
-    # ★ تتبع أسماء الملفات لتجنب الكتابة المكررة ★
     written_files = set()
+    movies = 0
+    series_count = 0
 
     for series in series_list:
         name = series["name"]
         episodes = series["episodes"]
-        write_file(OUT / "series" / f"{safe_name(name)}.html", render_series(series))
+
+        if series["type"] == "movie":
+            movies += 1
+        else:
+            series_count += 1
+
+        write_file(
+            OUT / "series" / f"{safe_name(name)}.html",
+            render_series(series)
+        )
 
         for i, ep in enumerate(episodes):
             prev_ep = episodes[i - 1] if i > 0 else None
             next_ep = episodes[i + 1] if i < len(episodes) - 1 else None
+            season = safe_int(ep.get("season"), 1)
+            episode_num = safe_int(ep.get("episode"), i + 1)
+
             html_ep = render_watch(
-                name, ep.get("season", 1), ep.get("episode", i + 1),
+                name, season, episode_num,
                 prev_ep, next_ep, ep,
             )
 
-            # ★ اسم فريد للملف ★
             fname = watch_filename(ep)
-
-            # ★ تحذير عند التعارض (يجب ألا يحدث) ★
             if fname in written_files:
-                print(f"تحذير: تعارض في اسم الملف {fname}")
+                print(f"تحذير: تعارض في {fname}")
             written_files.add(fname)
 
             write_file(OUT / "watch" / fname, html_ep)
             total += 1
 
     write_file(OUT / "index.html", render_index(series_list))
-    print(f"{len(series_list)} عمل و {total} حلقة")
-    print(f"{len(written_files)} ملف watch فريد")
+    print(f"   مسلسلات: {series_count}")
+    print(f"   أفلام: {movies}")
+    print(f"   حلقات: {total}")
+    print(f"   ملفات watch فريدة: {len(written_files)}")
 
 
 def main():
