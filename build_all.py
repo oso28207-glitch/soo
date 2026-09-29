@@ -624,8 +624,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
 
 
-# [CSS و WATCH_JS من النسخة السابقة — نفسها]
-
 CSS = '''
 :root{--bg:#0a0a0e;--surface:#14141c;--surface-2:#1c1c28;--border:#26263a;--text:#f0f0f5;--text-dim:#8a8aa0;--primary:#e50914;--accent:#4ea8de;--gold:#ffc107;--radius:14px;--radius-sm:10px;--shadow:0 8px 32px rgba(0,0,0,.45)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}

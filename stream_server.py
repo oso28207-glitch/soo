@@ -31,9 +31,9 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
-# ★★★ قواعد Telegram: offset يجب أن يكون مضاعف 4096، limit ≤ 1MB ★★★
+# قواعد Telegram: offset يجب أن يكون مضاعف 4096، limit ≤ 1MB
 BLOCK_SIZE = 4096
-CHUNK_SIZE = 1024 * 1024  # 1 MB (مضاعف 4096)
+CHUNK_SIZE = 1024 * 1024
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
-# ★★★ CORS كامل ★★★
+# CORS كامل
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -78,7 +78,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
-    """يضمن إضافة CORS headers لكل الردود بما فيها الأخطاء"""
     try:
         response = await call_next(request)
     except Exception as e:
@@ -119,7 +118,6 @@ def _extract_file_id(msg) -> str:
 
 
 async def refresh_file_id(message_id: int) -> str:
-    """يجلب file_id جديد من Telegram عند انتهاء صلاحية المرجع"""
     if not CHANNEL_ID or not message_id:
         print("⚠️ Cannot refresh: CHANNEL or message_id missing")
         return ""
@@ -156,7 +154,6 @@ async def refresh_file_id(message_id: int) -> str:
 
 
 def build_location(file_id):
-    """يبني كائن Location المناسب حسب نوع الملف"""
     ft_str = str(file_id.file_type).lower()
 
     DOC_TYPES = {
@@ -193,18 +190,12 @@ def align_down(x, alignment):
     return (x // alignment) * alignment
 
 
-def align_up(x, alignment):
-    return ((x + alignment - 1) // alignment) * alignment
-
-
 # ═══════════════════════════════════════════════════════════════
 # Endpoint البث
 # ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
 @app.get("/stream")
 async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
-    """بث ملف عبر MTProto مع دعم Range Requests"""
-
     if not fid:
         raise HTTPException(400, "missing fid parameter")
 
@@ -218,7 +209,6 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
 
-    # تحليل Range
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -237,14 +227,10 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
 
     location = build_location(file_id)
 
-    # ★★★ مولّد البث — تصفير إجباري للإزاحة ★★★
     async def generate():
         nonlocal file_id, location
-
-        # تصفير الإزاحة إلى CHUNK_SIZE (مضاعف 4096)
         aligned_start = align_down(start, CHUNK_SIZE)
         skip = start - aligned_start
-
         read_offset = aligned_start
         remaining = length
         total_sent = 0
@@ -290,13 +276,11 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 print(f"⚠️ Empty response at offset {read_offset}")
                 break
 
-            # تخطّي البايتات الإضافية في الكتلة الأولى
             if first_read:
                 if skip > 0:
                     data = data[skip:]
                 first_read = False
 
-            # قصّ البيانات إذا تجاوزت المتبقي
             if len(data) > remaining:
                 data = data[:remaining]
 

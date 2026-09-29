@@ -123,7 +123,7 @@ SERIES_PREFIXES = [
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ الدالة الرئيسية — تصنيف دقيق ★★★
+# الدالة الرئيسية — تصنيف دقيق
 # ═══════════════════════════════════════════════════════════════
 def parse_caption(caption: str) -> Optional[dict]:
     """
@@ -147,7 +147,7 @@ def parse_caption(caption: str) -> Optional[dict]:
     if not text:
         return None
 
-    # ─── 1) استخراج الحلقة ───
+    # 1) استخراج الحلقة
     episode = None
     for pat in EPISODE_PATTERNS:
         m = pat.search(text)
@@ -158,7 +158,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # ─── 2) استخراج الموسم ───
+    # 2) استخراج الموسم
     season = 1
     for pat in SEASON_PATTERNS:
         m = pat.search(text)
@@ -169,7 +169,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # ─── 3) استخراج الجزء ───
+    # 3) استخراج الجزء
     part = None
     for pat in PART_PATTERNS:
         m = pat.search(text)
@@ -180,7 +180,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # ─── 4) فحص البادئات ───
+    # 4) فحص البادئات
     is_movie_prefix = False
     for pat in MOVIE_PREFIXES:
         if pat.match(text):
@@ -195,7 +195,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             text = pat.sub("", text).strip()
             break
 
-    # ─── 5) ★★★ تحديد النوع — الأولوية للحلقة والموسم ★★★
+    # ★★★ 5) تحديد النوع — الأولوية للحلقة والموسم ★★★
     if episode is not None:
         content_type = "series"
     elif season > 1:
@@ -209,7 +209,7 @@ def parse_caption(caption: str) -> Optional[dict]:
     else:
         content_type = "movie"
 
-    # ─── 6) استخراج الاسم ───
+    # 6) استخراج الاسم
     name = text
 
     name = re.sub(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+", "", name, flags=re.I)
@@ -435,7 +435,6 @@ async def process_message(client, msg, data, progress, channel) -> bool:
     else:
         tg_url = f"https://t.me/{channel}/{msg.id}"
 
-    # للأفلام: episode = 1
     episode_num = parsed["episode"] if parsed["episode"] is not None else 1
 
     episode = {
