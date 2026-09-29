@@ -17,13 +17,13 @@ on:
       - 'classify.py'
       - '.github/workflows/build-and-deploy.yml'
 
-# صلاحيات الكتابة للنشر
+# صلاحيات الكتابة والنشر
 permissions:
   contents: write
   pages: write
   id-token: write
 
-# تجنب تشغيل نسختين في نفس الوقت
+# منع تشغيل نسختين في نفس الوقت
 concurrency:
   group: "build-and-deploy"
   cancel-in-progress: false
@@ -61,24 +61,43 @@ jobs:
           pip install pyrogram tgcrypto requests
 
       # ═══════════════════════════════════════════════════════
-      # 4) جلب البيانات من Telegram
+      # 4) التحقق من توفر أسرار Telegram
+      # ═══════════════════════════════════════════════════════
+      - name: Check Telegram secrets
+        id: check_tg
+        env:
+          API_ID:         ${{ secrets.API_ID }}
+          API_HASH:       ${{ secrets.API_HASH }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+          CHANNEL:        ${{ secrets.CHANNEL }}
+        run: |
+          if [ -n "$API_ID" ] && [ -n "$API_HASH" ] && [ -n "$STRING_SESSION" ] && [ -n "$CHANNEL" ]; then
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "✅ أسرار Telegram متوفرة"
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "⚠️ أسرار Telegram غير مكتملة — سيتم تخطي الجلب"
+          fi
+
+      # ═══════════════════════════════════════════════════════
+      # 5) جلب البيانات من Telegram (شرطي)
       # ═══════════════════════════════════════════════════════
       - name: Fetch from Telegram
-        if: ${{ secrets.API_ID != '' }}
+        if: steps.check_tg.outputs.available == 'true'
         env:
-          API_ID:           ${{ secrets.API_ID }}
-          API_HASH:         ${{ secrets.API_HASH }}
-          STRING_SESSION:   ${{ secrets.STRING_SESSION }}
-          STRING_SESSION2:  ${{ secrets.STRING_SESSION2 }}
-          CHANNEL:          ${{ secrets.CHANNEL }}
-          CHANNEL2:         ${{ secrets.CHANNEL2 }}
-          HISTORY_LIMIT:    '5000'
-          MAX_FILE_MB:      '2000'
+          API_ID:          ${{ secrets.API_ID }}
+          API_HASH:        ${{ secrets.API_HASH }}
+          STRING_SESSION:  ${{ secrets.STRING_SESSION }}
+          STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
+          CHANNEL:         ${{ secrets.CHANNEL }}
+          CHANNEL2:        ${{ secrets.CHANNEL2 }}
+          HISTORY_LIMIT:   '5000'
+          MAX_FILE_MB:     '2000'
         run: python fetch_from_telegram.py
         continue-on-error: true
 
       # ═══════════════════════════════════════════════════════
-      # 5) تنظيف وإعادة تصنيف data.json  ← خطوة جديدة
+      # 6) تنظيف وإعادة تصنيف data.json
       # ═══════════════════════════════════════════════════════
       - name: Clean & Reclassify data
         run: |
@@ -89,7 +108,7 @@ jobs:
           fi
 
       # ═══════════════════════════════════════════════════════
-      # 6) إثراء البيانات (البوسترات + metadata)
+      # 7) إثراء البيانات (البوسترات + metadata)
       # ═══════════════════════════════════════════════════════
       - name: Enrich data with posters
         env:
@@ -98,7 +117,7 @@ jobs:
         continue-on-error: true
 
       # ═══════════════════════════════════════════════════════
-      # 7) عرض إحصائيات سريعة
+      # 8) عرض إحصائيات سريعة
       # ═══════════════════════════════════════════════════════
       - name: Show statistics
         run: |
@@ -115,13 +134,13 @@ jobs:
           "
 
       # ═══════════════════════════════════════════════════════
-      # 8) بناء الموقع
+      # 9) بناء الموقع
       # ═══════════════════════════════════════════════════════
       - name: Build site
         run: python build_all.py --clean
 
       # ═══════════════════════════════════════════════════════
-      # 9) حفظ التغييرات (data.json + docs/)
+      # 10) حفظ التغييرات
       # ═══════════════════════════════════════════════════════
       - name: Commit & Push changes
         run: |
@@ -143,7 +162,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ═══════════════════════════════════════════════════════
-      # 10) رفع ملف docs للنشر على Pages
+      # 11) رفع ملف docs للنشر على Pages
       # ═══════════════════════════════════════════════════════
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
