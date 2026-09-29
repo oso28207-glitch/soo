@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-fetch_from_telegram.py — جالب البيانات من قنوات Telegram
-تصنيف ذكي + تجميع الحلقات تحت مسلسل واحد
-"""
+"""fetch_from_telegram.py — جلب البيانات من قنوات Telegram"""
 
 import os
 import re
@@ -15,6 +12,8 @@ from typing import Optional
 
 from pyrogram import Client
 from pyrogram.errors import FloodWait
+
+from classify import detect_type
 
 # ═══════════════════════════════════════════════════════════════
 # الإعدادات
@@ -29,15 +28,12 @@ CHANNEL = (os.getenv("CHANNEL") or "").strip()
 CHANNEL2 = (os.getenv("CHANNEL2") or "").strip()
 CHANNEL_CLEAN = CHANNEL.lstrip("@")
 CHANNEL2_CLEAN = CHANNEL2.lstrip("@") if CHANNEL2 else ""
-
 STRING_SESSION = os.getenv("STRING_SESSION", "")
 STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "5000"))
 MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "2000"))
-
 BASE_DELAY = 4.0
 MAX_DELAY = 30.0
-SAFETY_BUFFER = 5.0
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,7 +58,7 @@ NAME_CORRECTIONS = {
 }
 
 
-def apply_name_correction(name: str, season: int) -> tuple:
+def apply_name_correction(name: str, season: int):
     name = name.strip()
     if name in NAME_CORRECTIONS:
         corrected, corrected_season = NAME_CORRECTIONS[name]
@@ -73,8 +69,7 @@ def apply_name_correction(name: str, season: int) -> tuple:
 # ═══════════════════════════════════════════════════════════════
 # تنظيف النص
 # ═══════════════════════════════════════════════════════════════
-SYMBOL_CHARS = r'[_\-–—\[\]\(\)\{\}【】<>«»""\'\`\~\!\?\.,:;\/\\\|\+\=\^\&\*\%\$#@♦◆●▪▫◦•★☆✦✧✪✩✫✬✭✮✯]'
-
+SYMBOL_CHARS = r'[_\-–—\[\]\(\)\{\}〖〗<>«»""\'\`\~\!\?\.,:;\/\\\|\+\=\^\&\*\%\$#@♦◆●▪▫◦•★☆✦✧✪✩✫✬✭✮✯]'
 DECORATIVE_PATTERNS = [
     re.compile(r"[\U0001F300-\U0001F9FF]+"),
     re.compile(r"[★☆✦✧✪✩✫✬✭✮✯♦◆●▪▫◦•]+"),
@@ -101,53 +96,42 @@ EPISODE_PATTERNS = [
     re.compile(r"\b(?:Episode|EP)\s*(\d{1,4})\b", re.I),
     re.compile(r"\bE(\d{1,4})\b", re.I),
 ]
-
 SEASON_PATTERNS = [
     re.compile(r"(?:الموسم|موسم)\s*(\d+)", re.I),
     re.compile(r"\bS(\d{1,2})\b", re.I),
     re.compile(r"\bSeason\s*(\d{1,2})\b", re.I),
 ]
-
 PART_PATTERNS = [
     re.compile(r"(?:الجزء|جزء)\s*(\d+)", re.I),
     re.compile(r"\bPart\s*(\d+)\b", re.I),
 ]
-
 MOVIE_PREFIXES = [
     re.compile(r"^(?:فيلم|فيلمو|movie|film)\s+", re.I),
 ]
-
 SERIES_PREFIXES = [
     re.compile(r"^(?:مسلسل|series)\s+", re.I),
 ]
 
 
 # ═══════════════════════════════════════════════════════════════
-# الدالة الرئيسية — تصنيف دقيق
+# تحليل الـ Caption
 # ═══════════════════════════════════════════════════════════════
 def parse_caption(caption: str) -> Optional[dict]:
     """
-    يحلل الـ Caption ويستخرج:
-    - name: اسم العمل
-    - season: الموسم
-    - episode: الحلقة (أو None للأفلام)
-    - content_type: series | movie
-    - part: الجزء (للأفلام)
+    يستخرج: name, season, episode, content_type, part
+    النوع النهائي يُحدَّد لاحقًا في clean_data.py
     """
     if not caption:
         return None
-
     lines = caption.strip().split("\n")
     raw = lines[0].strip() if lines else caption.strip()
-
     if not raw:
         return None
-
     text = normalize_text(raw)
     if not text:
         return None
 
-    # 1) استخراج الحلقة
+    # استخراج الحلقة
     episode = None
     for pat in EPISODE_PATTERNS:
         m = pat.search(text)
@@ -158,7 +142,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # 2) استخراج الموسم
+    # استخراج الموسم
     season = 1
     for pat in SEASON_PATTERNS:
         m = pat.search(text)
@@ -169,7 +153,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # 3) استخراج الجزء
+    # استخراج الجزء
     part = None
     for pat in PART_PATTERNS:
         m = pat.search(text)
@@ -180,7 +164,7 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # 4) فحص البادئات
+    # فحص البادئات
     is_movie_prefix = False
     for pat in MOVIE_PREFIXES:
         if pat.match(text):
@@ -195,23 +179,17 @@ def parse_caption(caption: str) -> Optional[dict]:
             text = pat.sub("", text).strip()
             break
 
-    # ★★★ 5) تحديد النوع — الأولوية للحلقة والموسم ★★★
-    if episode is not None:
-        content_type = "series"
-    elif season > 1:
-        content_type = "series"
-    elif part is not None:
-        content_type = "movie"
-    elif is_movie_prefix:
+    # ★★★ التصنيف المبدئي (يُعاد في clean_data.py) ★★★
+    # نستخدم عدد الحلقات التقديري = 1 إذا كان هناك رقم حلقة
+    episode_count = 1 if episode is not None else 1
+    content_type = detect_type(text, episode_count)
+    if is_movie_prefix:
         content_type = "movie"
     elif is_series_prefix:
         content_type = "series"
-    else:
-        content_type = "movie"
 
-    # 6) استخراج الاسم
+    # استخراج الاسم
     name = text
-
     name = re.sub(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+", "", name, flags=re.I)
     name = re.sub(r"(?:الموسم|موسم)\s*\d+", "", name, flags=re.I)
     name = re.sub(r"(?:الجزء|جزء)\s*\d+", "", name, flags=re.I)
@@ -219,10 +197,8 @@ def parse_caption(caption: str) -> Optional[dict]:
     name = re.sub(r"\bS\d{1,2}\b", "", name, flags=re.I)
     name = re.sub(r"\bE\d{1,4}\b", "", name, flags=re.I)
     name = re.sub(r"\b(?:Episode|EP|Part|Season)\s*\d+\b", "", name, flags=re.I)
-
     name = re.sub(r"\s+", " ", name).strip(" -–—.,")
     name = name.strip()
-
     if not name or len(name) < 2:
         return None
 
@@ -261,319 +237,234 @@ def save_progress(progress: dict):
     )
 
 
-def clean_duplicates(data: dict) -> dict:
-    if not isinstance(data, dict):
-        return {"channels": [], "series": []}
-
-    seen_series = set()
-    clean_series = []
-
-    for s in data.get("series", []):
-        if not isinstance(s, dict):
-            continue
-        name = s.get("name", "").strip()
-        ctype = s.get("type", "series")
-        if ctype == "movie":
-            name_key = f"M::{name}::{s.get('_source_channel', '')}"
-        else:
-            name_key = f"S::{name}"
-
-        if not name or name_key in seen_series:
-            continue
-        seen_series.add(name_key)
-
-        clean_seasons = {}
-        seasons = s.get("seasons", {})
-        if isinstance(seasons, dict):
-            for season_key, episodes in seasons.items():
-                if not isinstance(episodes, list):
-                    continue
-                seen_keys = set()
-                clean_eps = []
-                for ep in episodes:
-                    if not isinstance(ep, dict):
-                        continue
-                    ch = str(ep.get("source_channel", "")).strip()
-                    mid = str(ep.get("message_id", "")).strip()
-                    key = f"{ch}|{mid}" if ch else mid
-                    if key and key in seen_keys:
-                        continue
-                    if key:
-                        seen_keys.add(key)
-                    clean_eps.append(ep)
-                if clean_eps:
-                    clean_seasons[season_key] = clean_eps
-
-        s["seasons"] = clean_seasons
-        clean_series.append(s)
-
-    data["series"] = clean_series
-    return data
-
-
 def load_existing_data() -> dict:
     if DATA_FILE.exists():
         try:
-            raw = DATA_FILE.read_text(encoding="utf-8")
-            data = json.loads(raw)
+            data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict) and "series" in data:
-                return clean_duplicates(data)
+                return data
         except Exception as e:
             log.warning(f"data.json تالف: {e}")
     return {"channels": [], "series": []}
 
 
 def save_data(data: dict):
-    clean_data = clean_duplicates(data)
-    try:
-        content = json.dumps(clean_data, ensure_ascii=False, indent=2)
-        json.loads(content)
-        DATA_FILE.write_text(content, encoding="utf-8")
-        size_kb = DATA_FILE.stat().st_size / 1024
-        log.info(f"حفظ {DATA_FILE.name} ({size_kb:.1f} KB)")
-    except Exception as e:
-        log.error(f"فشل حفظ: {e}")
+    DATA_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
-def find_or_create_series(data: dict, name: str, content_type: str, channel: str) -> dict:
-    for s in data["series"]:
-        s_name = s.get("name", "")
-        s_type = s.get("type", "")
-        s_channel = s.get("_source_channel", "")
-        if s_name == name and s_type == content_type:
-            if content_type == "movie":
-                if s_channel == channel:
-                    return s
-            else:
-                return s
-
-    new_series = {
+def find_or_create_series(data, name):
+    """يجد أو ينشئ عملًا في data.json"""
+    for s in data.get("series", []):
+        if s.get("name") == name:
+            return s
+    new_s = {
         "name": name,
-        "type": content_type,
+        "type": "",
+        "origin": "",
         "poster_url": "",
+        "poster_backdrop": "",
+        "tmdb_rating": 0,
+        "tmdb_year": "",
+        "tmdb_overview": "",
         "description": "",
         "seasons": {},
-        "_source_channel": channel,
     }
-    data["series"].append(new_series)
-    return new_series
+    data.setdefault("series", []).append(new_s)
+    return new_s
 
 
-def add_episode(series: dict, season: int, episode: dict) -> bool:
-    season_key = str(season)
-    if season_key not in series["seasons"]:
-        series["seasons"][season_key] = []
-    existing = series["seasons"][season_key]
-    msg_id = episode.get("message_id")
+def add_episode(series, season_num, episode_num, ep_data):
+    """يضيف حلقة داخل المواسم"""
+    seasons = series.setdefault("seasons", {})
+    skey = str(season_num)
+    seasons.setdefault(skey, [])
 
-    for ep in existing:
-        if ep.get("message_id") == msg_id:
-            ep.update(episode)
-            return False
-
-    existing.append(episode)
-    existing.sort(key=lambda e: int(e.get("episode") or 0))
-    return True
+    # إزالة التكرار
+    for existing in seasons[skey]:
+        if (
+            existing.get("message_id") == ep_data.get("message_id")
+            and existing.get("source_channel") == ep_data.get("source_channel")
+        ):
+            return
+    seasons[skey].append(ep_data)
 
 
 # ═══════════════════════════════════════════════════════════════
-# استخراج معلومات الملف
+# معالجة رسالة واحدة
 # ═══════════════════════════════════════════════════════════════
-def extract_media_info(msg) -> Optional[dict]:
-    media = None
-    media_type = None
+def process_message(message, source_channel):
+    if not message:
+        return None
+    caption = message.caption or message.text or ""
+    parsed = parse_caption(caption)
+    if not parsed:
+        return None
 
-    if msg.video:
-        media, media_type = msg.video, "video"
-    elif msg.document:
-        media, media_type = msg.document, "document"
-    elif msg.animation:
-        media, media_type = msg.animation, "animation"
-
+    media = message.video or message.document or message.audio
     if not media:
         return None
 
-    size_bytes = getattr(media, "file_size", 0) or 0
-    if size_bytes / (1024 * 1024) > MAX_FILE_MB:
+    file_size = getattr(media, "file_size", 0) or 0
+    if file_size and file_size > MAX_FILE_MB * 1024 * 1024:
+        log.info(f"تخطي ملف كبير: {file_size / 1024 / 1024:.1f}MB")
         return None
 
-    return {
-        "file_id": getattr(media, "file_id", ""),
-        "file_unique_id": getattr(media, "file_unique_id", ""),
-        "file_size": size_bytes,
-        "file_name": getattr(media, "file_name", "") or "",
-        "mime_type": getattr(media, "mime_type", "") or "video/mp4",
-        "duration": getattr(media, "duration", 0) or 0,
-        "width": getattr(media, "width", 0) or 0,
-        "height": getattr(media, "height", 0) or 0,
-        "media_type": media_type,
-    }
+    duration = getattr(media, "duration", 0) or 0
+    file_id = getattr(media, "file_id", "") or ""
+    file_unique_id = getattr(media, "file_unique_id", "") or ""
 
+    thumb_url = ""
+    if getattr(media, "thumbs", None):
+        try:
+            thumb_url = media.thumbs[0].file_id or ""
+        except Exception:
+            pass
 
-# ═══════════════════════════════════════════════════════════════
-# معالجة رسالة
-# ═══════════════════════════════════════════════════════════════
-async def process_message(client, msg, data, progress, channel) -> bool:
-    if not msg or not msg.caption:
-        return False
+    tg_url = ""
+    try:
+        if hasattr(message, "link") and message.link:
+            tg_url = message.link
+    except Exception:
+        pass
+    if not tg_url:
+        ch = source_channel.lstrip("@")
+        tg_url = f"https://t.me/{ch}/{message.id}"
 
-    parsed = parse_caption(msg.caption)
-    if not parsed:
-        return False
+    date_str = ""
+    if getattr(message, "date", None):
+        try:
+            date_str = message.date.isoformat()
+        except Exception:
+            pass
 
-    media_info = extract_media_info(msg)
-    if not media_info:
-        return False
-
-    if media_info["file_size"] < 1024 * 1024:
-        return False
-
-    if channel.startswith("-100"):
-        tg_url = f"https://t.me/c/{channel.replace('-100', '')}/{msg.id}"
-    elif channel.startswith("-"):
-        tg_url = f"https://t.me/c/{channel.replace('-', '')}/{msg.id}"
-    else:
-        tg_url = f"https://t.me/{channel}/{msg.id}"
-
-    episode_num = parsed["episode"] if parsed["episode"] is not None else 1
-
-    episode = {
-        "message_id": str(msg.id),
-        "episode": episode_num,
-        "season": parsed["season"],
-        "duration": media_info["duration"],
+    ep_data = {
+        "message_id": message.id,
+        "source_channel": source_channel,
+        "file_id": file_id,
+        "file_unique_id": file_unique_id,
+        "file_size": file_size,
+        "duration": duration,
+        "thumb_url": thumb_url,
         "telegram_url": tg_url,
-        "video_url": "",
-        "file_id": media_info["file_id"],
-        "file_unique_id": media_info["file_unique_id"],
-        "file_size": media_info["file_size"],
-        "mime_type": media_info["mime_type"],
-        "file_name": media_info["file_name"],
-        "thumb_url": "",
-        "date": msg.date.isoformat() if msg.date else "",
-        "source_channel": channel,
+        "date": date_str,
     }
 
-    series = find_or_create_series(
-        data, parsed["name"], parsed["content_type"], channel
-    )
-    added = add_episode(series, parsed["season"], episode)
-
-    if added:
-        icon = "🎬" if parsed["content_type"] == "movie" else "📺"
-        ep_info = f"جزء {parsed.get('part')}" if parsed.get("part") else (
-            f"S{parsed['season']:02d}E{episode_num:02d}"
-            if parsed["content_type"] == "series"
-            else "فيلم"
-        )
-        log.info(
-            f"{icon} [{parsed['name']}] {ep_info} "
-            f"({media_info['file_size'] / 1024 / 1024:.1f}MB) [{channel}]"
-        )
-    return added
+    return {
+        "name": parsed["name"],
+        "season": parsed["season"],
+        "episode": parsed["episode"],
+        "content_type": parsed["content_type"],
+        "ep_data": ep_data,
+    }
 
 
-async def fetch_channel(client, channel, data, progress):
-    log.info(f"جلب من @{channel}")
-    count = added = skipped = errors = 0
+# ═══════════════════════════════════════════════════════════════
+# جلب قناة واحدة
+# ═══════════════════════════════════════════════════════════════
+async def fetch_channel(client, channel, source_label, data, progress, limit):
+    log.info(f"جلب من {source_label} ({channel}) ...")
+    count = 0
+    last_id = progress.get(f"last_id_{source_label}", 0)
 
     try:
-        async for msg in client.get_chat_history(channel, limit=HISTORY_LIMIT):
-            count += 1
-            await asyncio.sleep(BASE_DELAY / 4)
-
+        async for message in client.get_chat_history(channel, limit=limit):
+            if message.id <= last_id:
+                break
             try:
-                if await process_message(client, msg, data, progress, channel):
-                    added += 1
-                else:
-                    skipped += 1
+                result = process_message(message, channel)
+                if result:
+                    series = find_or_create_series(data, result["name"])
+                    add_episode(
+                        series,
+                        result["season"],
+                        result["episode"],
+                        result["ep_data"],
+                    )
+                    count += 1
+                    if count % 50 == 0:
+                        log.info(f"  معالجة {count} حلقة...")
+                progress[f"last_id_{source_label}"] = message.id
             except FloodWait as e:
-                wait = min(e.value + SAFETY_BUFFER, MAX_DELAY)
-                log.warning(f"FloodWait: {e.value}s")
+                wait = e.value + 5
+                log.warning(f"FloodWait: ننتظر {wait}s ...")
                 await asyncio.sleep(wait)
             except Exception as e:
-                errors += 1
-                log.error(f"[{channel}] {msg.id}: {e}")
-
-            if count % 100 == 0:
-                log.info(f"[{channel}] {count} رسالة | {added} مضافة")
-                save_data(data)
-
-    except FloodWait as e:
-        await asyncio.sleep(min(e.value + SAFETY_BUFFER, MAX_DELAY))
+                log.error(f"خطأ في معالجة رسالة: {e}")
+                continue
     except Exception as e:
-        log.error(f"خطأ في {channel}: {e}")
+        log.error(f"فشل جلب {source_label}: {e}")
 
-    log.info(f"[{channel}] اكتمل: {count} | {added} مضافة | {skipped} متجاهلة")
-
-
-def create_client() -> Client:
-    session = STRING_SESSION or STRING_SESSION2
-    if not session:
-        raise ValueError("يجب ضبط STRING_SESSION")
-    if not API_ID or not API_HASH:
-        raise ValueError("يجب ضبط API_ID و API_HASH")
-
-    return Client(
-        name="fetch_session",
-        api_id=int(API_ID),
-        api_hash=API_HASH,
-        session_string=session,
-        in_memory=True,
-        workers=4,
-    )
+    log.info(f"تم جلب {count} حلقة من {source_label}")
+    return count
 
 
+# ═══════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════
 async def main():
-    log.info("بدء جلب البيانات")
-
-    channels = []
-    if CHANNEL_CLEAN:
-        channels.append(CHANNEL_CLEAN)
-    if CHANNEL2_CLEAN:
-        channels.append(CHANNEL2_CLEAN)
-
-    if not channels:
-        raise ValueError("يجب ضبط CHANNEL على الأقل")
-
-    log.info(f"القنوات: {', '.join('@' + c for c in channels)}")
+    if not API_ID or not API_HASH:
+        log.error("API_ID / API_HASH غير محددين")
+        raise SystemExit(1)
 
     data = load_existing_data()
-    data["channels"] = channels
     progress = load_progress()
 
-    total_before = sum(
-        len(eps) for s in data["series"] for eps in s.get("seasons", {}).values()
-    )
-    log.info(f"محمّل: {len(data['series'])} عمل | {total_before} حلقة")
+    log.info(f"بيانات موجودة: {len(data.get('series', []))} عمل")
 
-    client = create_client()
-    try:
-        async with client:
-            me = await client.get_me()
-            log.info(f"متصل كـ @{me.username or me.id}")
-            for ch in channels:
-                try:
-                    await fetch_channel(client, ch, data, progress)
-                except Exception as e:
-                    log.error(f"فشل {ch}: {e}")
-                    continue
-    except Exception as e:
-        err = str(e)
-        if "AUTH_KEY_DUPLICATED" in err or "406" in err:
-            log.error("AUTH_KEY_DUPLICATED")
-            raise SystemExit(1)
-        raise
+    clients = []
 
+    # العميل الأول
+    if STRING_SESSION and CHANNEL_CLEAN:
+        try:
+            c1 = Client(
+                "fetcher1",
+                api_id=int(API_ID),
+                api_hash=API_HASH,
+                session_string=STRING_SESSION,
+            )
+            await c1.start()
+            clients.append((c1, CHANNEL_CLEAN, "ch1"))
+        except Exception as e:
+            log.error(f"فشل بدء client1: {e}")
+
+    # العميل الثاني
+    if STRING_SESSION2 and CHANNEL2_CLEAN:
+        try:
+            c2 = Client(
+                "fetcher2",
+                api_id=int(API_ID),
+                api_hash=API_HASH,
+                session_string=STRING_SESSION2,
+            )
+            await c2.start()
+            clients.append((c2, CHANNEL2_CLEAN, "ch2"))
+        except Exception as e:
+            log.error(f"فشل بدء client2: {e}")
+
+    if not clients:
+        log.error("لا يوجد عملاء صالحون")
+        raise SystemExit(1)
+
+    total = 0
+    for client, channel, label in clients:
+        try:
+            n = await fetch_channel(client, channel, label, data, progress, HISTORY_LIMIT)
+            total += n
+        finally:
+            try:
+                await client.stop()
+            except Exception:
+                pass
+
+    # ★★★ التصنيف النهائي يُترك لـ clean_data.py ★★★
     save_data(data)
     save_progress(progress)
 
-    from collections import Counter
-    types = Counter(s.get("type", "?") for s in data["series"])
-    log.info(f"\nاكتمل الجلب:")
-    log.info(f"   أعمال: {len(data['series'])}")
-    for t, c in types.items():
-        log.info(f"   {t}: {c}")
+    log.info(f"✅ إجمالي الحلقات المضافة: {total}")
+    log.info(f"حفظ {DATA_FILE.name} و {PROGRESS_FILE.name}")
 
 
 if __name__ == "__main__":
