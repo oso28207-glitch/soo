@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""build_all.py — مُولّد الموقع (تصنيف موحّد + إصلاح مسارات الحلقات + كتابة ذرّية)"""
+"""build_all.py — مُولّد الموقع (تصنيف موحّد + مسارات حلقات صحيحة + كتابة ذرّية)"""
 
 import re
 import os
@@ -99,15 +99,15 @@ def clean_tg_url(url):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ اسم ملف الحلقة — لا يستخدم file_id أو file_unique_id أبدًا ★★★
+# ★★★ اسم ملف الحلقة — لا يستخدم file_id أو thumb_url أبدًا ★★★
 # ═══════════════════════════════════════════════════════════════
 def watch_filename(ep, fallback_index=0):
     """
     يولّد اسم ملف آمن وقصير.
     - إذا وُجد source_channel و message_id: {channel}_{message_id}.html
     - إذا وُجد message_id فقط: {message_id}.html
-    - إذا لم يوجد message_id: {fallback_index}.html
-    لا يستخدم file_id أو file_unique_id إطلاقًا.
+    - إذا لم يوجد message_id: ep_{fallback_index}.html
+    لا يستخدم file_id أو file_unique_id أو thumb_url إطلاقًا.
     """
     mid = str(ep.get("message_id") or "").strip()
     ch = str(ep.get("source_channel") or "").strip()
@@ -119,12 +119,11 @@ def watch_filename(ep, fallback_index=0):
     if mid:
         return f"{mid}.html"
 
-    # احتياطي: فهرس الحلقة داخل المصفوفة
     return f"ep_{fallback_index}.html"
 
 
 # ═══════════════════════════════════════════════════════════════
-# قراءة آمنة لـ data.json مع محاولة التعافي من النسخ الاحتياطية
+# قراءة آمنة لـ data.json مع التعافي من النسخ الاحتياطية
 # ═══════════════════════════════════════════════════════════════
 def read_data_safe():
     if not DATA_FILE.exists():
@@ -253,7 +252,7 @@ def load_data():
 
 
 # ═══════════════════════════════════════════════════════════════
-# قالب HTML
+# قالب HTML الأساسي
 # ═══════════════════════════════════════════════════════════════
 def base(title, body, depth=0, head="", scripts=""):
     prefix = "../" * depth if depth else ""
@@ -429,7 +428,8 @@ document.querySelectorAll('.sub-tab').forEach(tab=>{tab.onclick=()=>{
 
 def _render_episode_card(ep, index=0):
     """
-    ★★★ الإصلاح: الرابط يجب أن يكون ../watch/ لأن هذه الصفحة داخل مجلد series/ ★★★
+    الرابط يجب أن يكون ../watch/ لأن هذه الصفحة داخل مجلد series/
+    ★★★ يستخدم watch_filename فقط — لا file_id ولا thumb_url ★★★
     """
     dur = fmt_dur(ep.get("duration", 0))
     dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
@@ -557,7 +557,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep, fallback_index=0):
             f'<button class="unmute-btn" id="unmuteBtn">🔊 تشغيل الصوت</button>'
             f'</div>'
         )
-        # ★★★ إزالة preload غير المدعوم ★★★
+        # ★★★ لا يوجد preload — تمت إزالته لأنه غير مدعوم ★★★
         head = ""
     else:
         player = (
@@ -568,7 +568,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep, fallback_index=0):
         )
         head = ""
 
-    # داخل مجلد watch/ — الروابط النسبية للملفات المجاورة صحيحة
     prev_btn = (
         f'<a href="{esc(watch_filename(prev_ep, fallback_index-1))}" class="nav-btn">السابقة</a>'
         if prev_ep else '<span class="nav-btn disabled">السابقة</span>'

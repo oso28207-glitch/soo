@@ -14,9 +14,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from classify import detect_origin, detect_type
 
-# ═══════════════════════════════════════════════════════════════
-# الإعدادات
-# ═══════════════════════════════════════════════════════════════
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "data.json"
 CACHE_FILE = ROOT / ".poster_cache.json"
@@ -25,19 +22,6 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 MAX_WORKERS = 8
 TIMEOUT = 10
-
-
-def safe_int(v, d=0):
-    try:
-        if v is None:
-            return d
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                return d
-        return int(v)
-    except (ValueError, TypeError):
-        return d
 
 
 def load_cache():
@@ -56,9 +40,6 @@ def save_cache(cache):
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# تنظيف اسم البحث
-# ═══════════════════════════════════════════════════════════════
 def clean_for_search(name):
     name = re.sub(r"\s+", " ", name).strip()
     name = re.sub(r"^(?:مسلسل|مشاهدة|فيلم|فيلمو)\s+", "", name)
@@ -105,9 +86,6 @@ def score_tmdb_result(result, query):
     return 0
 
 
-# ═══════════════════════════════════════════════════════════════
-# TMDB
-# ═══════════════════════════════════════════════════════════════
 def tmdb_search(session, name, content_type="", year=""):
     if not TMDB_API_KEY:
         return ""
@@ -129,7 +107,6 @@ def tmdb_search(session, name, content_type="", year=""):
 
     best_poster = ""
     best_score = 0
-
     for query in queries:
         for endpoint in endpoints:
             try:
@@ -156,15 +133,11 @@ def tmdb_search(session, name, content_type="", year=""):
                             return best_poster
             except Exception:
                 continue
-
     if best_score >= 40:
         return best_poster
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# TVMaze
-# ═══════════════════════════════════════════════════════════════
 def tvmaze_search(session, name):
     clean = clean_for_search(name)
     if not clean:
@@ -192,9 +165,6 @@ def tvmaze_search(session, name):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# ElCinema
-# ═══════════════════════════════════════════════════════════════
 ELCINEMA_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -230,9 +200,6 @@ def elcinema_search(session, name):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# Bing Images
-# ═══════════════════════════════════════════════════════════════
 BING_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -252,7 +219,6 @@ def bing_images(session, name, content_type=""):
         type_hint = "فيلم"
     elif content_type == "series":
         type_hint = "مسلسل"
-
     queries = [
         f"{clean} {type_hint} بوستر".strip(),
         f"{clean} بوستر",
@@ -281,9 +247,6 @@ def bing_images(session, name, content_type=""):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-# Placeholder SVG
-# ═══════════════════════════════════════════════════════════════
 def make_placeholder_svg(name, content_type=""):
     first = name.strip()[:1] if name.strip() else "?"
     h = hash(name) % 360
@@ -301,15 +264,11 @@ def make_placeholder_svg(name, content_type=""):
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
 
 
-# ═══════════════════════════════════════════════════════════════
-# إثراء عمل واحد
-# ═══════════════════════════════════════════════════════════════
 def enrich_one(series, cache, session):
     name = series.get("name", "").strip()
     if not name:
         return series
 
-    # جمع الحلقات
     episodes = []
     seasons = series.get("seasons", {})
     if isinstance(seasons, dict):
@@ -317,7 +276,6 @@ def enrich_one(series, cache, session):
             if isinstance(eps, list):
                 episodes.extend(eps)
 
-    # ★★★ التصنيف الموحّد ★★★
     ctype = detect_type(name, len(episodes))
     origin = detect_origin(name)
 
@@ -335,7 +293,6 @@ def enrich_one(series, cache, session):
         series["poster_url"] = cached
         return series
 
-    # 1. TMDB
     poster = tmdb_search(session, name, ctype, series.get("tmdb_year", ""))
     if poster:
         print(f"  TMDB: {name} [{ctype}/{origin}]")
@@ -343,7 +300,6 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # 2. TVMaze (للمسلسلات)
     if ctype == "series":
         poster = tvmaze_search(session, name)
         if poster:
@@ -352,7 +308,6 @@ def enrich_one(series, cache, session):
             cache["posters"][cache_key] = poster
             return series
 
-    # 3. ElCinema
     poster = elcinema_search(session, name)
     if poster:
         print(f"  ElCinema: {name}")
@@ -360,7 +315,6 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # 4. Bing
     poster = bing_images(session, name, ctype)
     if poster:
         print(f"  Bing: {name}")
@@ -368,7 +322,6 @@ def enrich_one(series, cache, session):
         cache["posters"][cache_key] = poster
         return series
 
-    # 5. Placeholder
     print(f"  Placeholder: {name}")
     poster = make_placeholder_svg(name, ctype)
     series["poster_url"] = poster
@@ -376,11 +329,7 @@ def enrich_one(series, cache, session):
     return series
 
 
-# ═══════════════════════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════════════════════
 def main():
-    # ★★★ تنظيف تلقائي قبل الإثراء ★★★
     try:
         import clean_data
         clean_data.run(verbose=True)

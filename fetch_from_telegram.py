@@ -15,9 +15,6 @@ from pyrogram.errors import FloodWait
 
 from classify import detect_type
 
-# ═══════════════════════════════════════════════════════════════
-# الإعدادات
-# ═══════════════════════════════════════════════════════════════
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "data.json"
 PROGRESS_FILE = ROOT / "forward_progress.json"
@@ -32,8 +29,6 @@ STRING_SESSION = os.getenv("STRING_SESSION", "")
 STRING_SESSION2 = os.getenv("STRING_SESSION2", "")
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "5000"))
 MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "2000"))
-BASE_DELAY = 4.0
-MAX_DELAY = 30.0
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,10 +37,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("fetch")
 
-
-# ═══════════════════════════════════════════════════════════════
-# خريطة تصحيح الأسماء
-# ═══════════════════════════════════════════════════════════════
 NAME_CORRECTIONS = {
     "النص التاني": ("النص", 2),
     "النص الثاني": ("النص", 2),
@@ -66,9 +57,6 @@ def apply_name_correction(name: str, season: int):
     return name, season
 
 
-# ═══════════════════════════════════════════════════════════════
-# تنظيف النص
-# ═══════════════════════════════════════════════════════════════
 SYMBOL_CHARS = r'[_\-–—\[\]\(\)\{\}〖〗<>«»""\'\`\~\!\?\.,:;\/\\\|\+\=\^\&\*\%\$#@♦◆●▪▫◦•★☆✦✧✪✩✫✬✭✮✯]'
 DECORATIVE_PATTERNS = [
     re.compile(r"[\U0001F300-\U0001F9FF]+"),
@@ -88,9 +76,6 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
-# ═══════════════════════════════════════════════════════════════
-# أنماط الاستخراج
-# ═══════════════════════════════════════════════════════════════
 EPISODE_PATTERNS = [
     re.compile(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*(\d+)", re.I),
     re.compile(r"\b(?:Episode|EP)\s*(\d{1,4})\b", re.I),
@@ -105,22 +90,11 @@ PART_PATTERNS = [
     re.compile(r"(?:الجزء|جزء)\s*(\d+)", re.I),
     re.compile(r"\bPart\s*(\d+)\b", re.I),
 ]
-MOVIE_PREFIXES = [
-    re.compile(r"^(?:فيلم|فيلمو|movie|film)\s+", re.I),
-]
-SERIES_PREFIXES = [
-    re.compile(r"^(?:مسلسل|series)\s+", re.I),
-]
+MOVIE_PREFIXES = [re.compile(r"^(?:فيلم|فيلمو|movie|film)\s+", re.I)]
+SERIES_PREFIXES = [re.compile(r"^(?:مسلسل|series)\s+", re.I)]
 
 
-# ═══════════════════════════════════════════════════════════════
-# تحليل الـ Caption
-# ═══════════════════════════════════════════════════════════════
 def parse_caption(caption: str) -> Optional[dict]:
-    """
-    يستخرج: name, season, episode, content_type, part
-    النوع النهائي يُحدَّد لاحقًا في clean_data.py
-    """
     if not caption:
         return None
     lines = caption.strip().split("\n")
@@ -131,7 +105,6 @@ def parse_caption(caption: str) -> Optional[dict]:
     if not text:
         return None
 
-    # استخراج الحلقة
     episode = None
     for pat in EPISODE_PATTERNS:
         m = pat.search(text)
@@ -142,7 +115,6 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # استخراج الموسم
     season = 1
     for pat in SEASON_PATTERNS:
         m = pat.search(text)
@@ -153,7 +125,6 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # استخراج الجزء
     part = None
     for pat in PART_PATTERNS:
         m = pat.search(text)
@@ -164,7 +135,6 @@ def parse_caption(caption: str) -> Optional[dict]:
             except (ValueError, IndexError, TypeError):
                 pass
 
-    # فحص البادئات
     is_movie_prefix = False
     for pat in MOVIE_PREFIXES:
         if pat.match(text):
@@ -179,8 +149,6 @@ def parse_caption(caption: str) -> Optional[dict]:
             text = pat.sub("", text).strip()
             break
 
-    # ★★★ التصنيف المبدئي (يُعاد في clean_data.py) ★★★
-    # نستخدم عدد الحلقات التقديري = 1 إذا كان هناك رقم حلقة
     episode_count = 1 if episode is not None else 1
     content_type = detect_type(text, episode_count)
     if is_movie_prefix:
@@ -188,7 +156,6 @@ def parse_caption(caption: str) -> Optional[dict]:
     elif is_series_prefix:
         content_type = "series"
 
-    # استخراج الاسم
     name = text
     name = re.sub(r"(?:الحلقة|حلقة|الحلقه|حلقه)\s*\d+", "", name, flags=re.I)
     name = re.sub(r"(?:الموسم|موسم)\s*\d+", "", name, flags=re.I)
@@ -204,7 +171,6 @@ def parse_caption(caption: str) -> Optional[dict]:
 
     name, season = apply_name_correction(name, season)
 
-    # للأفلام: season=1, episode=None
     if content_type == "movie":
         season = 1
         episode = None
@@ -218,9 +184,6 @@ def parse_caption(caption: str) -> Optional[dict]:
     }
 
 
-# ═══════════════════════════════════════════════════════════════
-# التخزين
-# ═══════════════════════════════════════════════════════════════
 def load_progress() -> dict:
     if PROGRESS_FILE.exists():
         try:
@@ -256,7 +219,6 @@ def save_data(data: dict):
 
 
 def find_or_create_series(data, name):
-    """يجد أو ينشئ عملًا في data.json"""
     for s in data.get("series", []):
         if s.get("name") == name:
             return s
@@ -277,12 +239,10 @@ def find_or_create_series(data, name):
 
 
 def add_episode(series, season_num, episode_num, ep_data):
-    """يضيف حلقة داخل المواسم"""
     seasons = series.setdefault("seasons", {})
     skey = str(season_num)
     seasons.setdefault(skey, [])
 
-    # إزالة التكرار
     for existing in seasons[skey]:
         if (
             existing.get("message_id") == ep_data.get("message_id")
@@ -292,9 +252,6 @@ def add_episode(series, season_num, episode_num, ep_data):
     seasons[skey].append(ep_data)
 
 
-# ═══════════════════════════════════════════════════════════════
-# معالجة رسالة واحدة
-# ═══════════════════════════════════════════════════════════════
 def process_message(message, source_channel):
     if not message:
         return None
@@ -361,9 +318,6 @@ def process_message(message, source_channel):
     }
 
 
-# ═══════════════════════════════════════════════════════════════
-# جلب قناة واحدة
-# ═══════════════════════════════════════════════════════════════
 async def fetch_channel(client, channel, source_label, data, progress, limit):
     log.info(f"جلب من {source_label} ({channel}) ...")
     count = 0
@@ -401,9 +355,6 @@ async def fetch_channel(client, channel, source_label, data, progress, limit):
     return count
 
 
-# ═══════════════════════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════════════════════
 async def main():
     if not API_ID or not API_HASH:
         log.error("API_ID / API_HASH غير محددين")
@@ -416,7 +367,6 @@ async def main():
 
     clients = []
 
-    # العميل الأول
     if STRING_SESSION and CHANNEL_CLEAN:
         try:
             c1 = Client(
@@ -430,7 +380,6 @@ async def main():
         except Exception as e:
             log.error(f"فشل بدء client1: {e}")
 
-    # العميل الثاني
     if STRING_SESSION2 and CHANNEL2_CLEAN:
         try:
             c2 = Client(
@@ -459,7 +408,6 @@ async def main():
             except Exception:
                 pass
 
-    # ★★★ التصنيف النهائي يُترك لـ clean_data.py ★★★
     save_data(data)
     save_progress(progress)
 
