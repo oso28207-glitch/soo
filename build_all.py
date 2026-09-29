@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 build_all.py — مُولّد الموقع السريع
-تصنيف صحيح + حماية ضد None
+تصنيف صحيح + حماية ضد None + إعادة تصنيف الأعمال
 """
 
 import re
@@ -35,7 +35,6 @@ def safe_name(s):
 
 
 def safe_int(v, default=0):
-    """تحويل آمن للأعداد يتعامل مع None والقيم الفارغة"""
     try:
         if v is None:
             return default
@@ -97,7 +96,7 @@ def watch_filename(ep):
 
 
 # ═══════════════════════════════════════════════════════════════
-# تحميل البيانات — ★★★ إعادة تصنيف الأعمال ★★★
+# ★★★ تحميل البيانات مع إعادة تصنيف ★★★
 # ═══════════════════════════════════════════════════════════════
 def load_data():
     if not DATA_FILE.exists():
@@ -122,7 +121,7 @@ def load_data():
         if not name:
             continue
 
-        # ─── جمع الحلقات ───
+        # جمع الحلقات
         all_eps = []
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
@@ -137,7 +136,7 @@ def load_data():
                         e["episode"] = safe_int(e.get("episode"), 0)
                         all_eps.append(e)
 
-        # ─── إزالة التكرار ───
+        # إزالة التكرار
         seen_keys = set()
         unique_eps = []
         for ep in all_eps:
@@ -150,7 +149,7 @@ def load_data():
                 seen_keys.add(key)
             unique_eps.append(ep)
 
-        # ★★★ ترتيب آمن ضد None ★★★
+        # ترتيب آمن
         unique_eps.sort(key=lambda e: (
             safe_int(e.get("season"), 1),
             safe_int(e.get("episode"), 0)
@@ -624,6 +623,8 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
 
     return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
 
+
+# [CSS و WATCH_JS من النسخة السابقة — نفسها]
 
 CSS = '''
 :root{--bg:#0a0a0e;--surface:#14141c;--surface-2:#1c1c28;--border:#26263a;--text:#f0f0f5;--text-dim:#8a8aa0;--primary:#e50914;--accent:#4ea8de;--gold:#ffc107;--radius:14px;--radius-sm:10px;--shadow:0 8px 32px rgba(0,0,0,.45)}

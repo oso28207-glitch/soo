@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-★ الحل النهائي: offset متوافق مع CHUNK_SIZE بالكامل ★
+مع CORS كامل ومعالجة أخطاء شاملة
 """
 
 import os
@@ -31,10 +31,9 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
-# ★★★ القاعدة الذهبية: CHUNK_SIZE يجب أن يكون من مضاعفات 4096 ★★★
-# ونصفّر offset إلى CHUNK_SIZE (لا 4096!) لتفادي LIMIT_INVALID
-CHUNK_SIZE = 1024 * 1024        # 1 MB
-assert CHUNK_SIZE % 4096 == 0, "CHUNK_SIZE must be multiple of 4096"
+# ★★★ قواعد Telegram: offset يجب أن يكون مضاعف 4096، limit ≤ 1MB ★★★
+BLOCK_SIZE = 4096
+CHUNK_SIZE = 1024 * 1024  # 1 MB (مضاعف 4096)
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -57,7 +56,6 @@ async def lifespan(app: FastAPI):
     print(f"✅ MTProto client started as @{me.username or me.id}")
     if CHANNEL_ID:
         print(f"📺 Channel for refresh: {CHANNEL_ID}")
-    print(f"📦 CHUNK_SIZE = {CHUNK_SIZE / 1024:.0f} KB")
     yield
     print("👋 Stopping MTProto client...")
     await client.stop()
@@ -66,6 +64,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
+# ★★★ CORS كامل ★★★
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,6 +78,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
+    """يضمن إضافة CORS headers لكل الردود بما فيها الأخطاء"""
     try:
         response = await call_next(request)
     except Exception as e:
@@ -119,12 +119,14 @@ def _extract_file_id(msg) -> str:
 
 
 async def refresh_file_id(message_id: int) -> str:
+    """يجلب file_id جديد من Telegram عند انتهاء صلاحية المرجع"""
     if not CHANNEL_ID or not message_id:
         print("⚠️ Cannot refresh: CHANNEL or message_id missing")
         return ""
 
     try:
         print(f"🔄 Refreshing file_id for message {message_id}...")
+
         try:
             msg = await client.get_messages(CHANNEL_ID, message_ids=message_id)
             if msg and msg.media:
@@ -154,7 +156,9 @@ async def refresh_file_id(message_id: int) -> str:
 
 
 def build_location(file_id):
+    """يبني كائن Location المناسب حسب نوع الملف"""
     ft_str = str(file_id.file_type).lower()
+
     DOC_TYPES = {
         "video", "document", "audio", "animation", "gif",
         "voice", "sticker", "secure",
@@ -185,6 +189,14 @@ def build_location(file_id):
         )
 
 
+def align_down(x, alignment):
+    return (x // alignment) * alignment
+
+
+def align_up(x, alignment):
+    return ((x + alignment - 1) // alignment) * alignment
+
+
 # ═══════════════════════════════════════════════════════════════
 # Endpoint البث
 # ═══════════════════════════════════════════════════════════════
@@ -206,7 +218,7 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
 
-    # ─── تحليل Range ───
+    # تحليل Range
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
 
@@ -225,15 +237,13 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
 
     location = build_location(file_id)
 
-    # ═══════════════════════════════════════════════════════════
-    # ★ مولّد البث — الحل النهائي ★
-    # ═══════════════════════════════════════════════════════════
+    # ★★★ مولّد البث — تصفير إجباري للإزاحة ★★★
     async def generate():
         nonlocal file_id, location
 
-        # ★★ تصفير الإزاحة إلى CHUNK_SIZE (وليس 4096) ★★
-        aligned_start = (start // CHUNK_SIZE) * CHUNK_SIZE
-        skip = start - aligned_start  # بايتات يجب تخطّيها في الكتلة الأولى
+        # تصفير الإزاحة إلى CHUNK_SIZE (مضاعف 4096)
+        aligned_start = align_down(start, CHUNK_SIZE)
+        skip = start - aligned_start
 
         read_offset = aligned_start
         remaining = length
@@ -250,7 +260,7 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                     GetFile(
                         location=location,
                         offset=read_offset,
-                        limit=CHUNK_SIZE,  # ★ دائماً CHUNK_SIZE كامل ★
+                        limit=CHUNK_SIZE,
                     )
                 )
             except FileReferenceExpired:
@@ -270,10 +280,8 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 except Exception as e:
                     print(f"❌ Failed to decode refreshed file_id: {e}")
                     break
-
             except Exception as e:
-                print(f"⚠️ Chunk error at offset {read_offset} "
-                      f"(size={CHUNK_SIZE}): {e}")
+                print(f"⚠️ Chunk error at offset {read_offset} (size={CHUNK_SIZE}): {e}")
                 traceback.print_exc()
                 break
 
@@ -282,13 +290,13 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 print(f"⚠️ Empty response at offset {read_offset}")
                 break
 
-            # ★ تخطّي البايتات الإضافية في الكتلة الأولى ★
+            # تخطّي البايتات الإضافية في الكتلة الأولى
             if first_read:
                 if skip > 0:
                     data = data[skip:]
                 first_read = False
 
-            # ★ قصّ البيانات إذا تجاوزت المتبقي ★
+            # قصّ البيانات إذا تجاوزت المتبقي
             if len(data) > remaining:
                 data = data[:remaining]
 
@@ -305,7 +313,6 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
         else:
             print(f"✅ Stream complete: {total_sent / 1024 / 1024:.2f}MB sent")
 
-    # ─── الترويسات ───
     headers = {
         "Content-Type": "video/mp4",
         "Accept-Ranges": "bytes",
