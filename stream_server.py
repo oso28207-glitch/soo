@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-مع CORS كامل ومعالجة أخطاء شاملة
+نسخة نهائية مع CORS شامل ومعالجة أخطاء كاملة
 """
 
 import os
@@ -31,7 +31,6 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
-# قواعد Telegram: offset يجب أن يكون مضاعف 4096، limit ≤ 1MB
 BLOCK_SIZE = 4096
 CHUNK_SIZE = 1024 * 1024
 
@@ -56,6 +55,8 @@ async def lifespan(app: FastAPI):
     print(f"✅ MTProto client started as @{me.username or me.id}")
     if CHANNEL_ID:
         print(f"📺 Channel for refresh: {CHANNEL_ID}")
+    else:
+        print("⚠️ CHANNEL not set — refresh disabled")
     yield
     print("👋 Stopping MTProto client...")
     await client.stop()
@@ -64,7 +65,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telegram Stream Server", lifespan=lifespan)
 
-# CORS كامل
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -106,9 +106,6 @@ async def health():
     return {"status": "ok"}
 
 
-# ═══════════════════════════════════════════════════════════════
-# دوال مساعدة
-# ═══════════════════════════════════════════════════════════════
 def _extract_file_id(msg) -> str:
     for attr in ("video", "document", "audio", "animation", "voice"):
         media = getattr(msg, attr, None)
@@ -121,10 +118,8 @@ async def refresh_file_id(message_id: int) -> str:
     if not CHANNEL_ID or not message_id:
         print("⚠️ Cannot refresh: CHANNEL or message_id missing")
         return ""
-
     try:
         print(f"🔄 Refreshing file_id for message {message_id}...")
-
         try:
             msg = await client.get_messages(CHANNEL_ID, message_ids=message_id)
             if msg and msg.media:
@@ -134,7 +129,6 @@ async def refresh_file_id(message_id: int) -> str:
                     return new_fid
         except Exception as e1:
             print(f"⚠️ get_messages failed: {e1}")
-
         try:
             async for msg in client.get_chat_history(CHANNEL_ID, limit=500):
                 if msg.id == message_id and msg.media:
@@ -144,7 +138,6 @@ async def refresh_file_id(message_id: int) -> str:
                         return new_fid
         except Exception as e2:
             print(f"⚠️ get_chat_history failed: {e2}")
-
         print("❌ All refresh methods failed")
         return ""
     except Exception as e:
@@ -155,14 +148,12 @@ async def refresh_file_id(message_id: int) -> str:
 
 def build_location(file_id):
     ft_str = str(file_id.file_type).lower()
-
     DOC_TYPES = {
         "video", "document", "audio", "animation", "gif",
         "voice", "sticker", "secure",
         "3", "4", "5", "6", "7", "8", "9",
     }
     PHOTO_TYPES = {"photo", "profile_photo", "thumbnail", "0", "1", "2"}
-
     if ft_str in DOC_TYPES:
         return InputDocumentFileLocation(
             id=file_id.media_id,
@@ -190,28 +181,21 @@ def align_down(x, alignment):
     return (x // alignment) * alignment
 
 
-# ═══════════════════════════════════════════════════════════════
-# Endpoint البث
-# ═══════════════════════════════════════════════════════════════
 @app.head("/stream")
 @app.get("/stream")
 async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
     if not fid:
         raise HTTPException(400, "missing fid parameter")
-
     try:
         file_id = FileId.decode(fid)
     except Exception as e:
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
-
     file_size = size
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
-
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
-
     if range_header:
         m = re.match(r"bytes=(\d+)-(\d*)", range_header)
         if m:
@@ -219,12 +203,9 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
             end = int(m.group(2)) if m.group(2) else file_size - 1
             if start > end or end >= file_size:
                 raise HTTPException(416, "range not satisfiable")
-
     length = end - start + 1
-
     print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, "
           f"range={start}-{end} ({length / 1024 / 1024:.2f}MB), mid={mid}")
-
     location = build_location(file_id)
 
     async def generate():
@@ -237,17 +218,11 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
         first_read = True
         refresh_attempts = 0
         MAX_REFRESH = 3
-
         print(f"   ↳ aligned_start={aligned_start}, skip={skip}")
-
         while remaining > 0:
             try:
                 result = await client.invoke(
-                    GetFile(
-                        location=location,
-                        offset=read_offset,
-                        limit=CHUNK_SIZE,
-                    )
+                    GetFile(location=location, offset=read_offset, limit=CHUNK_SIZE)
                 )
             except FileReferenceExpired:
                 print(f"🔄 FileReferenceExpired at offset {read_offset}")
@@ -270,28 +245,22 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
                 print(f"⚠️ Chunk error at offset {read_offset} (size={CHUNK_SIZE}): {e}")
                 traceback.print_exc()
                 break
-
             data = result.bytes
             if not data:
                 print(f"⚠️ Empty response at offset {read_offset}")
                 break
-
             if first_read:
                 if skip > 0:
                     data = data[skip:]
                 first_read = False
-
             if len(data) > remaining:
                 data = data[:remaining]
-
             yield data
             total_sent += len(data)
             read_offset += CHUNK_SIZE
             remaining -= len(data)
-
             if total_sent % (10 * CHUNK_SIZE) == 0:
                 print(f"   ... sent {total_sent / 1024 / 1024:.1f}MB")
-
         if remaining > 0:
             print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.2f}MB remaining")
         else:
@@ -302,12 +271,10 @@ async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=86400",
     }
-
     if range_header:
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
         headers["Content-Length"] = str(length)
         return StreamingResponse(generate(), status_code=206, headers=headers)
-
     headers["Content-Length"] = str(length)
     return StreamingResponse(generate(), headers=headers)
 

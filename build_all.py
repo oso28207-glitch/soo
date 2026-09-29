@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 build_all.py — مُولّد الموقع السريع
-تصنيف صحيح + حماية ضد None + إعادة تصنيف الأعمال
+★ التسريع: LRU cache + string building + batch writes ★
 """
 
 import re
@@ -10,9 +10,11 @@ import json
 import shutil
 import html
 import argparse
+import sys
 from pathlib import Path
 from urllib.parse import quote
 from collections import defaultdict
+from functools import lru_cache
 
 # ═══════════════════════════════════════════════════════════════
 # الإعدادات
@@ -24,16 +26,27 @@ STREAM_SERVER = "https://soo-production.up.railway.app"
 SITE_NAME = "TelegramFlix"
 SITE_DESC = "مشاهدة المسلسلات والأفلام مباشرة"
 
+# ═══════════════════════════════════════════════════════════════
+# ★★★ التسريع: استخدام lru_cache للدوال المتكررة ★★★
+# ═══════════════════════════════════════════════════════════════
 
-def esc(s): return html.escape(str(s or ""), quote=True)
-def enc(s): return quote(str(s or ""), safe="")
+@lru_cache(maxsize=4096)
+def esc(s):
+    return html.escape(str(s or ""), quote=True)
 
 
+@lru_cache(maxsize=4096)
+def enc(s):
+    return quote(str(s or ""), safe="")
+
+
+@lru_cache(maxsize=8192)
 def safe_name(s):
     s = re.sub(r"[^\w\u0600-\u06FF\-]+", "_", str(s or "").strip())
     return re.sub(r"_+", "_", s).strip("_") or "untitled"
 
 
+@lru_cache(maxsize=65536)
 def safe_int(v, default=0):
     try:
         if v is None:
@@ -47,12 +60,7 @@ def safe_int(v, default=0):
         return default
 
 
-def write_file(p, c):
-    p = Path(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(c, encoding="utf-8")
-
-
+@lru_cache(maxsize=65536)
 def fmt_dur(sec):
     s = safe_int(sec, 0)
     if s <= 0:
@@ -62,19 +70,21 @@ def fmt_dur(sec):
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
+@lru_cache(maxsize=65536)
 def format_date_ar(date_str):
     if not date_str:
         return ""
     try:
         from datetime import datetime
         d = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
-        months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو",
-                  "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"]
+        months = ("يناير","فبراير","مارس","أبريل","مايو","يونيو",
+                  "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر")
         return f"{d.day} {months[d.month-1]}"
     except:
         return ""
 
 
+@lru_cache(maxsize=65536)
 def clean_tg_url(url):
     if not url:
         return ""
@@ -82,21 +92,65 @@ def clean_tg_url(url):
     return re.sub(r"t\.me/@", "t.me/", url)
 
 
-def watch_filename(ep):
-    mid = str(ep.get("message_id") or "").strip() or "unknown"
-    ch = str(ep.get("source_channel") or "").strip()
+@lru_cache(maxsize=65536)
+def watch_filename(ch_mid):
+    """★ مُسرّع: يخزن النتيجة حسب (channel, message_id) ★"""
+    try:
+        ch, mid, fuid = ch_mid
+    except Exception:
+        return "unknown.html"
+    mid = str(mid or "").strip() or "unknown"
+    ch = str(ch or "").strip()
     if ch:
         ch_safe = re.sub(r"[^\w\-]+", "_", ch.lstrip("@"))
         return f"{ch_safe}_{mid}.html"
-    fuid = str(ep.get("file_unique_id") or "").strip()
     if fuid:
-        fuid_safe = re.sub(r"[^\w]+", "", fuid)[:16]
+        fuid_safe = re.sub(r"[^\w]+", "", str(fuid))[:16]
         return f"{mid}_{fuid_safe}.html"
     return f"{mid}.html"
 
 
+def get_watch_filename(ep):
+    return watch_filename((
+        ep.get("source_channel") or "",
+        ep.get("message_id") or "",
+        ep.get("file_unique_id") or "",
+    ))
+
+
 # ═══════════════════════════════════════════════════════════════
-# ★★★ تحميل البيانات مع إعادة تصنيف ★★★
+# ★★★ التسريع: batched file writes ★★★
+# ═══════════════════════════════════════════════════════════════
+class FileWriter:
+    """يجمع الملفات ويكتبها على دفعات لتسريع I/O"""
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self.buffer = {}
+        self.count = 0
+        self.flush_size = 100  # اكتب كل 100 ملف
+
+    def add(self, path, content):
+        self.buffer[str(path)] = content
+        self.count += 1
+        if self.count >= self.flush_size:
+            self.flush()
+
+    def flush(self):
+        if not self.buffer:
+            return
+        for path_str, content in self.buffer.items():
+            p = Path(path_str)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        self.buffer.clear()
+
+    def finish(self):
+        self.flush()
+
+
+# ═══════════════════════════════════════════════════════════════
+# تحميل البيانات
 # ═══════════════════════════════════════════════════════════════
 def load_data():
     if not DATA_FILE.exists():
@@ -142,20 +196,19 @@ def load_data():
         for ep in all_eps:
             ch = str(ep.get("source_channel") or "").strip()
             mid = str(ep.get("message_id") or "").strip()
-            key = f"{ch}|{mid}" if ch else mid
-            if key and key in seen_keys:
+            key = (ch, mid) if ch else (mid,)
+            if key in seen_keys:
                 continue
-            if key:
-                seen_keys.add(key)
+            seen_keys.add(key)
             unique_eps.append(ep)
 
-        # ترتيب آمن
+        # ترتيب
         unique_eps.sort(key=lambda e: (
             safe_int(e.get("season"), 1),
             safe_int(e.get("episode"), 0)
         ))
 
-        # ★★★ إعادة تصنيف النوع — الأولوية لعدد الحلقات ★★★
+        # إعادة تصنيف النوع
         ctype = s.get("type", "") or ""
         if ctype == "movie" and len(unique_eps) > 1:
             ctype = "series"
@@ -208,15 +261,13 @@ def load_data():
 # ═══════════════════════════════════════════════════════════════
 # قالب HTML
 # ═══════════════════════════════════════════════════════════════
-def base(title, body, depth=0, head="", scripts=""):
-    prefix = "../" * depth if depth else ""
-    return f'''<!DOCTYPE html>
+HEAD_TEMPLATE = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0f">
-<title>{esc(title)}</title>
+<title>{title}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -227,7 +278,7 @@ def base(title, body, depth=0, head="", scripts=""):
 <header class="topbar">
   <a href="{prefix}index.html" class="logo">
     <span class="logo-icon">▶</span>
-    <span class="logo-text">{SITE_NAME[:8]}<b>{SITE_NAME[8:]}</b></span>
+    <span class="logo-text">Telegram<b>Flix</b></span>
   </a>
   <nav class="nav">
     <a href="{prefix}index.html" class="nav-link">
@@ -239,12 +290,26 @@ def base(title, body, depth=0, head="", scripts=""):
   </nav>
 </header>
 <main class="container">{body}</main>
-<footer class="footer"><p>© {SITE_NAME}</p></footer>
+<footer class="footer"><p>© TelegramFlix</p></footer>
 {scripts}
 </body>
 </html>'''
 
 
+def base(title, body, depth=0, head="", scripts=""):
+    prefix = "../" * depth if depth else ""
+    return HEAD_TEMPLATE.format(
+        title=esc(title),
+        prefix=prefix,
+        head=head,
+        body=body,
+        scripts=scripts,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# بطاقة عمل
+# ═══════════════════════════════════════════════════════════════
 def render_card(s, idx=0, prefix=""):
     name = s["name"]
     poster = s["poster"]
@@ -260,8 +325,9 @@ def render_card(s, idx=0, prefix=""):
         except:
             pass
 
-    ph = f'<img src="{esc(poster)}" alt="{esc(name)}" loading="lazy">' if poster else \
-         '<div class="poster-placeholder">📺</div>'
+    ph = (f'<img src="{esc(poster)}" alt="{esc(name)}" loading="lazy">'
+          if poster else
+          '<div class="poster-placeholder">📺</div>')
 
     count_label = "فيلم" if s["type"] == "movie" else f"{count} حلقة"
 
@@ -277,28 +343,65 @@ def render_card(s, idx=0, prefix=""):
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# الصفحة الرئيسية
+# ═══════════════════════════════════════════════════════════════
+INDEX_SCRIPT = '''<script>
+(function(){
+  var mt=document.querySelectorAll('.main-tab');
+  var mp=document.querySelectorAll('.main-panel');
+  mt.forEach(function(t){t.addEventListener('click',function(){
+    var x=t.dataset.main;
+    mt.forEach(function(a){a.classList.remove('active')});
+    t.classList.add('active');
+    mp.forEach(function(p){
+      if(p.dataset.main===x)p.classList.remove('hidden');
+      else p.classList.add('hidden');
+    });
+    try{localStorage.setItem('tgflix_main',x)}catch(e){}
+  })});
+  document.querySelectorAll('.sub-tab').forEach(function(t){
+    t.addEventListener('click',function(){
+      var x=t.dataset.sub;
+      var p=t.closest('.main-panel');
+      if(!p)return;
+      p.querySelectorAll('.sub-tab').forEach(function(a){a.classList.remove('active')});
+      t.classList.add('active');
+      p.querySelectorAll('.sub-panel').forEach(function(s){
+        if(s.dataset.sub===x)s.classList.remove('hidden');
+        else s.classList.add('hidden');
+      });
+    });
+  });
+  try{
+    var s=localStorage.getItem('tgflix_main');
+    if(s){
+      var t=document.querySelector('.main-tab[data-main="'+s+'"]');
+      if(t)t.click();
+    }
+  }catch(e){}
+})();
+</script>'''
+
+
 def render_index(series_list):
     grouped = defaultdict(list)
     for s in series_list:
         grouped[s["slug"]].append(s)
 
-    main_tabs = []
-    main_panels = []
-    active_main = True
-
-    series_all = (
-        grouped.get("series-arabic", []) +
-        grouped.get("series-turkish", []) +
-        grouped.get("series-foreign", [])
-    )
-    movies_all = (
-        grouped.get("movie-arabic", []) +
-        grouped.get("movie-turkish", []) +
-        grouped.get("movie-foreign", [])
-    )
+    series_all = (grouped.get("series-arabic", []) +
+                  grouped.get("series-turkish", []) +
+                  grouped.get("series-foreign", []))
+    movies_all = (grouped.get("movie-arabic", []) +
+                  grouped.get("movie-turkish", []) +
+                  grouped.get("movie-foreign", []))
 
     series_all.sort(key=lambda x: x["latest"], reverse=True)
     movies_all.sort(key=lambda x: x["latest"], reverse=True)
+
+    main_tabs = []
+    main_panels = []
+    active_main = True
 
     for tab_slug, tab_label, tab_icon, items in [
         ("series", "مسلسلات", "📺", series_all),
@@ -316,10 +419,8 @@ def render_index(series_list):
 
         main_tabs.append(
             f'<button class="main-tab{active_cls}" data-main="{tab_slug}">'
-            f'<span>{tab_icon}</span>'
-            f'<span>{tab_label}</span>'
-            f'<span class="count-badge">{len(items)}</span>'
-            f'</button>'
+            f'<span>{tab_icon}</span><span>{tab_label}</span>'
+            f'<span class="count-badge">{len(items)}</span></button>'
         )
 
         if tab_slug == "series":
@@ -356,15 +457,13 @@ def render_index(series_list):
                 sub_tabs.append(
                     f'<button class="sub-tab{sub_cls}" data-sub="{tab_slug}-{sub_slug}">'
                     f'{sub_icon} {sub_label}'
-                    f'<span class="count-badge-sm">{len(sub_items)}</span>'
-                    f'</button>'
+                    f'<span class="count-badge-sm">{len(sub_items)}</span></button>'
                 )
 
                 sub_cards = "".join(render_card(s, i) for i, s in enumerate(sub_items))
                 sub_panels.append(
                     f'<div class="sub-panel{sub_hidden}" data-sub="{tab_slug}-{sub_slug}">'
-                    f'<div class="series-grid">{sub_cards}</div>'
-                    f'</div>'
+                    f'<div class="series-grid">{sub_cards}</div></div>'
                 )
 
             panel_content = (
@@ -377,56 +476,17 @@ def render_index(series_list):
             f'{panel_content}</div>'
         )
 
-    body = f'''
-    <section class="hero">
-      <h1>{SITE_NAME}</h1>
-      <p>{SITE_DESC}</p>
-    </section>
-    <div class="main-tabs">{"".join(main_tabs)}</div>
-    <div class="main-panels">{"".join(main_panels)}</div>'''
+    body = (f'<section class="hero"><h1>{SITE_NAME}</h1>'
+            f'<p>{SITE_DESC}</p></section>'
+            f'<div class="main-tabs">{"".join(main_tabs)}</div>'
+            f'<div class="main-panels">{"".join(main_panels)}</div>')
 
-    scripts = '''<script>
-(function(){
-  var mt = document.querySelectorAll('.main-tab');
-  var mp = document.querySelectorAll('.main-panel');
-  mt.forEach(function(t){
-    t.addEventListener('click', function(){
-      var target = t.dataset.main;
-      mt.forEach(function(x){ x.classList.remove('active'); });
-      t.classList.add('active');
-      mp.forEach(function(p){
-        if (p.dataset.main === target) p.classList.remove('hidden');
-        else p.classList.add('hidden');
-      });
-      try { localStorage.setItem('tgflix_main', target); } catch(e){}
-    });
-  });
-  document.querySelectorAll('.sub-tab').forEach(function(t){
-    t.addEventListener('click', function(){
-      var target = t.dataset.sub;
-      var parent = t.closest('.main-panel');
-      if (!parent) return;
-      parent.querySelectorAll('.sub-tab').forEach(function(x){ x.classList.remove('active'); });
-      t.classList.add('active');
-      parent.querySelectorAll('.sub-panel').forEach(function(p){
-        if (p.dataset.sub === target) p.classList.remove('hidden');
-        else p.classList.add('hidden');
-      });
-    });
-  });
-  try {
-    var s = localStorage.getItem('tgflix_main');
-    if (s) {
-      var t = document.querySelector('.main-tab[data-main="' + s + '"]');
-      if (t) t.click();
-    }
-  } catch(e){}
-})();
-</script>'''
-
-    return base(f"{SITE_NAME} — الرئيسية", body, scripts=scripts)
+    return base(f"{SITE_NAME} — الرئيسية", body, scripts=INDEX_SCRIPT)
 
 
+# ═══════════════════════════════════════════════════════════════
+# بطاقة الحلقة
+# ═══════════════════════════════════════════════════════════════
 def _render_episode_card(ep):
     dur = fmt_dur(ep.get("duration", 0))
     dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
@@ -436,7 +496,7 @@ def _render_episode_card(ep):
     ep_num = safe_int(ep.get("episode"), 0)
     label = f"الحلقة {ep_num}" if ep_num > 0 else "مشاهدة"
 
-    fname = watch_filename(ep)
+    fname = get_watch_filename(ep)
 
     return (
         f'<a class="episode-card" href="../watch/{fname}">'
@@ -448,6 +508,26 @@ def _render_episode_card(ep):
     )
 
 
+SERIES_SCRIPT = '''<script>
+(function(){
+  var t=document.querySelectorAll('.season-tab');
+  var p=document.querySelectorAll('.season-panel');
+  if(!t.length)return;
+  t.forEach(function(tab){
+    tab.addEventListener('click',function(){
+      var x=tab.dataset.season;
+      t.forEach(function(a){a.classList.remove('active')});
+      tab.classList.add('active');
+      p.forEach(function(s){
+        if(s.dataset.season===x)s.classList.remove('hidden');
+        else s.classList.add('hidden');
+      });
+    });
+  });
+})();
+</script>'''
+
+
 def render_series(series):
     name = series["name"]
     poster = series["poster"]
@@ -456,8 +536,7 @@ def render_series(series):
 
     seasons = defaultdict(list)
     for ep in eps:
-        sn = safe_int(ep.get("season"), 1)
-        seasons[sn].append(ep)
+        seasons[safe_int(ep.get("season"), 1)].append(ep)
     sorted_seasons = sorted(seasons.keys())
 
     if len(sorted_seasons) <= 1:
@@ -471,8 +550,7 @@ def render_series(series):
             hidden = "" if i == 0 else " hidden"
             season_tabs.append(
                 f'<button class="season-tab{active}" data-season="{sn}">'
-                f'الموسم {sn}<span class="season-count">{len(seasons[sn])}</span>'
-                f'</button>'
+                f'الموسم {sn}<span class="season-count">{len(seasons[sn])}</span></button>'
             )
             cards = "".join(_render_episode_card(ep) for ep in seasons[sn])
             season_panels.append(
@@ -484,8 +562,9 @@ def render_series(series):
             f'<div class="season-panels">{"".join(season_panels)}</div>'
         )
 
-    ph = f'<img src="{esc(poster)}" alt="{esc(name)}">' if poster else \
-         '<div class="poster-placeholder">📺</div>'
+    ph = (f'<img src="{esc(poster)}" alt="{esc(name)}">'
+          if poster else
+          '<div class="poster-placeholder">📺</div>')
 
     bg_html = ""
     if backdrop:
@@ -509,43 +588,27 @@ def render_series(series):
     if len(sorted_seasons) > 1:
         seasons_count_html = f'<p class="series-seasons-count">{len(sorted_seasons)} مواسم</p>'
 
-    body = f'''
-    {bg_html}
-    <div class="series-hero">
-      <div class="series-poster-large">{ph}</div>
-      <div class="series-details">
-        <h1>{esc(name)}</h1>
-        <div class="series-badges">{type_badge} {year_html} {rating_html}</div>
-        <p class="series-count">{len(eps)} حلقة</p>
-        {seasons_count_html}
-        <p class="series-desc">{esc(series.get("description", ""))}</p>
-      </div>
-    </div>
-    <h2 class="section-title"><span class="title-dot"></span>الحلقات</h2>
-    {seasons_content}'''
+    body = (
+        f'{bg_html}'
+        f'<div class="series-hero">'
+        f'<div class="series-poster-large">{ph}</div>'
+        f'<div class="series-details">'
+        f'<h1>{esc(name)}</h1>'
+        f'<div class="series-badges">{type_badge} {year_html} {rating_html}</div>'
+        f'<p class="series-count">{len(eps)} حلقة</p>'
+        f'{seasons_count_html}'
+        f'<p class="series-desc">{esc(series.get("description", ""))}</p>'
+        f'</div></div>'
+        f'<h2 class="section-title"><span class="title-dot"></span>الحلقات</h2>'
+        f'{seasons_content}'
+    )
 
-    scripts = '''<script>
-(function(){
-  var tabs = document.querySelectorAll('.season-tab');
-  var panels = document.querySelectorAll('.season-panel');
-  if (!tabs.length) return;
-  tabs.forEach(function(tab){
-    tab.addEventListener('click', function(){
-      var sn = tab.dataset.season;
-      tabs.forEach(function(t){ t.classList.remove('active'); });
-      tab.classList.add('active');
-      panels.forEach(function(p){
-        if (p.dataset.season === sn) p.classList.remove('hidden');
-        else p.classList.add('hidden');
-      });
-    });
-  });
-})();
-</script>'''
-
-    return base(f"{name} — {SITE_NAME}", body, depth=1, scripts=scripts)
+    return base(f"{name} — {SITE_NAME}", body, depth=1, scripts=SERIES_SCRIPT)
 
 
+# ═══════════════════════════════════════════════════════════════
+# صفحة المشاهدة
+# ═══════════════════════════════════════════════════════════════
 def render_watch(name, season, episode, prev_ep, next_ep, ep):
     file_id = ep.get("file_id") or ""
     file_size = safe_int(ep.get("file_size"), 0)
@@ -576,54 +639,42 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
         head = '<script src="../static/watch.js" defer></script>'
     else:
-        player = (
-            '<div class="no-player">'
-            '<div>هذا الفيديو غير متاح حاليًا.<br>'
-            'استخدم زر "تليجرام" للمشاهدة المباشرة.</div>'
-            '</div>'
-        )
+        player = ('<div class="no-player"><div>هذا الفيديو غير متاح حاليًا.<br>'
+                  'استخدم زر "تليجرام" للمشاهدة المباشرة.</div></div>')
         head = ""
 
-    prev_btn = (
-        f'<a class="btn" href="{watch_filename(prev_ep)}">السابقة</a>'
-        if prev_ep else
-        '<span class="btn disabled">السابقة</span>'
-    )
-    next_btn = (
-        f'<a class="btn primary" href="{watch_filename(next_ep)}">التالية</a>'
-        if next_ep else
-        '<span class="btn disabled">التالية</span>'
-    )
+    prev_btn = (f'<a class="btn" href="{get_watch_filename(prev_ep)}">السابقة</a>'
+                if prev_ep else
+                '<span class="btn disabled">السابقة</span>')
+    next_btn = (f'<a class="btn primary" href="{get_watch_filename(next_ep)}">التالية</a>'
+                if next_ep else
+                '<span class="btn disabled">التالية</span>')
 
     series_url = "../series/" + enc(safe_name(name)) + ".html"
 
     tg_url = clean_tg_url(ep.get("telegram_url", ""))
-    tg_btn = (
-        f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
-        if tg_url else ""
-    )
+    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
+              if tg_url else "")
 
-    next_json = json.dumps(watch_filename(next_ep) if next_ep else None)
+    next_json = json.dumps(get_watch_filename(next_ep) if next_ep else None)
     scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
 
-    body = f'''
-    <div class="watch-wrap">
-      {player}
-      <div class="watch-info">
-        <h1>{esc(name)}</h1>
-        <h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>
-        <div class="watch-nav">
-          {prev_btn}
-          <a class="btn" href="{series_url}">كل الحلقات</a>
-          {next_btn}
-          {tg_btn}
-        </div>
-      </div>
-    </div>'''
+    body = (
+        f'<div class="watch-wrap">{player}'
+        f'<div class="watch-info">'
+        f'<h1>{esc(name)}</h1>'
+        f'<h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>'
+        f'<div class="watch-nav">'
+        f'{prev_btn}<a class="btn" href="{series_url}">كل الحلقات</a>{next_btn}{tg_btn}'
+        f'</div></div></div>'
+    )
 
     return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
 
 
+# ═══════════════════════════════════════════════════════════════
+# CSS
+# ═══════════════════════════════════════════════════════════════
 CSS = '''
 :root{--bg:#0a0a0e;--surface:#14141c;--surface-2:#1c1c28;--border:#26263a;--text:#f0f0f5;--text-dim:#8a8aa0;--primary:#e50914;--accent:#4ea8de;--gold:#ffc107;--radius:14px;--radius-sm:10px;--shadow:0 8px 32px rgba(0,0,0,.45)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -739,54 +790,35 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 
 WATCH_JS = '''
 (function(){
-  var v = document.getElementById('mainPlayer');
-  var unmuteBtn = document.getElementById('unmuteBtn');
-  if (!v) return;
-  var playPromise = v.play();
-  if (playPromise !== undefined) {
-    playPromise.then(function(){
-      v.muted = false;
-      if (unmuteBtn) unmuteBtn.classList.add('hidden');
-    }).catch(function(){ v.muted = true; });
+  var v=document.getElementById('mainPlayer');
+  var u=document.getElementById('unmuteBtn');
+  if(!v)return;
+  var p=v.play();
+  if(p!==undefined){
+    p.then(function(){v.muted=false;if(u)u.classList.add('hidden')}).catch(function(){v.muted=true});
   }
-  if (unmuteBtn) {
-    unmuteBtn.addEventListener('click', function(){
-      v.muted = false; v.volume = 1;
-      unmuteBtn.classList.add('hidden');
-    });
-  }
-  v.addEventListener('click', function(){
-    if (v.muted) {
-      v.muted = false;
-      if (unmuteBtn) unmuteBtn.classList.add('hidden');
-    }
-  });
-  var k = 'tgflix_pos_' + location.pathname;
-  var saved = parseFloat(localStorage.getItem(k) || '0');
-  if (saved > 5) {
-    v.addEventListener('loadedmetadata', function(){
-      if (confirm('استئناف؟')) v.currentTime = saved;
-    });
-  }
-  setInterval(function(){
-    if (!v.paused && v.currentTime > 0) localStorage.setItem(k, v.currentTime.toString());
-  }, 5000);
-  v.addEventListener('ended', function(){
-    localStorage.removeItem(k);
-    if (window.__NEXT_URL__) location.href = window.__NEXT_URL__;
-  });
+  if(u)u.addEventListener('click',function(){v.muted=false;v.volume=1;u.classList.add('hidden')});
+  v.addEventListener('click',function(){if(v.muted){v.muted=false;if(u)u.classList.add('hidden')}});
+  var k='tgflix_pos_'+location.pathname;
+  var s=parseFloat(localStorage.getItem(k)||'0');
+  if(s>5){v.addEventListener('loadedmetadata',function(){if(confirm('استئناف؟'))v.currentTime=s})}
+  setInterval(function(){if(!v.paused&&v.currentTime>0)localStorage.setItem(k,v.currentTime.toString())},5000);
+  v.addEventListener('ended',function(){localStorage.removeItem(k);if(window.__NEXT_URL__)location.href=window.__NEXT_URL__});
 })();
 '''
 
 
-def build_static():
+# ═══════════════════════════════════════════════════════════════
+# البناء
+# ═══════════════════════════════════════════════════════════════
+def build_static(writer):
     d = OUT / "static"
     d.mkdir(parents=True, exist_ok=True)
     (d / "style.css").write_text(CSS, encoding="utf-8")
     (d / "watch.js").write_text(WATCH_JS, encoding="utf-8")
 
 
-def build_site():
+def build_site(writer):
     series_list = load_data()
     print(f"{len(series_list)} عمل")
 
@@ -804,8 +836,13 @@ def build_site():
         else:
             series_count += 1
 
-        write_file(OUT / "series" / f"{safe_name(name)}.html", render_series(series))
+        # صفحة العمل
+        writer.add(
+            OUT / "series" / f"{safe_name(name)}.html",
+            render_series(series)
+        )
 
+        # صفحات المشاهدة
         for i, ep in enumerate(episodes):
             prev_ep = episodes[i - 1] if i > 0 else None
             next_ep = episodes[i + 1] if i < len(episodes) - 1 else None
@@ -813,14 +850,18 @@ def build_site():
             episode_num = safe_int(ep.get("episode"), i + 1)
 
             html_ep = render_watch(name, season, episode_num, prev_ep, next_ep, ep)
-            fname = watch_filename(ep)
+            fname = get_watch_filename(ep)
+
             if fname in written_files:
                 print(f"تحذير: تعارض في {fname}")
             written_files.add(fname)
-            write_file(OUT / "watch" / fname, html_ep)
+
+            writer.add(OUT / "watch" / fname, html_ep)
             total += 1
 
-    write_file(OUT / "index.html", render_index(series_list))
+    # الصفحة الرئيسية
+    writer.add(OUT / "index.html", render_index(series_list))
+
     print(f"   مسلسلات: {series_count}")
     print(f"   أفلام: {movies}")
     print(f"   حلقات: {total}")
@@ -831,12 +872,23 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--clean", action="store_true")
     a = p.parse_args()
+
     if a.clean and OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True, exist_ok=True)
-    build_static()
-    build_site()
-    print(f"\nتم البناء في {OUT}")
+
+    writer = FileWriter(OUT)
+
+    import time
+    start = time.time()
+
+    build_static(writer)
+    build_site(writer)
+    writer.finish()
+
+    elapsed = time.time() - start
+    print(f"\n★ الوقت: {elapsed:.2f}s")
+    print(f"تم البناء في {OUT}")
 
 
 if __name__ == "__main__":
