@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""build_all.py — مُولّد الموقع مع تصنيف موحّد عبر classify.py"""
+"""build_all.py — مُولّد الموقع (تصنيف موحّد + إصلاح مسارات الحلقات + كتابة ذرّية)"""
 
 import re
+import os
 import json
 import shutil
 import html
 import argparse
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 from collections import defaultdict
@@ -51,9 +53,20 @@ def safe_int(v, default=0):
 
 
 def write_file(p, c):
+    """كتابة ذرّية للملفات الناتجة"""
     p = Path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(c, encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(c)
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def fmt_dur(sec):
@@ -99,24 +112,51 @@ def watch_filename(ep):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ★★★ تحميل البيانات — تصنيف موحّد عبر classify ★★★
+# قراءة آمنة لـ data.json مع محاولة التعافي من النسخ الاحتياطية
+# ═══════════════════════════════════════════════════════════════
+def read_data_safe():
+    """يحاول قراءة data.json، وإن فشل يبحث عن أحدث نسخة احتياطية"""
+    if not DATA_FILE.exists():
+        return None
+
+    # 1) محاولة قراءة الملف الأصلي
+    try:
+        content = DATA_FILE.read_text(encoding="utf-8")
+        if content.strip():
+            return json.loads(content)
+    except Exception as e:
+        print(f"[build] data.json تالف: {e}")
+
+    # 2) محاولة استرجاع من نسخة احتياطية
+    backups = sorted(DATA_FILE.parent.glob("data.backup_*.json"), reverse=True)
+    for bk in backups[:5]:
+        try:
+            content = bk.read_text(encoding="utf-8")
+            if content.strip():
+                data = json.loads(content)
+                print(f"[build] استرجاع من {bk.name}")
+                return data
+        except Exception:
+            continue
+
+    print("[build] لا توجد نسخة صالحة")
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# ★★★ تحميل البيانات — تصنيف موحّد ★★★
 # ═══════════════════════════════════════════════════════════════
 def load_data():
-    # ★★★ تنظيف تلقائي قبل القراءة ★★★
+    # تنظيف تلقائي إن أمكن
     try:
         import clean_data
         clean_data.run(verbose=False)
     except Exception as e:
         print(f"[build] تحذير التنظيف: {e}")
 
-    if not DATA_FILE.exists():
-        print(f"لم يُعثر على {DATA_FILE}")
-        return []
-
-    try:
-        raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        print(f"data.json تالف: {e}")
+    raw = read_data_safe()
+    if not raw:
+        print(f"لا يمكن قراءة {DATA_FILE.name}")
         return []
 
     series_raw = raw if isinstance(raw, list) else raw.get("series", [])
@@ -161,29 +201,22 @@ def load_data():
         if not unique_eps:
             continue
 
-        # ترتيب آمن
         unique_eps.sort(key=lambda e: (
             safe_int(e.get("season"), 1),
             safe_int(e.get("episode"), 0),
             safe_int(e.get("message_id"), 0),
         ))
 
-        # ★★★ التصنيف الموحّد ★★★
         ctype = detect_type(name, len(unique_eps))
         origin = detect_origin(name)
 
-        # مفتاح فريد
-        if ctype == "movie":
-            name_key = f"M::{name}::{s.get('_source_channel', '')}"
-        else:
-            name_key = f"S::{name}"
+        name_key = f"{ctype}::{name}"
         if name_key in seen_series:
             continue
         seen_series.add(name_key)
 
         slug = f"{ctype}-{origin}"
 
-        # أحدث تاريخ
         latest = ""
         for ep in unique_eps:
             d = ep.get("date")
@@ -389,6 +422,9 @@ document.querySelectorAll('.sub-tab').forEach(tab=>{tab.onclick=()=>{
 
 
 def _render_episode_card(ep):
+    """
+    ★★★ الإصلاح: الرابط يجب أن يكون ../watch/ لأن هذه الصفحة داخل مجلد series/ ★★★
+    """
     dur = fmt_dur(ep.get("duration", 0))
     dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
     date = format_date_ar(ep.get("date", ""))
@@ -397,7 +433,7 @@ def _render_episode_card(ep):
     label = f"الحلقة {ep_num}" if ep_num > 0 else "مشاهدة"
     fname = watch_filename(ep)
     return (
-        f'<a href="watch/{fname}" class="episode-card">'
+        f'<a href="../watch/{esc(fname)}" class="episode-card">'
         f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
         f'<div class="episode-body">'
         f'<div class="episode-num">{esc(label)}</div>'
@@ -497,7 +533,6 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     file_size = safe_int(ep.get("file_size"), 0)
     message_id = safe_int(ep.get("message_id"), 0)
     thumb = ep.get("thumb_url", "")
-    poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
 
     stream_url = ""
     if file_id and file_size:
@@ -509,7 +544,7 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
     if stream_url:
         player = (
             f'<div class="player-shell">'
-            f'<video controls playsinline preload="metadata"{poster_attr} '
+            f'<video controls playsinline preload="metadata" '
             f'poster="{esc(thumb or "")}" src="{esc(stream_url)}">'
             f'<source src="{esc(stream_url)}" type="video/mp4">'
             f'</video>'
@@ -526,18 +561,22 @@ def render_watch(name, season, episode, prev_ep, next_ep, ep):
         )
         head = ""
 
+    # داخل مجلد watch/ — الروابط النسبية للملفات المجاورة صحيحة
     prev_btn = (
-        f'<a href="{watch_filename(prev_ep)}" class="nav-btn">السابقة</a>'
+        f'<a href="{esc(watch_filename(prev_ep))}" class="nav-btn">السابقة</a>'
         if prev_ep else '<span class="nav-btn disabled">السابقة</span>'
     )
     next_btn = (
-        f'<a href="{watch_filename(next_ep)}" class="nav-btn">التالية</a>'
+        f'<a href="{esc(watch_filename(next_ep))}" class="nav-btn">التالية</a>'
         if next_ep else '<span class="nav-btn disabled">التالية</span>'
     )
 
     series_url = "../series/" + enc(safe_name(name)) + ".html"
     tg_url = clean_tg_url(ep.get("telegram_url", ""))
-    tg_btn = f'<a href="{esc(tg_url)}" target="_blank" rel="noopener" class="tg-btn">تليجرام</a>' if tg_url else ""
+    tg_btn = (
+        f'<a href="{esc(tg_url)}" target="_blank" rel="noopener" class="tg-btn">تليجرام</a>'
+        if tg_url else ""
+    )
 
     next_json = json.dumps(watch_filename(next_ep) if next_ep else None)
     scripts = f'''<script>
@@ -621,7 +660,7 @@ body{
 .series-poster img{width:100%;height:100%;object-fit:cover;transition:.3s}
 .series-card:hover .series-poster img{transform:scale(1.05)}
 .no-poster{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;background:linear-gradient(135deg,var(--bg2),var(--card))}
-.new{position:absolute;top:8px;right:8px;background:var(--success);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.new{position:absolute;top:8px;right:8px;background:var(--success);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;z-index:2}
 .series-overlay{position:absolute;bottom:0;left:0;right:0;padding:8px;background:linear-gradient(to top,rgba(0,0,0,.9),transparent);display:flex;justify-content:space-between;align-items:center;font-size:12px}
 .series-ep-count{color:#fff;background:rgba(0,0,0,.6);padding:2px 8px;border-radius:6px}
 .rating{color:var(--gold);font-weight:600}
@@ -664,7 +703,7 @@ h2{font-size:22px;margin:24px 0 16px;color:var(--text)}
 }
 .unmute-btn:hover{background:var(--accent2)}
 .unmute-btn.hidden{display:none}
-.no-player{aspect-ratio:16/9;background:var(--card);border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--text2);border:1px solid var(--border);margin-bottom:20px}
+.no-player{aspect-ratio:16/9;background:var(--card);border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--text2);border:1px solid var(--border);margin-bottom:20px;max-width:900px;margin-left:auto;margin-right:auto}
 .watch-info{max-width:900px;margin:0 auto;text-align:center}
 .watch-info h1{font-size:24px;margin-bottom:8px}
 .watch-meta{color:var(--text2);font-size:14px;margin-bottom:20px}
@@ -708,6 +747,17 @@ def main():
     print("تحميل البيانات ...")
     series_list = load_data()
     print(f"عدد الأعمال: {len(series_list)}")
+
+    if not series_list:
+        print("⚠️ لا توجد بيانات لبناء الموقع — تحقق من data.json")
+        # نكتب صفحة فارغة بدل ما يبقى الموقع معطلًا
+        write_file(OUT / "index.html", base(
+            f"{SITE_NAME} — الرئيسية",
+            "<section class='hero'><h1>لا توجد بيانات</h1>"
+            "<p>سيتم البناء تلقائيًا بعد جلب البيانات</p></section>",
+        ))
+        write_file(OUT / ".nojekyll", "")
+        return
 
     series_count = sum(1 for s in series_list if s["type"] == "series")
     movies_count = sum(1 for s in series_list if s["type"] == "movie")
