@@ -2,7 +2,6 @@ name: Build and Deploy TelegramFlix
 
 on:
   schedule:
-    # كل 6 ساعات
     - cron: '0 */6 * * *'
   workflow_dispatch:
   push:
@@ -17,13 +16,11 @@ on:
       - 'classify.py'
       - '.github/workflows/build-and-deploy.yml'
 
-# صلاحيات الكتابة والنشر
 permissions:
   contents: write
   pages: write
   id-token: write
 
-# منع تشغيل نسختين في نفس الوقت
 concurrency:
   group: "build-and-deploy"
   cancel-in-progress: false
@@ -34,35 +31,23 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      # ═══════════════════════════════════════════════════════
-      # 1) سحب الكود
-      # ═══════════════════════════════════════════════════════
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      # ═══════════════════════════════════════════════════════
-      # 2) تثبيت Python
-      # ═══════════════════════════════════════════════════════
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # ═══════════════════════════════════════════════════════
-      # 3) تثبيت المتطلبات
-      # ═══════════════════════════════════════════════════════
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyrogram tgcrypto requests
 
-      # ═══════════════════════════════════════════════════════
-      # 4) التحقق من توفر أسرار Telegram
-      # ═══════════════════════════════════════════════════════
       - name: Check Telegram secrets
         id: check_tg
         env:
@@ -79,9 +64,6 @@ jobs:
             echo "⚠️ أسرار Telegram غير مكتملة — سيتم تخطي الجلب"
           fi
 
-      # ═══════════════════════════════════════════════════════
-      # 5) جلب البيانات من Telegram (شرطي)
-      # ═══════════════════════════════════════════════════════
       - name: Fetch from Telegram
         if: steps.check_tg.outputs.available == 'true'
         env:
@@ -96,9 +78,6 @@ jobs:
         run: python fetch_from_telegram.py
         continue-on-error: true
 
-      # ═══════════════════════════════════════════════════════
-      # 6) تنظيف وإعادة تصنيف data.json
-      # ═══════════════════════════════════════════════════════
       - name: Clean & Reclassify data
         run: |
           if [ -f data.json ]; then
@@ -107,18 +86,12 @@ jobs:
             echo "data.json غير موجود — تخطي"
           fi
 
-      # ═══════════════════════════════════════════════════════
-      # 7) إثراء البيانات (البوسترات + metadata)
-      # ═══════════════════════════════════════════════════════
       - name: Enrich data with posters
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: python enrich_data.py
         continue-on-error: true
 
-      # ═══════════════════════════════════════════════════════
-      # 8) عرض إحصائيات سريعة
-      # ═══════════════════════════════════════════════════════
       - name: Show statistics
         run: |
           python -c "
@@ -133,15 +106,9 @@ jobs:
           print(f'الأصول: {dict(o)}')
           "
 
-      # ═══════════════════════════════════════════════════════
-      # 9) بناء الموقع
-      # ═══════════════════════════════════════════════════════
       - name: Build site
         run: python build_all.py --clean
 
-      # ═══════════════════════════════════════════════════════
-      # 10) حفظ التغييرات
-      # ═══════════════════════════════════════════════════════
       - name: Commit & Push changes
         run: |
           git config user.name  "github-actions[bot]"
@@ -161,17 +128,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ═══════════════════════════════════════════════════════
-      # 11) رفع ملف docs للنشر على Pages
-      # ═══════════════════════════════════════════════════════
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
-  # ═══════════════════════════════════════════════════════════
-  # مهمة النشر
-  # ═══════════════════════════════════════════════════════════
   deploy:
     needs: build
     runs-on: ubuntu-latest
