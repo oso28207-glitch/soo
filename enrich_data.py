@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""enrich_data.py — إثراء data.json بالتصنيفات والصور"""
+"""
+enrich_data.py — إثراء data.json بالتصنيفات والصور
+★ إضافة: صور جوجل كمصدر احتياطي ★
+"""
 
 import os
 import re
@@ -19,9 +22,12 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY", "").strip()
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
-MAX_WORKERS = 8
-TIMEOUT = 10
+MAX_WORKERS = 6
+TIMEOUT = 12
 
+# ═══════════════════════════════════════════════════════════════
+# قوائم الكلمات
+# ═══════════════════════════════════════════════════════════════
 TURKISH_KW = [
     "مدبلج", "تركي", "تركية",
     "قيامة أرطغرل", "المؤسس عثمان", "حريم السلطان", "وادي الذئاب",
@@ -38,11 +44,18 @@ TURKISH_KW = [
 ]
 
 ARABIC_HARDCODED = [
+    # مسلسلات مصرية من الموقع
+    "ولد وبنت وشايب",
+    "حالات نادرة",
+    "قهوة المحطة",
+    "خالد نور وولده نور خالد",
+    "برغم القانون",
+    "عهد انيس",
+    "قابيل",
+    "لعبة نيوتن",
+    "ما تراه ليس كما يبدو",
     "لام شمسية", "الحلانجي", "سيد الناس", "جوما", "إش إش", "اش اش",
-    "ولد وبنت وشايب", "حالات نادرة", "قهوة المحطة",
-    "خالد نور وولده نور خالد", "خالد نور",
-    "برغم القانون", "ما تراه ليس كما يبدو",
-    "عهد أنيس", "قابيل", "لعبة نيوتن",
+    # مسلسلات عربية شائعة
     "منورة باهلها", "منورة بأهلها", "الاخ الكبير", "الأخ الكبير",
     "النص", "البيت بيتي", "البيت بيتك", "صحاب الارض",
     "عين سحرية", "الست موناليزا", "مناعة",
@@ -51,7 +64,8 @@ ARABIC_HARDCODED = [
     "فن الحرب", "حد اقصى", "الف ليله وليله",
     "اتنين غيرنا", "المصيدة", "الاختيار", "الحشاشين",
     "المداح", "جعفر العمدة", "بيت الرفاعي", "العتاولة",
-    "نسل الأغراب", "الهيبة",
+    "نسل الأغراب", "الهيبة", "عايشة الدور", "قلبي ومفتاحه",
+    "حكيم باشا", "جرح قديم",
 ]
 
 FOREIGN_HARDCODED = [
@@ -61,6 +75,10 @@ FOREIGN_HARDCODED = [
 ]
 
 MOVIE_KW = ["فيلم", "فيلمو", "movie", "film", "سينما"]
+
+MOVIE_EXCEPTIONS = {
+    "يوم 13", "19 ب", "24 ساعة", "الفيل الازرق", "الكنز", "ولاد رزق",
+}
 
 
 def load_cache():
@@ -73,13 +91,10 @@ def load_cache():
 
 
 def save_cache(cache):
-    CACHE_FILE.write_text(
-        json.dumps(cache, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def detect_origin(name: str, existing_type: str = "") -> str:
+def detect_origin(name, existing_type=""):
     name_lower = name.lower().strip()
     for kw in FOREIGN_HARDCODED:
         if kw in name or kw.lower() in name_lower:
@@ -143,24 +158,23 @@ def normalize_arabic(text):
 def score_tmdb_result(result, query):
     title = result.get("name") or result.get("title") or ""
     original = result.get("original_name") or result.get("original_title") or ""
-    n_title = normalize_arabic(title)
-    n_original = normalize_arabic(original)
-    n_query = normalize_arabic(query)
-    if not n_query:
+    nt = normalize_arabic(title)
+    no = normalize_arabic(original)
+    nq = normalize_arabic(query)
+    if not nq:
         return 0
-    if n_title == n_query or n_original == n_query:
+    if nt == nq or no == nq:
         return 100
-    if n_title.startswith(n_query) or n_query.startswith(n_title):
+    if nt.startswith(nq) or nq.startswith(nt):
         return 85
-    if n_query in n_title or n_query in n_original:
+    if nq in nt or nq in no:
         return 70
-    q_words = set(n_query.split())
-    t_words = set(n_title.split())
-    o_words = set(n_original.split())
-    all_target = t_words | o_words
-    if q_words and all_target:
-        overlap = len(q_words & all_target) / max(len(q_words), 1)
-        return int(overlap * 60)
+    qw = set(nq.split())
+    tw = set(nt.split())
+    ow = set(no.split())
+    all_t = tw | ow
+    if qw and all_t:
+        return int(len(qw & all_t) / max(len(qw), 1) * 60)
     return 0
 
 
@@ -175,35 +189,28 @@ def tmdb_search(session, name, content_type="", year=""):
         queries.append(clean[2:])
     if clean.endswith("ة"):
         queries.append(clean[:-1])
-    if content_type == "movie":
-        endpoints = ["movie", "tv"]
-    elif content_type == "series":
-        endpoints = ["tv", "movie"]
-    else:
-        endpoints = ["tv", "movie"]
+    endpoints = ["tv", "movie"] if content_type != "movie" else ["movie", "tv"]
+
     best_poster = ""
     best_score = 0
     for query in queries:
-        for endpoint in endpoints:
+        for ep in endpoints:
             try:
                 params = {"api_key": TMDB_API_KEY, "query": query, "language": "ar"}
-                r = session.get(f"{TMDB_BASE}/search/{endpoint}", params=params, timeout=TIMEOUT)
+                r = session.get(f"{TMDB_BASE}/search/{ep}", params=params, timeout=TIMEOUT)
                 if r.status_code != 200:
                     continue
-                results = r.json().get("results", [])
-                for result in results[:5]:
-                    score = score_tmdb_result(result, clean)
+                for result in r.json().get("results", [])[:5]:
+                    sc = score_tmdb_result(result, clean)
                     poster = result.get("poster_path")
-                    if poster and score > best_score:
-                        best_score = score
+                    if poster and sc > best_score:
+                        best_score = sc
                         best_poster = f"{TMDB_IMG}{poster}"
                 if best_score >= 85:
                     return best_poster
             except Exception:
                 continue
-    if best_score >= 40:
-        return best_poster
-    return ""
+    return best_poster if best_score >= 40 else ""
 
 
 def tvmaze_search(session, name):
@@ -211,20 +218,16 @@ def tvmaze_search(session, name):
     if not clean:
         return ""
     try:
-        url = f"https://api.tvmaze.com/search/shows?q={quote(clean)}"
-        r = session.get(url, timeout=TIMEOUT)
+        r = session.get(f"https://api.tvmaze.com/search/shows?q={quote(clean)}", timeout=TIMEOUT)
         if r.status_code != 200:
             return ""
         results = r.json()
-        if not results:
-            return ""
-        best = results[0]
-        score = score_tmdb_result({"name": best.get("show", {}).get("name", "")}, clean)
-        if score >= 40:
-            image = best.get("show", {}).get("image") or {}
-            poster = image.get("medium") or image.get("original")
-            if poster:
-                return poster
+        if results:
+            best = results[0]
+            score = score_tmdb_result({"name": best.get("show", {}).get("name", "")}, clean)
+            if score >= 40:
+                image = best.get("show", {}).get("image") or {}
+                return image.get("medium") or image.get("original") or ""
     except Exception:
         pass
     return ""
@@ -241,18 +244,14 @@ def elcinema_search(session, name):
     if not clean:
         return ""
     try:
-        url = f"https://elcinema.com/search?q={quote(clean)}"
-        r = session.get(url, headers=ELCINEMA_HEADERS, timeout=TIMEOUT)
+        r = session.get(f"https://elcinema.com/search?q={quote(clean)}", headers=ELCINEMA_HEADERS, timeout=TIMEOUT)
         if r.status_code != 200:
             return ""
-        matches = re.findall(
-            r'<img[^>]+src="(https?://[^"]+\.(?:jpg|jpeg|png|webp))"',
-            r.text, re.I,
-        )
-        for img_url in matches[:8]:
-            if any(bad in img_url.lower() for bad in ["logo", "icon", "avatar", "banner", "loading"]):
+        matches = re.findall(r'<img[^>]+src="(https?://[^"]+\.(?:jpg|jpeg|png|webp))"', r.text, re.I)
+        for url in matches[:8]:
+            if any(bad in url.lower() for bad in ["logo", "icon", "avatar", "banner", "loading", "blank"]):
                 continue
-            return img_url
+            return url
     except Exception:
         pass
     return ""
@@ -268,15 +267,10 @@ def bing_images(session, name, content_type=""):
     clean = clean_for_search(name)
     if not clean:
         return ""
-    type_hint = ""
-    if content_type == "movie":
-        type_hint = "فيلم"
-    elif content_type == "series":
-        type_hint = "مسلسل"
+    type_hint = "فيلم" if content_type == "movie" else "مسلسل"
     queries = [
-        f"{clean} {type_hint} بوستر".strip(),
+        f"{clean} {type_hint} بوستر",
         f"{clean} بوستر",
-        f"{clean} مسلسل",
         f"{clean} poster",
     ]
     for query in queries:
@@ -286,35 +280,98 @@ def bing_images(session, name, content_type=""):
             if r.status_code != 200:
                 continue
             matches = re.findall(r'"murl":"(https?://[^"]+)"', r.text)
-            for m_url in matches[:8]:
-                m_url = m_url.replace("\\/", "/")
-                if any(ext in m_url.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-                    if not any(bad in m_url.lower() for bad in ["logo", "icon", "avatar", "emoji", "flag", "banner"]):
-                        return m_url
+            for url_img in matches[:8]:
+                url_img = url_img.replace("\\/", "/")
+                if any(ext in url_img.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    if not any(bad in url_img.lower() for bad in ["logo", "icon", "avatar", "emoji", "flag", "banner", "blank"]):
+                        return url_img
         except Exception:
             continue
+    return ""
+
+
+# ★★★ جوجل صور — مصدر جديد ★★★
+GOOGLE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "ar,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+}
+
+
+def google_images(session, name, content_type=""):
+    """يبحث في Google Images (scraping)"""
+    clean = clean_for_search(name)
+    if not clean:
+        return ""
+
+    type_hint = "بوستر مسلسل" if content_type == "series" else "بوستر فيلم"
+    queries = [
+        f"{clean} {type_hint}",
+        f"{clean} بوستر",
+    ]
+
+    for query in queries:
+        try:
+            # استخدم tbm=isch لبحث الصور
+            url = f"https://www.google.com/search?q={quote(query)}&tbm=isch&hl=ar"
+            r = session.get(url, headers=GOOGLE_HEADERS, timeout=TIMEOUT)
+            if r.status_code != 200:
+                continue
+
+            # استخراج روابط الصور من النتيجة
+            # Google يُرجع الصور داخل img src أو داخل JavaScript
+            # نبحث عن صور jpg/png
+            patterns = [
+                r'"(https?://[^"]+\.(?:jpg|jpeg|png|webp))"',
+                r"'(https?://[^']+\.(?:jpg|jpeg|png|webp))'",
+                r'src="(https?://[^"]+)"',
+            ]
+
+            candidates = []
+            for pat in patterns:
+                candidates.extend(re.findall(pat, r.text))
+
+            for url_img in candidates[:20]:
+                url_img = url_img.replace("\\/", "/").replace("\\u003d", "=").replace("\\u0026", "&")
+                if not any(ext in url_img.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    continue
+                if any(bad in url_img.lower() for bad in [
+                    "logo", "icon", "avatar", "emoji", "flag", "banner",
+                    "gstatic", "google", "youtube", "ggpht", "ytimg",
+                    "sprite", "spacer", "blank",
+                ]):
+                    continue
+                # طول معقول للصورة
+                if len(url_img) < 40:
+                    continue
+                candidates = [url_img]
+                break
+
+            if candidates:
+                return candidates[0]
+
+        except Exception:
+            continue
+
     return ""
 
 
 def make_placeholder_svg(name, content_type=""):
     first = name.strip()[:1] if name.strip() else "?"
     h = hash(name) % 360
-    color1 = f"hsl({h}, 55%, 22%)"
-    color2 = f"hsl({(h+40)%360}, 55%, 12%)"
-    color3 = f"hsl({(h+180)%360}, 70%, 60%)"
+    c1 = f"hsl({h}, 55%, 22%)"
+    c2 = f"hsl({(h+40)%360}, 55%, 12%)"
+    c3 = f"hsl({(h+180)%360}, 70%, 60%)"
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 450">
   <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="{color1}"/>
-      <stop offset="100%" stop-color="{color2}"/>
+      <stop offset="0%" stop-color="{c1}"/><stop offset="100%" stop-color="{c2}"/>
   </linearGradient></defs>
   <rect width="300" height="450" fill="url(#g)"/>
-  <circle cx="150" cy="180" r="60" fill="none" stroke="{color3}" stroke-width="3" opacity="0.4"/>
-  <text x="150" y="200" font-family="Cairo, sans-serif" font-size="70"
-        font-weight="900" fill="{color3}" text-anchor="middle"
-        dominant-baseline="middle">{first}</text>
-  <text x="150" y="330" font-family="Cairo, sans-serif" font-size="16"
-        font-weight="600" fill="rgba(255,255,255,.5)"
-        text-anchor="middle">TelegramFlix</text>
+  <circle cx="150" cy="180" r="60" fill="none" stroke="{c3}" stroke-width="3" opacity="0.4"/>
+  <text x="150" y="200" font-family="Cairo, sans-serif" font-size="70" font-weight="900" fill="{c3}"
+        text-anchor="middle" dominant-baseline="middle">{first}</text>
+  <text x="150" y="330" font-family="Cairo, sans-serif" font-size="16" font-weight="600"
+        fill="rgba(255,255,255,.5)" text-anchor="middle">TelegramFlix</text>
 </svg>'''
     from urllib.parse import quote as q
     return "data:image/svg+xml;charset=utf-8," + q(svg, safe="")
@@ -324,32 +381,37 @@ def enrich_one(series, cache, session):
     name = series.get("name", "").strip()
     if not name:
         return series
+
     episodes = []
-    seasons = series.get("seasons", {})
-    if isinstance(seasons, dict):
-        for eps in seasons.values():
-            if isinstance(eps, list):
-                episodes.extend(eps)
-    existing_type = series.get("type", "")
-    ctype = detect_type(name, episodes, existing_type)
+    for eps in series.get("seasons", {}).values():
+        if isinstance(eps, list):
+            episodes.extend(eps)
+
+    ctype = detect_type(name, episodes, series.get("type", ""))
     origin = detect_origin(name, ctype)
     series["type"] = ctype
     series["origin"] = origin
     series["category_slug"] = f"{ctype}-{origin}"
+
     existing = series.get("poster_url", "").strip()
     if existing and not existing.startswith("data:"):
         return series
-    cache_key = f"{name}|{ctype}|{series.get('tmdb_year','')}"
+
+    cache_key = f"{name}|{ctype}|v3"
     cached = cache["posters"].get(cache_key)
     if cached:
         series["poster_url"] = cached
         return series
+
+    # 1) TMDB
     poster = tmdb_search(session, name, ctype, series.get("tmdb_year", ""))
     if poster:
-        print(f"   TMDB: {name} [{ctype}/{origin}]")
+        print(f"   TMDB: {name}")
         series["poster_url"] = poster
         cache["posters"][cache_key] = poster
         return series
+
+    # 2) TVMaze (مسلسلات فقط)
     if ctype == "series":
         poster = tvmaze_search(session, name)
         if poster:
@@ -357,18 +419,32 @@ def enrich_one(series, cache, session):
             series["poster_url"] = poster
             cache["posters"][cache_key] = poster
             return series
+
+    # 3) ElCinema
     poster = elcinema_search(session, name)
     if poster:
         print(f"   ElCinema: {name}")
         series["poster_url"] = poster
         cache["posters"][cache_key] = poster
         return series
+
+    # 4) Bing Images
     poster = bing_images(session, name, ctype)
     if poster:
         print(f"   Bing: {name}")
         series["poster_url"] = poster
         cache["posters"][cache_key] = poster
         return series
+
+    # 5) ★★★ Google Images — جديد ★★★
+    poster = google_images(session, name, ctype)
+    if poster:
+        print(f"   Google: {name}")
+        series["poster_url"] = poster
+        cache["posters"][cache_key] = poster
+        return series
+
+    # 6) Placeholder
     print(f"   Placeholder: {name}")
     poster = make_placeholder_svg(name, ctype)
     series["poster_url"] = poster
@@ -385,41 +461,38 @@ def main():
     except json.JSONDecodeError as e:
         print(f"data.json تالف: {e}")
         raise SystemExit(1)
+
     series_list = data.get("series", [])
     cache = load_cache()
     print(f"{len(series_list)} عمل")
     print(f"{MAX_WORKERS} threads\n")
+
     session = requests.Session()
     session.headers.update({"Accept-Encoding": "gzip, deflate"})
+
     start = time.time()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = [ex.submit(enrich_one, s, cache, session) for s in series_list]
         for _ in as_completed(futures):
             pass
     elapsed = time.time() - start
-    print(f"\nالوقت: {elapsed:.1f}s")
+
     from collections import Counter
     types = Counter(s.get("type", "?") for s in series_list)
     origins = Counter(s.get("origin", "?") for s in series_list)
-    with_poster = sum(
-        1 for s in series_list
-        if s.get("poster_url", "") and not s.get("poster_url", "").startswith("data:")
-    )
-    placeholder_count = sum(
-        1 for s in series_list
-        if s.get("poster_url", "").startswith("data:")
-    )
-    print(f"\nالإحصائيات:")
+    with_poster = sum(1 for s in series_list if s.get("poster_url", "") and not s.get("poster_url", "").startswith("data:"))
+    placeholder = sum(1 for s in series_list if s.get("poster_url", "").startswith("data:"))
+
+    print(f"\nالوقت: {elapsed:.1f}s")
+    print(f"الإحصائيات:")
     for k, v in types.items():
         print(f"   {k}: {v}")
     for k, v in origins.items():
         print(f"   {k}: {v}")
     print(f"   صور حقيقية: {with_poster}/{len(series_list)}")
-    print(f"   Placeholder: {placeholder_count}")
-    DATA_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    print(f"   Placeholder: {placeholder}")
+
+    DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     save_cache(cache)
     print(f"\nحفظ {DATA_FILE.name}")
     print(f"حفظ Cache ({len(cache['posters'])} صورة)")
