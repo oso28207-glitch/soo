@@ -1,0 +1,271 @@
+name: 🤖 Auto Upload + Build
+
+on:
+  # 1) تشغيل تلقائي يومياً الساعة 2 صباحاً UTC
+  schedule:
+    - cron: '0 2 * * *'
+  
+  # 2) تشغيل يدوي
+  workflow_dispatch:
+    inputs:
+      max_runtime_minutes:
+        description: 'أقصى وقت للتشغيل (دقائق)'
+        required: false
+        default: '280'
+        type: string
+      only_series:
+        description: 'اسم مسلسل محدد (اتركه فارغاً للكل)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: auto-upload
+  cancel-in-progress: false
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # المرحلة 1: رفع الحلقات الجديدة
+  # ═══════════════════════════════════════════════════════════
+  upload-new-episodes:
+    name: 📤 Upload New Episodes
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      uploaded_count: ${{ steps.upload.outputs.count }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y google-chrome-stable || true
+          sudo apt-get install -y chromium-chromedriver || true
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            "yt-dlp[default,curl-cffi]>=2026.08.19" \
+            "seleniumbase>=4.52.0" \
+            "beautifulsoup4>=4.13.0" \
+            "curl_cffi>=0.15.0" \
+            "pyrogram>=2.0.106" \
+            "tgcrypto>=1.2.5"
+
+      - name: Verify secrets
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+        run: |
+          missing=""
+          [ -z "$API_ID" ] && missing="$missing API_ID"
+          [ -z "$API_HASH" ] && missing="$missing API_HASH"
+          [ -z "$CHANNEL" ] && missing="$missing CHANNEL"
+          [ -z "$STRING_SESSION" ] && missing="$missing STRING_SESSION"
+          if [ -n "$missing" ]; then
+            echo "❌ Missing:$missing"
+            exit 1
+          fi
+          echo "✅ All secrets present"
+
+      - name: Run auto uploader
+        id: upload
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+          MAX_RUNTIME_MINUTES: ${{ github.event.inputs.max_runtime_minutes || '280' }}
+        run: |
+          python auto_uploader.py 2>&1 | tee upload_log.txt
+          # استخرج عدد الحلقات المرفوعة (اختياري)
+          COUNT=$(grep -c "✅ " upload_log.txt || echo "0")
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upload_state.json 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "ℹ️ لا تغييرات في الحالة"
+          else
+            git commit -m "🤖 تحديث حالة الرفع [skip ci]"
+            for i in 1 2 3 4 5; do
+              if git pull --rebase --autostash origin main && git push origin main; then
+                echo "✅ تم الدفع في المحاولة $i"
+                break
+              fi
+              echo "⚠️ محاولة $i فشلت..."
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+          fi
+
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upload-log
+          path: upload_log.txt
+          retention-days: 7
+
+  # ═══════════════════════════════════════════════════════════
+  # المرحلة 2: جلب البيانات من Telegram
+  # ═══════════════════════════════════════════════════════════
+  fetch-data:
+    name: 📥 Fetch from Telegram
+    runs-on: ubuntu-latest
+    needs: upload-new-episodes
+    timeout-minutes: 120
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyrogram==2.0.106 tgcrypto aiohttp requests
+
+      - name: Fetch from Telegram
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          CHANNEL2: ${{ secrets.CHANNEL2 }}
+          STRING_SESSION: ${{ secrets.STRING_SESSION }}
+          STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
+          STORAGE_CHANNEL: ${{ secrets.STORAGE_CHANNEL }}
+          STREAM_BASE: ${{ secrets.STREAM_BASE }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          HISTORY_LIMIT: '15000'
+          MAX_FILE_MB: '2000'
+        run: python fetch_from_telegram.py
+
+      - name: Enrich data
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: python enrich_data.py
+
+      - name: Verify data.json
+        run: |
+          python -c "
+          import json
+          from collections import Counter
+          d = json.load(open('data.json', encoding='utf-8'))
+          s = d.get('series', [])
+          total = sum(len(eps) for x in s for eps in x.get('seasons', {}).values())
+          types = Counter(x.get('type', '?') for x in s)
+          print(f'Items: {len(s)} | Episodes: {total}')
+          print(f'Types: {dict(types)}')
+          "
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.json forward_progress.json .poster_cache.json 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "ℹ️ لا تغييرات"
+          else
+            git commit -m "🤖 تحديث البيانات [skip ci]"
+            for i in 1 2 3 4 5; do
+              if git pull --rebase --autostash --strategy-option=theirs origin main && git push origin main; then
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-json
+          path: |
+            data.json
+            forward_progress.json
+          retention-days: 7
+
+  # ═══════════════════════════════════════════════════════════
+  # المرحلة 3: بناء الموقع
+  # ═══════════════════════════════════════════════════════════
+  build:
+    name: 🏗️ Build site
+    runs-on: ubuntu-latest
+    needs: fetch-data
+    timeout-minutes: 20
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: data-json
+          path: .
+
+      - name: Build site
+        run: python build_all.py --clean
+
+      - name: Stats
+        run: |
+          echo "docs size: $(du -sh docs/ | cut -f1)"
+          echo "HTML files: $(find docs -name '*.html' | wc -l)"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+  # ═══════════════════════════════════════════════════════════
+  # المرحلة 4: النشر
+  # ═══════════════════════════════════════════════════════════
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      - run: |
+          echo "### ✅ تم النشر بنجاح" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**الحلقات المرفوعة:** ${{ needs.upload-new-episodes.outputs.uploaded_count }}" >> $GITHUB_STEP_SUMMARY
