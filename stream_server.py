@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 stream_server.py — خادم MTProto للبث المباشر من Telegram
-نسخة نهائية مع CORS شامل ومعالجة أخطاء كاملة
+★ حل نهائي: pre-fetch قبل الترويسات + CORS مضمون ★
 """
 
 import os
@@ -11,7 +11,7 @@ import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pyrogram import Client
 from pyrogram.file_id import FileId
@@ -31,8 +31,20 @@ if not all([API_ID, API_HASH, STRING_SESSION]):
     print("❌ متغيرات ناقصة: API_ID, API_HASH, STRING_SESSION")
     raise SystemExit(1)
 
+# قواعد Telegram
 BLOCK_SIZE = 4096
-CHUNK_SIZE = 1024 * 1024
+CHUNK_SIZE = 1024 * 1024  # 1MB
+
+# ═══════════════════════════════════════════════════════════════
+# CORS Headers — ثابتة لكل الردود
+# ═══════════════════════════════════════════════════════════════
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": "Range, Content-Type, Accept, Origin",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
+    "Access-Control-Max-Age": "86400",
+}
 
 # ═══════════════════════════════════════════════════════════════
 # MTProto Client
@@ -56,7 +68,7 @@ async def lifespan(app: FastAPI):
     if CHANNEL_ID:
         print(f"📺 Channel for refresh: {CHANNEL_ID}")
     else:
-        print("⚠️ CHANNEL not set — refresh disabled")
+        print("⚠️ CHANNEL not set")
     yield
     print("👋 Stopping MTProto client...")
     await client.stop()
@@ -78,24 +90,25 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
+    """يضمن CORS في كل الردود حتى عند الأخطاء"""
     try:
         response = await call_next(request)
     except Exception as e:
-        print(f"❌ Unhandled error in middleware: {e}")
+        print(f"❌ Middleware error: {e}")
         traceback.print_exc()
         response = JSONResponse(
             {"error": "internal_error", "message": str(e)},
             status_code=500,
+            headers=CORS_HEADERS,
         )
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Range, Content-Type"
-    response.headers["Access-Control-Expose-Headers"] = (
-        "Content-Length, Content-Range, Accept-Ranges"
-    )
+    for k, v in CORS_HEADERS.items():
+        response.headers[k] = v
     return response
 
 
+# ═══════════════════════════════════════════════════════════════
+# Endpoints
+# ═══════════════════════════════════════════════════════════════
 @app.get("/")
 async def root():
     return {"service": "Telegram Stream Server", "status": "ok"}
@@ -106,6 +119,9 @@ async def health():
     return {"status": "ok"}
 
 
+# ═══════════════════════════════════════════════════════════════
+# دوال مساعدة
+# ═══════════════════════════════════════════════════════════════
 def _extract_file_id(msg) -> str:
     for attr in ("video", "document", "audio", "animation", "voice"):
         media = getattr(msg, attr, None)
@@ -129,6 +145,7 @@ async def refresh_file_id(message_id: int) -> str:
                     return new_fid
         except Exception as e1:
             print(f"⚠️ get_messages failed: {e1}")
+
         try:
             async for msg in client.get_chat_history(CHANNEL_ID, limit=500):
                 if msg.id == message_id and msg.media:
@@ -138,6 +155,7 @@ async def refresh_file_id(message_id: int) -> str:
                         return new_fid
         except Exception as e2:
             print(f"⚠️ get_chat_history failed: {e2}")
+
         print("❌ All refresh methods failed")
         return ""
     except Exception as e:
@@ -181,102 +199,221 @@ def align_down(x, alignment):
     return (x // alignment) * alignment
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★★★ دالة جلب كتلة واحدة مع معالجة الأخطاء ★★★
+# ═══════════════════════════════════════════════════════════════
+async def fetch_chunk(location, offset, limit, mid, current_file_id, refresh_state):
+    """
+    يجلب كتلة واحدة. يُعيد (data, new_location, new_file_id).
+    يعالج FileReferenceExpired مع إعادة المحاولة.
+    """
+    MAX_REFRESH = 3
+
+    try:
+        result = await client.invoke(
+            GetFile(location=location, offset=offset, limit=limit)
+        )
+        return result.bytes, location, current_file_id
+
+    except FileReferenceExpired:
+        print(f"🔄 FileReferenceExpired at offset {offset}")
+
+        if refresh_state["attempts"] >= MAX_REFRESH or not mid:
+            print("❌ Cannot refresh — aborting")
+            return b"", location, current_file_id
+
+        refresh_state["attempts"] += 1
+        new_fid = await refresh_file_id(mid)
+        if not new_fid:
+            return b"", location, current_file_id
+
+        try:
+            new_file_id = FileId.decode(new_fid)
+            new_location = build_location(new_file_id)
+            print(f"✅ Refreshed (attempt {refresh_state['attempts']})")
+            # إعادة المحاولة
+            result = await client.invoke(
+                GetFile(location=new_location, offset=offset, limit=limit)
+            )
+            return result.bytes, new_location, new_fid
+        except Exception as e:
+            print(f"❌ Failed to decode refreshed file_id: {e}")
+            return b"", location, current_file_id
+
+    except Exception as e:
+        print(f"⚠️ Chunk error at offset {offset}: {e}")
+        traceback.print_exc()
+        return b"", location, current_file_id
+
+
+# ═══════════════════════════════════════════════════════════════
+# ★★★ Endpoint البث — pre-fetch قبل الترويسات ★★★
+# ═══════════════════════════════════════════════════════════════
+@app.options("/stream")
+async def stream_options():
+    """يستجيب لـ preflight request"""
+    return Response(status_code=200, headers=CORS_HEADERS)
+
+
 @app.head("/stream")
+async def stream_head(fid: str, size: int = 0, mid: int = 0):
+    """HEAD request — يُرجع الترويسات فقط بدون بث"""
+    if not fid or not size:
+        return Response(status_code=400, headers=CORS_HEADERS)
+    return Response(
+        status_code=200,
+        headers={
+            **CORS_HEADERS,
+            "Content-Type": "video/mp4",
+            "Content-Length": str(size),
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
 @app.get("/stream")
 async def stream(request: Request, fid: str, size: int = 0, mid: int = 0):
+    """
+    بث مع pre-fetch للكتلة الأولى لضمان CORS headers.
+    """
+    # ─── التحقق من المعاملات ───
     if not fid:
         raise HTTPException(400, "missing fid parameter")
+
     try:
         file_id = FileId.decode(fid)
     except Exception as e:
         print(f"❌ FileId.decode failed: {e}")
         raise HTTPException(400, f"invalid file_id: {e}")
+
     file_size = size
     if not file_size or file_size <= 0:
         raise HTTPException(400, "missing or invalid 'size' parameter")
+
+    # ─── تحليل Range ───
     range_header = request.headers.get("range")
     start, end = 0, file_size - 1
+
     if range_header:
         m = re.match(r"bytes=(\d+)-(\d*)", range_header)
         if m:
             start = int(m.group(1))
             end = int(m.group(2)) if m.group(2) else file_size - 1
             if start > end or end >= file_size:
-                raise HTTPException(416, "range not satisfiable")
+                raise HTTPException(
+                    416, "range not satisfiable",
+                    headers={"Content-Range": f"bytes */{file_size}"},
+                )
+
     length = end - start + 1
+
     print(f"📥 Stream: type={file_id.file_type}, size={file_size / 1024 / 1024:.1f}MB, "
           f"range={start}-{end} ({length / 1024 / 1024:.2f}MB), mid={mid}")
-    location = build_location(file_id)
 
+    location = build_location(file_id)
+    aligned_start = align_down(start, CHUNK_SIZE)
+    skip = start - aligned_start
+
+    print(f"   ↳ aligned_start={aligned_start}, skip={skip}")
+
+    # ═══════════════════════════════════════════════════════════
+    # ★★★ pre-fetch الكتلة الأولى قبل الترويسات ★★★
+    # ═══════════════════════════════════════════════════════════
+    refresh_state = {"attempts": 0}
+
+    try:
+        first_data, new_location, new_fid = await fetch_chunk(
+            location, aligned_start, CHUNK_SIZE, mid, file_id, refresh_state
+        )
+    except Exception as e:
+        print(f"❌ Pre-fetch failed: {e}")
+        traceback.print_exc()
+        first_data = b""
+
+    if not first_data:
+        # ─── فشل الجلب الأولي — نُرسل خطأ مع CORS ───
+        print("❌ Pre-fetch returned empty — sending error with CORS")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "stream_unavailable",
+                "message": "تعذّر جلب الفيديو من Telegram. جرّب مرة أخرى.",
+            },
+            headers=CORS_HEADERS,
+        )
+
+    # تحديث location إذا تم refresh
+    if new_fid and new_fid != fid:
+        location = new_location
+
+    # ─── معالجة الكتلة الأولى ───
+    if skip > 0:
+        first_data = first_data[skip:]
+    if len(first_data) > length:
+        first_data = first_data[:length]
+
+    first_sent = len(first_data)
+    print(f"✅ Pre-fetch OK: {first_sent} bytes")
+
+    # ═══════════════════════════════════════════════════════════
+    # ★★★ الآن نُرسل الترويسات + البث المتبقي ★★★
+    # ═══════════════════════════════════════════════════════════
     async def generate():
-        nonlocal file_id, location
-        aligned_start = align_down(start, CHUNK_SIZE)
-        skip = start - aligned_start
-        read_offset = aligned_start
-        remaining = length
-        total_sent = 0
-        first_read = True
-        refresh_attempts = 0
+        nonlocal location
+        yield first_data  # الكتلة الأولى (مجلوبة مسبقاً)
+
+        if first_sent >= length:
+            print(f"✅ Stream complete (single chunk): {first_sent} bytes")
+            return
+
+        read_offset = aligned_start + CHUNK_SIZE
+        remaining = length - first_sent
+        total_sent = first_sent
         MAX_REFRESH = 3
-        print(f"   ↳ aligned_start={aligned_start}, skip={skip}")
+
         while remaining > 0:
             try:
-                result = await client.invoke(
-                    GetFile(location=location, offset=read_offset, limit=CHUNK_SIZE)
+                data, location, _ = await fetch_chunk(
+                    location, read_offset, CHUNK_SIZE, mid, file_id, refresh_state
                 )
-            except FileReferenceExpired:
-                print(f"🔄 FileReferenceExpired at offset {read_offset}")
-                if refresh_attempts >= MAX_REFRESH or not mid:
-                    print("❌ Cannot refresh — aborting")
-                    break
-                refresh_attempts += 1
-                new_fid = await refresh_file_id(mid)
-                if not new_fid:
-                    break
-                try:
-                    file_id = FileId.decode(new_fid)
-                    location = build_location(file_id)
-                    print(f"✅ Refreshed (attempt {refresh_attempts}), retrying...")
-                    continue
-                except Exception as e:
-                    print(f"❌ Failed to decode refreshed file_id: {e}")
-                    break
             except Exception as e:
-                print(f"⚠️ Chunk error at offset {read_offset} (size={CHUNK_SIZE}): {e}")
-                traceback.print_exc()
+                print(f"⚠️ Chunk fetch failed at offset {read_offset}: {e}")
                 break
-            data = result.bytes
+
             if not data:
-                print(f"⚠️ Empty response at offset {read_offset}")
+                print(f"⚠️ Empty chunk at offset {read_offset}")
                 break
-            if first_read:
-                if skip > 0:
-                    data = data[skip:]
-                first_read = False
+
             if len(data) > remaining:
                 data = data[:remaining]
+
             yield data
             total_sent += len(data)
             read_offset += CHUNK_SIZE
             remaining -= len(data)
+
             if total_sent % (10 * CHUNK_SIZE) == 0:
                 print(f"   ... sent {total_sent / 1024 / 1024:.1f}MB")
+
         if remaining > 0:
             print(f"⚠️ Stream ended early: {remaining / 1024 / 1024:.2f}MB remaining")
         else:
             print(f"✅ Stream complete: {total_sent / 1024 / 1024:.2f}MB sent")
 
+    # ─── الترويسات ───
     headers = {
+        **CORS_HEADERS,
         "Content-Type": "video/mp4",
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=86400",
+        "Content-Length": str(length),
     }
+
     if range_header:
         headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-        headers["Content-Length"] = str(length)
         return StreamingResponse(generate(), status_code=206, headers=headers)
-    headers["Content-Length"] = str(length)
-    return StreamingResponse(generate(), headers=headers)
+
+    return StreamingResponse(generate(), status_code=200, headers=headers)
 
 
 @app.exception_handler(Exception)
@@ -286,7 +423,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         {"error": "internal_error", "message": str(exc)},
         status_code=500,
-        headers={"Access-Control-Allow-Origin": "*"},
+        headers=CORS_HEADERS,
     )
 
 
