@@ -105,6 +105,9 @@ if not validate_env():
 
 
 def install_requirements():
+    if os.environ.get("SKIP_PIP_INSTALL", "false").lower() in ("true", "1", "yes"):
+        print("⏭️ تخطي pip install (SKIP_PIP_INSTALL=true)")
+        return
     print("📦 Installing requirements...")
     reqs = [
         "yt-dlp[default,curl-cffi]>=2026.08.19",
