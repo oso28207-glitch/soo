@@ -1,8 +1,8 @@
-name: 🤖 Auto Upload + Build
+name: 🤖 Auto Upload + Incremental Build
 
 on:
   schedule:
-    - cron: '0 2 */3 * *'    # كل 3 أيام
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       max_runtime_minutes:
@@ -10,6 +10,11 @@ on:
         required: false
         default: '330'
         type: string
+      force_full_build:
+        description: 'إعادة بناء كل شيء'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
@@ -25,7 +30,6 @@ jobs:
     name: 📤 Upload New Episodes
     runs-on: ubuntu-latest
     timeout-minutes: 360
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,16 +41,16 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           sudo apt-get install -y google-chrome-stable || true
           sudo apt-get install -y chromium-chromedriver || true
 
-      - name: Pre-install Python packages (لتوفير الوقت)
+      - name: Pre-install Python packages
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install \
             "yt-dlp[default,curl-cffi]>=2026.08.19" \
             "seleniumbase>=4.52.0" \
@@ -55,21 +59,6 @@ jobs:
             "pyrogram>=2.0.106" \
             "tgcrypto>=1.2.5"
 
-      - name: Verify secrets
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          CHANNEL: ${{ secrets.CHANNEL }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: |
-          missing=""
-          [ -z "$API_ID" ] && missing="$missing API_ID"
-          [ -z "$API_HASH" ] && missing="$missing API_HASH"
-          [ -z "$CHANNEL" ] && missing="$missing CHANNEL"
-          [ -z "$STRING_SESSION" ] && missing="$missing STRING_SESSION"
-          [ -n "$missing" ] && { echo "❌ Missing:$missing"; exit 1; }
-          echo "✅ Secrets OK"
-
       - name: Run auto uploader
         env:
           API_ID: ${{ secrets.API_ID }}
@@ -77,9 +66,7 @@ jobs:
           CHANNEL: ${{ secrets.CHANNEL }}
           STRING_SESSION: ${{ secrets.STRING_SESSION }}
           MAX_RUNTIME_MINUTES: ${{ github.event.inputs.max_runtime_minutes || '330' }}
-          SKIP_PIP_INSTALL: 'true'
-        run: |
-          python auto_uploader.py 2>&1 | tee upload_log.txt
+        run: python auto_uploader.py 2>&1 | tee upload_log.txt
 
       - name: Commit state
         if: always()
@@ -88,13 +75,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add upload_state.json series_config.json 2>/dev/null || true
           if git diff --staged --quiet; then
-            echo "ℹ️ لا تغييرات"
+            echo "لا تغييرات"
           else
-            git commit -m "🤖 تحديث حالة الرفع [skip ci]"
+            git commit -m "🤖 update state [skip ci]"
             for i in 1 2 3 4 5; do
-              if git pull --rebase --autostash origin main && git push origin main; then
-                break
-              fi
+              git pull --rebase --autostash origin main && git push origin main && break
               git rebase --abort 2>/dev/null || true
               sleep 5
             done
@@ -108,12 +93,11 @@ jobs:
           retention-days: 7
 
   fetch-data:
-    name: 📥 Fetch from Telegram
+    name: 📥 Fetch + Enrich
     runs-on: ubuntu-latest
     needs: upload-new-episodes
     if: always()
     timeout-minutes: 120
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,9 +135,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data.json forward_progress.json .poster_cache.json 2>/dev/null || true
           if git diff --staged --quiet; then
-            echo "ℹ️ لا تغييرات"
+            echo "لا تغييرات"
           else
-            git commit -m "🤖 تحديث البيانات [skip ci]"
+            git commit -m "🤖 update data [skip ci]"
             for i in 1 2 3 4 5; do
               git pull --rebase --autostash --strategy-option=theirs origin main && git push origin main && break
               git rebase --abort 2>/dev/null || true
@@ -168,22 +152,43 @@ jobs:
           retention-days: 7
 
   build:
-    name: 🏗️ Build
+    name: 🏗️ Incremental Build
     runs-on: ubuntu-latest
     needs: fetch-data
     if: always()
-    timeout-minutes: 20
-
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with: { ref: main, fetch-depth: 0 }
+        with:
+          ref: main
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
+
       - uses: actions/download-artifact@v4
-        with: { name: data-json, path: . }
-      - run: python build_all.py --clean
+        with:
+          name: data-json
+          path: .
+
+      - name: Build (incremental)
+        run: |
+          if [ "${{ github.event.inputs.force_full_build }}" = "true" ]; then
+            python build_all.py --force-full
+          else
+            python build_all.py
+          fi
+
+      - name: Show build stats
+        run: |
+          echo "docs size: $(du -sh docs/ | cut -f1)"
+          echo "HTML files: $(find docs -name '*.html' | wc -l)"
+          echo "Changed files: $(git status --porcelain docs/ | wc -l)"
+
       - uses: actions/upload-pages-artifact@v3
-        with: { path: docs/ }
+        with:
+          path: docs/
 
   deploy:
     name: 🚀 Deploy
@@ -196,3 +201,7 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - run: |
+          echo "### ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
