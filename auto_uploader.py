@@ -1,66 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-auto_uploader.py — رافع المسلسلات التلقائي
-
-★ يقرأ المسلسلات من series_map.json
-★ يبحث عن حلقات جديدة على u.3seq.com (مع دعم المواسم)
-★ يحمّل + يضغط + يرفع للقناة
-★ يحفظ التقدّم في upload_state.json
+auto_uploader.py — رافع تلقائي يستدعي main.py عبر subprocess
 """
 
 import os
 import sys
 import json
 import time
-import random
-import asyncio
+import re
 import subprocess
-import shutil
 from datetime import datetime
 from pathlib import Path
 
-# ═══════════════════════════════════════════════════════════════
-# الإعدادات من البيئة
-# ═══════════════════════════════════════════════════════════════
-TELEGRAM_API_ID = os.environ.get("API_ID", "")
-TELEGRAM_API_HASH = os.environ.get("API_HASH", "")
-TELEGRAM_CHANNEL = os.environ.get("CHANNEL", "")
-STRING_SESSION = os.environ.get("STRING_SESSION", "").strip()
-
-TEST_MODE = os.environ.get("TEST_MODE", "false").lower() in ("true", "1", "yes")
-MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_MINUTES", "280")) * 60
-
-# مسارات
 ROOT = Path(__file__).resolve().parent
-DATA_FILE = ROOT / "data.json"
 MAP_FILE = ROOT / "series_map.json"
 STATE_FILE = ROOT / "upload_state.json"
+CONFIG_FILE = ROOT / "series_config.json"
+MAIN_SCRIPT = ROOT / "main.py"
 
-# ⚠️ قوالب URL المحتملة على u.3seq.com
-# سيجرّب السكربت كل قالب حتى يجد واحداً يعمل
-URL_TEMPLATES = [
-    # القالب الأساسي (موسم 1 بدون ذكر الموسم)
-    "https://u.3seq.com/video/modablaj-{slug}-episode-{ep:02d}",
-    # مع رقم الموسم في الرابط
-    "https://u.3seq.com/video/modablaj-{slug}-season-{season}-episode-{ep:02d}",
-    "https://u.3seq.com/video/modablaj-{slug}-{season}-episode-{ep:02d}",
-    "https://u.3seq.com/video/modablaj-{slug}-s{season}-episode-{ep:02d}",
-]
-
-# المهلات
-MIN_EPISODE_DURATION = 900
-WAIT_MIN, WAIT_MAX = 3, 6
-EPISODE_TIMEOUT_MAX = 22 * 60
-MIN_EPISODE_TIME = 4 * 60
+MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_MINUTES", "330")) * 60
+EPISODES_PER_CALL = 15       # عدد الحلقات لكل استدعاء main.py
+MIN_RUN_TIME = 6 * 60        # لا تبدأ تشغيلاً إذا كان المتبقي أقل من 6 دقائق
 
 SCRIPT_START = time.time()
 
 
-# ═══════════════════════════════════════════════════════════════
-# Utilities
-# ═══════════════════════════════════════════════════════════════
-def elapsed_str():
+def elapsed():
     e = int(time.time() - SCRIPT_START)
     return f"{e//3600}h{(e%3600)//60}m{e%60}s"
 
@@ -69,28 +35,6 @@ def remaining():
     return max(0, MAX_RUNTIME_SECONDS - (time.time() - SCRIPT_START))
 
 
-def exceeded():
-    return (time.time() - SCRIPT_START) >= MAX_RUNTIME_SECONDS
-
-
-def validate_env():
-    if TEST_MODE:
-        print("🧪 TEST_MODE")
-        return True
-    errs = []
-    if not TELEGRAM_API_ID: errs.append("❌ API_ID")
-    if not TELEGRAM_API_HASH: errs.append("❌ API_HASH")
-    if not TELEGRAM_CHANNEL: errs.append("❌ CHANNEL")
-    if not STRING_SESSION: errs.append("❌ STRING_SESSION")
-    if errs:
-        print("\n".join(errs))
-        return False
-    return True
-
-
-# ═══════════════════════════════════════════════════════════════
-# قراءة/كتابة JSON
-# ═══════════════════════════════════════════════════════════════
 def load_json(path, default):
     if not path.exists():
         return default
@@ -102,299 +46,202 @@ def load_json(path, default):
 
 
 def save_json(path, data):
-    try:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"💾 حفظ {path.name}")
-    except Exception as e:
-        print(f"⚠️ فشل حفظ {path.name}: {e}")
-
-
-# ═══════════════════════════════════════════════════════════════
-# الحالة (state)
-# ═══════════════════════════════════════════════════════════════
-def load_state():
-    """{slug_season: [ep1, ep2, ...]}"""
-    return load_json(STATE_FILE, {})
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def state_key(slug, season):
     return f"{slug}_s{season}"
 
 
-def is_uploaded(state, slug, season, ep):
-    key = state_key(slug, season)
-    return ep in state.get(key, [])
+def get_last_uploaded(state, slug, season):
+    """آخر حلقة مرفوعة من state (0 إذا لا يوجد)"""
+    eps = state.get(state_key(slug, season), [])
+    return max(eps) if eps else 0
 
 
-def mark_uploaded(state, slug, season, ep):
+def mark_uploaded(state, slug, season, episodes):
+    """تسجيل حلقات جديدة في state"""
     key = state_key(slug, season)
     if key not in state:
         state[key] = []
-    if ep not in state[key]:
-        state[key].append(ep)
-        state[key].sort()
+    for ep in episodes:
+        if ep not in state[key]:
+            state[key].append(ep)
+    state[key].sort()
+    save_json(STATE_FILE, state)
 
 
-# ═══════════════════════════════════════════════════════════════
-# قوالب URL والتحقق
-# ═══════════════════════════════════════════════════════════════
-def get_url_candidates(slug, season, ep):
-    """يولّد قوالب URL المحتملة للحلقة"""
-    candidates = []
-    for template in URL_TEMPLATES:
+def parse_uploaded_episodes(log_text, start_ep, end_ep):
+    """
+    يبحث عن الحلقات التي نجح رفعها في سجل main.py
+    يبحث عن: "✅ 15" أو "✅ S01E15" أو "رُفع في"
+    """
+    uploaded = set()
+    # نمط 1: "✅ 15" أو "✅ S01E15"
+    for m in re.finditer(r'✅\s+(?:S\d+E)?(\d{1,3})\b', log_text):
         try:
-            url = template.format(slug=slug, season=season, ep=ep)
-            if url not in candidates:
-                candidates.append(url)
+            ep = int(m.group(1))
+            if start_ep <= ep <= end_ep:
+                uploaded.add(ep)
         except Exception:
-            continue
-    return candidates
+            pass
+    # نمط 2: في سطر نجاح الرفع: "✅ رُفع في ..."
+    # نربطه برقم الحلقة من السطر السابق إذا أمكن
+    lines = log_text.split("\n")
+    for i, line in enumerate(lines):
+        if "رُفع في" in line and "✅" in line:
+            # ابحث في السطور السابقة عن رقم الحلقة
+            for j in range(max(0, i - 30), i):
+                m = re.search(r'🎬\s+Ep\s+(\d+)', lines[j])
+                if m:
+                    try:
+                        ep = int(m.group(1))
+                        if start_ep <= ep <= end_ep:
+                            uploaded.add(ep)
+                    except Exception:
+                        pass
+                    break
+    return sorted(uploaded)
 
 
-def check_url_exists(url, timeout=10):
-    """يتحقق من وجود URL عبر HTTP"""
-    try:
-        from curl_cffi import requests as cffi
-        r = cffi.get(
-            url, impersonate="chrome120", timeout=timeout,
-            allow_redirects=True, verify=False,
-        )
-        if r.status_code != 200:
-            return False, None
-        text_lower = r.text[:8000].lower()
-        # كشف صفحات 404
-        if any(marker in text_lower for marker in [
-            "404", "not found", "غير موجود", "لا يوجد", "page not found",
-        ]):
-            return False, None
-        # تحقق من وجود "episode" في الرابط
-        if "episode" not in url.lower():
-            return False, None
-        return True, url
-    except Exception:
-        return False, None
-
-
-def find_working_url(slug, season, ep):
-    """يبحث عن URL صالح للحلقة من بين القوالب"""
-    for url in get_url_candidates(slug, season, ep):
-        exists, valid = check_url_exists(url)
-        if exists:
-            return url
-    return None
-
-
-# ═══════════════════════════════════════════════════════════════
-# اكتشاف الحلقات الجديدة
-# ═══════════════════════════════════════════════════════════════
-def discover_new_episodes(slug, season, state, max_ep=300):
+def run_main_for_range(series_arabic, slug, season, start_ep, end_ep):
     """
-    يكتشف الحلقات الجديدة لموسم معين.
-    يعيد (first_url_template, [new_eps]).
+    يستدعي main.py لحلقات محددة عبر subprocess.
+    يعيد: (log_text, uploaded_episodes)
     """
-    key = state_key(slug, season)
-    uploaded = state.get(key, [])
+    # اكتب series_config.json
+    config = {
+        "series_name": slug,
+        "series_name_arabic": series_arabic,
+        "season_num": season,
+        "start_episode": start_ep,
+        "end_episode": end_ep,
+    }
+    CONFIG_FILE.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
-    # ابدأ من آخر حلقة + 1
-    start = max(uploaded) + 1 if uploaded else 1
-
-    print(f"   🔍 فحص {slug} S{season:02d} بدءاً من الحلقة {start}...", flush=True)
-
-    new_eps = []
-    fails = 0
-    ep = start
-
-    while ep <= max_ep and fails < 3:
-        if exceeded():
-            break
-        url = find_working_url(slug, season, ep)
-        if url:
-            new_eps.append(ep)
-            fails = 0
-            ep += 1
-        else:
-            fails += 1
-            ep += 1
-
-    return new_eps
-
-
-# ═══════════════════════════════════════════════════════════════
-# معالجة مسلسل واحد
-# ═══════════════════════════════════════════════════════════════
-async def process_series(series_name, slug, season, state, uploader_module):
-    """يعالج مسلسل واحد: يكتشف الحلقات الجديدة، يحمّلها ويرفعها."""
     print(f"\n{'='*60}")
-    print(f"📺 {series_name}  →  {slug}  |  الموسم {season}")
-    print(f"{'='*60}")
+    print(f"📺 {series_arabic} → {slug} | موسم {season} | حلقات {start_ep}-{end_ep}")
+    print(f"{'='*60}", flush=True)
 
-    new_eps = discover_new_episodes(slug, season, state)
-    if not new_eps:
-        print(f"✅ لا حلقات جديدة")
-        return 0
+    env = os.environ.copy()
+    env["INPUT_SERIES_NAME"] = slug
+    env["INPUT_SERIES_NAME_ARABIC"] = series_arabic
+    env["INPUT_SEASON_NUM"] = str(season)
+    env["INPUT_START_EPISODE"] = str(start_ep)
+    env["INPUT_END_EPISODE"] = str(end_ep)
+    # أضف تخطي pip إذا كنت مررت SKIP_PIP_INSTALL في workflow
+    env.setdefault("SKIP_PIP_INSTALL", "true")
 
-    print(f"   🎯 {len(new_eps)} حلقة جديدة: {new_eps[:20]}{'...' if len(new_eps) > 20 else ''}")
+    # حد أقصى للوقت: 22 دقيقة لكل حلقة × عدد الحلقات، بحد أقصى ما تبقّى
+    num_eps = end_ep - start_ep + 1
+    timeout = min(num_eps * 22 * 60, remaining() - 60)
+    timeout = max(timeout, 5 * 60)  # 5 دقائق على الأقل
 
-    uploaded_count = 0
-    for ep in new_eps:
-        if exceeded() or remaining() < MIN_EPISODE_TIME:
-            print(f"⏰ لا وقت كافٍ — إيقاف")
-            return uploaded_count
-
-        if is_uploaded(state, slug, season, ep):
-            continue
-
-        print(f"\n🎬 {series_name} — S{season:02d}E{ep:02d}")
-        print(f"   ⏳ متبقي: {remaining()//60}m")
-
-        ddir = ROOT / f"dl_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        ddir.mkdir(exist_ok=True)
-        tmp_ts = str(ddir / f"temp_{ep:02d}.ts")
-        fin = str(ddir / f"final_{ep:02d}.mp4")
-        thb = str(ddir / f"thumb_{ep:02d}.jpg")
-
-        try:
-            # تحميل
-            print(f"   📥 تحميل...", flush=True)
-            try:
-                iframe, cookies, result = uploader_module.process_episode_all_in_one(
-                    ep, slug, tmp_ts
-                )
-            except Exception as e:
-                print(f"   ❌ خطأ في التحميل: {e}")
-                continue
-
-            if not result or not result[1]:
-                print(f"   ❌ فشل التحميل")
-                continue
-
-            size = result[0]
-            print(f"   ✅ تم التحميل: {size/(1024*1024):.1f} MB")
-
-            # فحص المدة
-            duration = uploader_module.get_real_duration(tmp_ts)
-            print(f"   🎞️ المدة: {duration}s")
-            if duration < MIN_EPISODE_DURATION:
-                print(f"   ⚠️ مدة قصيرة — تجاهل")
-                continue
-
-            # ضغط
-            print(f"   🗜️ ضغط...")
-            if not uploader_module.compress_144p(tmp_ts, fin):
-                shutil.copy2(tmp_ts, fin)
-
-            # thumbnail
-            uploader_module.thumb(fin, thb)
-
-            # رفع
-            final_dur = uploader_module.get_real_duration(fin)
-            caption = f"{series_name} الموسم {season} الحلقة {ep}"
-            ok = await uploader_module.upload(
-                fin, caption,
-                thb if os.path.exists(thb) else None,
-                override_duration=final_dur,
-            )
-
-            if ok:
-                mark_uploaded(state, slug, season, ep)
-                save_json(STATE_FILE, state)  # حفظ فوري
-                uploaded_count += 1
-                print(f"   ✅ رُفعت {series_name} S{season:02d}E{ep:02d}")
-            else:
-                print(f"   ❌ فشل الرفع")
-
-        except Exception as e:
-            print(f"   ❌ خطأ: {e}")
-        finally:
-            try:
-                shutil.rmtree(ddir, ignore_errors=True)
-            except:
-                pass
-
-        # انتظار
-        await asyncio.sleep(random.randint(WAIT_MIN, WAIT_MAX))
-
-    return uploaded_count
-
-
-# ═══════════════════════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════════════════════
-async def main():
-    print("=" * 60)
-    print("🤖 Auto Uploader — النسخة التلقائية")
-    print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS // 60}m")
-    print("=" * 60)
-
-    if not validate_env():
-        sys.exit(1)
-
-    # استيراد main.py
-    sys.path.insert(0, str(ROOT))
     try:
-        import main as uploader_module
-    except ImportError as e:
-        print(f"❌ فشل استيراد main.py: {e}")
-        sys.exit(1)
+        result = subprocess.run(
+            [sys.executable, str(MAIN_SCRIPT)],
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+        log_text = (result.stdout or "") + "\n" + (result.stderr or "")
+        print(log_text, flush=True)
 
-    # تحميل البيانات
-    series_map = load_json(MAP_FILE, {})
-    state = load_state()
+        uploaded = parse_uploaded_episodes(log_text, start_ep, end_ep)
+        return log_text, uploaded
 
-    # استخراج قائمة المسلسلات (تجاهل المفاتيح الخاصة بـ _)
-    series_list = []
+    except subprocess.TimeoutExpired as e:
+        log_text = ""
+        if e.stdout:
+            log_text += e.stdout if isinstance(e.stdout, str) else e.stdout.decode("utf-8", "replace")
+        if e.stderr:
+            log_text += "\n" + (e.stderr if isinstance(e.stderr, str) else e.stderr.decode("utf-8", "replace"))
+        print(f"⏰ timeout على main.py", flush=True)
+        uploaded = parse_uploaded_episodes(log_text, start_ep, end_ep)
+        return log_text, uploaded
+
+    except Exception as e:
+        print(f"❌ فشل تشغيل main.py: {e}", flush=True)
+        return "", []
+
+
+def series_list_from_map(series_map):
+    """يستخرج قائمة (arabic_name, slug, season) من series_map.json"""
+    out = []
     for name, value in series_map.items():
         if name.startswith("_"):
             continue
         if isinstance(value, str):
-            # صيغة قديمة: "name": "slug"
-            series_list.append((name, value, 1))
+            out.append((name, value, 1))
         elif isinstance(value, dict):
             slug = value.get("slug", "")
             season = int(value.get("season", 1))
             if slug:
-                series_list.append((name, slug, season))
+                out.append((name, slug, season))
+    return out
 
-    print(f"\n📊 الإحصائيات:")
-    print(f"   مسلسلات للفحص: {len(series_list)}")
-    print(f"   حالة سابقة: {len(state)} مفتاح")
+
+def main():
+    print("=" * 60)
+    print("🤖 Auto Uploader (subprocess mode)")
+    print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS // 60}m")
+    print("=" * 60, flush=True)
+
+    if not MAIN_SCRIPT.exists():
+        print(f"❌ {MAIN_SCRIPT.name} غير موجود")
+        sys.exit(1)
+
+    series_map = load_json(MAP_FILE, {})
+    state = load_json(STATE_FILE, {})
+    series_list = series_list_from_map(series_map)
+
+    print(f"\n📊 {len(series_list)} مسلسل في الخريطة")
+    print(f"   state: {len(state)} مفتاح\n")
 
     if not series_list:
         print("⚠️ لا مسلسلات — تحقق من series_map.json")
         return
 
-    # الاتصال بـ Telegram
-    if not TEST_MODE:
-        if not await uploader_module.setup_telegram():
-            print("❌ فشل الاتصال بـ Telegram")
-            sys.exit(1)
+    total_uploaded = 0
 
-    # معالجة كل مسلسل
-    total = 0
-    try:
-        for series_name, slug, season in series_list:
-            if exceeded() or remaining() < MIN_EPISODE_TIME:
-                print(f"\n⏰ لا وقت كافٍ — إيقاف")
-                break
-            try:
-                n = await process_series(series_name, slug, season, state, uploader_module)
-                total += n
-            except Exception as e:
-                print(f"❌ خطأ في {series_name}: {e}")
-                continue
-    finally:
-        try:
-            if uploader_module.app:
-                await uploader_module.app.stop()
-        except:
-            pass
-        save_json(STATE_FILE, state)
+    for series_arabic, slug, season in series_list:
+        if remaining() < MIN_RUN_TIME:
+            print(f"⏰ الوقت المتبقي أقل من {MIN_RUN_TIME//60} دقائق — إيقاف")
+            break
+
+        last = get_last_uploaded(state, slug, season)
+        start_ep = last + 1
+        end_ep = start_ep + EPISODES_PER_CALL - 1
+
+        # إذا كانت هناك حلقات كثيرة جداً، لا تتجاوز 200 (بعدها توقف عن هذا الموسم)
+        if start_ep > 200:
+            continue
+
+        print(f"\n▶️ {series_arabic} S{season:02d}: بدء من {start_ep} حتى {end_ep}")
+
+        _, uploaded = run_main_for_range(
+            series_arabic, slug, season, start_ep, end_ep
+        )
+
+        if uploaded:
+            mark_uploaded(state, slug, season, uploaded)
+            total_uploaded += len(uploaded)
+            print(f"✅ {series_arabic}: {len(uploaded)} حلقة ({uploaded[:10]}{'...' if len(uploaded) > 10 else ''})")
+        else:
+            print(f"ℹ️ {series_arabic} S{season:02d}: لا حلقات جديدة")
 
     print(f"\n{'='*60}")
-    print(f"⏱️ {elapsed_str()}")
-    print(f"✅ رُفعت {total} حلقة جديدة")
+    print(f"⏱️ {elapsed()}")
+    print(f"✅ إجمالي المرفوع: {total_uploaded} حلقة")
     print(f"{'='*60}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
