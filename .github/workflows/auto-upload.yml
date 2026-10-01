@@ -1,210 +1,284 @@
-name: 🤖 Auto Upload + Build
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+auto_uploader.py — رافع المسلسلات التلقائي
+★ يستدعي main.py عبر subprocess لرفع كل مسلسل بشكل منفصل
+"""
 
-on:
-  schedule:
-    - cron: '0 2 * * *'   # يومياً 2 صباحاً UTC
-  workflow_dispatch:
-    inputs:
-      max_runtime_minutes:
-        description: 'أقصى وقت (دقائق)'
-        required: false
-        default: '280'
-        type: string
+import os
+import sys
+import json
+import time
+import subprocess
+import re
+from datetime import datetime
+from pathlib import Path
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+ROOT = Path(__file__).resolve().parent
+MAP_FILE = ROOT / "series_map.json"
+STATE_FILE = ROOT / "upload_state.json"
+MAIN_SCRIPT = ROOT / "main.py"
 
-concurrency:
-  group: auto-upload
-  cancel-in-progress: false
+MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_MINUTES", "280")) * 60
+MAX_EPISODES_PER_SEASON = 300
+MAX_EPISODES_PER_RUN = 50  # حد main.py لكل تشغيل
 
-jobs:
-  upload-new-episodes:
-    name: 📤 Upload New Episodes
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+SCRIPT_START = time.time()
 
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          sudo apt-get install -y google-chrome-stable || true
-          sudo apt-get install -y chromium-chromedriver || true
+def elapsed_str():
+    e = int(time.time() - SCRIPT_START)
+    return f"{e//3600}h{(e%3600)//60}m{e%60}s"
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install \
-            "yt-dlp[default,curl-cffi]>=2026.08.19" \
-            "seleniumbase>=4.52.0" \
-            "beautifulsoup4>=4.13.0" \
-            "curl_cffi>=0.15.0" \
-            "pyrogram>=2.0.106" \
-            "tgcrypto>=1.2.5"
 
-      - name: Verify secrets
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          CHANNEL: ${{ secrets.CHANNEL }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-        run: |
-          missing=""
-          [ -z "$API_ID" ] && missing="$missing API_ID"
-          [ -z "$API_HASH" ] && missing="$missing API_HASH"
-          [ -z "$CHANNEL" ] && missing="$missing CHANNEL"
-          [ -z "$STRING_SESSION" ] && missing="$missing STRING_SESSION"
-          if [ -n "$missing" ]; then
-            echo "❌ Missing:$missing"
-            exit 1
-          fi
-          echo "✅ All secrets present"
+def remaining():
+    return max(0, MAX_RUNTIME_SECONDS - (time.time() - SCRIPT_START))
 
-      - name: Run auto uploader
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          CHANNEL: ${{ secrets.CHANNEL }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-          MAX_RUNTIME_MINUTES: ${{ github.event.inputs.max_runtime_minutes || '280' }}
-        run: |
-          python auto_uploader.py 2>&1 | tee upload_log.txt
 
-      - name: Commit state
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add upload_state.json 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "ℹ️ لا تغييرات"
-          else
-            git commit -m "🤖 تحديث حالة الرفع [skip ci]"
-            for i in 1 2 3 4 5; do
-              if git pull --rebase --autostash origin main && git push origin main; then
-                break
-              fi
-              git rebase --abort 2>/dev/null || true
-              sleep 5
-            done
-          fi
+def exceeded():
+    return (time.time() - SCRIPT_START) >= MAX_RUNTIME_SECONDS
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: upload-log
-          path: upload_log.txt
-          retention-days: 7
 
-  fetch-data:
-    name: 📥 Fetch from Telegram
-    runs-on: ubuntu-latest
-    needs: upload-new-episodes
-    timeout-minutes: 120
-    
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+def load_json(path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"⚠️ فشل قراءة {path.name}: {e}")
+        return default
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
 
-      - run: |
-          python -m pip install --upgrade pip
-          pip install pyrogram==2.0.106 tgcrypto aiohttp requests
+def save_json(path, data):
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"⚠️ فشل حفظ {path.name}: {e}")
 
-      - name: Fetch
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          CHANNEL: ${{ secrets.CHANNEL }}
-          CHANNEL2: ${{ secrets.CHANNEL2 }}
-          STRING_SESSION: ${{ secrets.STRING_SESSION }}
-          STRING_SESSION2: ${{ secrets.STRING_SESSION2 }}
-          HISTORY_LIMIT: '15000'
-        run: python fetch_from_telegram.py
 
-      - name: Enrich
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: python enrich_data.py
+def state_key(slug, season):
+    return f"{slug}_s{season}"
 
-      - name: Commit data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data.json forward_progress.json .poster_cache.json 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "ℹ️ لا تغييرات"
-          else
-            git commit -m "🤖 تحديث البيانات [skip ci]"
-            for i in 1 2 3 4 5; do
-              if git pull --rebase --autostash origin main && git push origin main; then
-                break
-              fi
-              git rebase --abort 2>/dev/null || true
-              sleep 5
-            done
-          fi
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: data-json
-          path: data.json
-          retention-days: 7
+def is_uploaded(state, slug, season, ep):
+    return ep in state.get(state_key(slug, season), [])
 
-  build:
-    name: 🏗️ Build
-    runs-on: ubuntu-latest
-    needs: fetch-data
-    timeout-minutes: 20
-    
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+def mark_uploaded(state, slug, season, eps_list):
+    key = state_key(slug, season)
+    if key not in state:
+        state[key] = []
+    for ep in eps_list:
+        if ep not in state[key]:
+            state[key].append(ep)
+    state[key].sort()
+    save_json(STATE_FILE, state)
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: data-json
-          path: .
 
-      - run: python build_all.py --clean
+def parse_main_log(log_text):
+    """
+    يحلّل مخرجات main.py لاستخراج:
+    - عدد الحلقات المرفوعة
+    - قائمة الحلقات المرفوعة (S01E05)
+    """
+    uploaded = []
+    # ابحث عن "S01E05" أو "الحلقة 5" في السجل
+    for m in re.finditer(r'✅\s+(?:S\d+E)?(\d+)', log_text):
+        try:
+            uploaded.append(int(m.group(1)))
+        except:
+            pass
+    return uploaded
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/
 
-  deploy:
-    name: 🚀 Deploy
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+def extract_episode_from_caption(caption):
+    """استخراج رقم الحلقة من الـ caption: "اسم الموسم 6 الحلقة 35" """
+    m = re.search(r'الحلقة\s+(\d+)', caption)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def run_main_for_series(series_arabic, slug, season, start_ep, end_ep):
+    """
+    يستدعي main.py عبر subprocess لمجموعة حلقات.
+    يعيد (success, log_text, uploaded_eps)
+    """
+    # اكتب series_config.json
+    config = {
+        "series_name": slug,
+        "series_name_arabic": series_arabic,
+        "season_num": season,
+        "start_episode": start_ep,
+        "end_episode": end_ep,
+    }
+    config_file = ROOT / "series_config.json"
+    config_file.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print(f"\n{'='*60}")
+    print(f"📺 {series_arabic} → {slug} | موسم {season} | حلقات {start_ep}-{end_ep}")
+    print(f"{'='*60}", flush=True)
+
+    # شغّل main.py
+    env = os.environ.copy()
+    env["INPUT_SERIES_NAME"] = slug
+    env["INPUT_SERIES_NAME_ARABIC"] = series_arabic
+    env["INPUT_SEASON_NUM"] = str(season)
+    env["INPUT_START_EPISODE"] = str(start_ep)
+    env["INPUT_END_EPISODE"] = str(end_ep)
+
+    try:
+        # حد الوقت الفعلي للحلقات
+        timeout = max(120, min(remaining() - 60, 22 * 60 * (end_ep - start_ep + 1)))
+        result = subprocess.run(
+            [sys.executable, str(MAIN_SCRIPT)],
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        log_text = (result.stdout or "") + "\n" + (result.stderr or "")
+        print(log_text)
+
+        # استخرج الحلقات المرفوعة
+        uploaded = []
+        for ep in range(start_ep, end_ep + 1):
+            # ابحث عن "✅ {ep}" في السجل
+            if re.search(rf'✅\s+(?:S\d+E)?{ep:02d}\b', log_text) or \
+               re.search(rf'✅\s+{ep}\s', log_text) or \
+               f"الحلقة {ep}" in log_text and "✅" in log_text:
+                uploaded.append(ep)
+
+        # إذا لم نجد، نفترض أن كل الحلقات في النطاق نُفذت (قد تكون فشلت بعضها)
+        # لكن main.py يطبع "✅ {ep}" عند النجاح
+        # الأكثر دقة: افحص كل حلقة في النطاق
+        if not uploaded and result.returncode == 0:
+            # ابحث عن علامات الرفع الناجح
+            pass
+
+        return result.returncode == 0, log_text, uploaded
+
+    except subprocess.TimeoutExpired:
+        print(f"⏰ timeout على main.py")
+        return False, "", []
+    except Exception as e:
+        print(f"❌ فشل تشغيل main.py: {e}")
+        return False, "", []
+
+
+def discover_last_uploaded_episode(series_arabic, slug, season, state):
+    """
+    يحاول معرفة آخر حلقة مرفوعة.
+    - من state
+    - أو من القناة (عبر fetch_from_telegram)
+    """
+    key = state_key(slug, season)
+    existing = state.get(key, [])
+    if existing:
+        return max(existing)
+    return 0
+
+
+def find_gap_or_next(state, slug, season, max_ep=300):
+    """
+    يجد نطاق الحلقات التالي للرفع.
+    - إذا كانت هناك حلقات مرفوعة، يبدأ من آخرها + 1
+    - إذا لا، يبدأ من 1
+    """
+    last = discover_last_uploaded_episode(None, slug, season, state)
+    start = last + 1
+    end = min(start + MAX_EPISODES_PER_RUN - 1, max_ep)
+    return start, end
+
+
+def check_season_finished(state, slug, season, last_run_uploaded):
+    """
+    إذا لم تُرفع أي حلقة في آخر تشغيل، نفترض أن الموسم انتهى.
+    """
+    return len(last_run_uploaded) == 0
+
+
+def main():
+    print("=" * 60)
+    print("🤖 Auto Uploader (subprocess mode)")
+    print(f"⏱️ الحد: {MAX_RUNTIME_SECONDS // 60}m")
+    print("=" * 60)
+
+    # تحقق من وجود main.py
+    if not MAIN_SCRIPT.exists():
+        print(f"❌ {MAIN_SCRIPT.name} غير موجود")
+        sys.exit(1)
+
+    # تحميل البيانات
+    series_map = load_json(MAP_FILE, {})
+    state = load_json(STATE_FILE, {})
+
+    # استخرج قائمة المسلسلات
+    series_list = []
+    for name, value in series_map.items():
+        if name.startswith("_"):
+            continue
+        if isinstance(value, str):
+            series_list.append((name, value, 1))
+        elif isinstance(value, dict):
+            slug = value.get("slug", "")
+            season = int(value.get("season", 1))
+            if slug:
+                series_list.append((name, slug, season))
+
+    print(f"\n📊 {len(series_list)} مسلسل للفحص")
+    print(f"   state: {len(state)} مفتاح")
+
+    # اطبع ملخص الحالة
+    print("\n📋 الحالة الحالية:")
+    for name, slug, season in series_list[:10]:
+        key = state_key(slug, season)
+        eps = state.get(key, [])
+        if eps:
+            print(f"   {name} S{season:02d}: {len(eps)} حلقة (آخر: {max(eps)})")
+        else:
+            print(f"   {name} S{season:02d}: لم يبدأ")
+    if len(series_list) > 10:
+        print(f"   ... و {len(series_list) - 10} مسلسل آخر")
+
+    total_uploaded = 0
+
+    for series_arabic, slug, season in series_list:
+        if exceeded() or remaining() < 5 * 60:
+            print(f"\n⏰ لا وقت كافٍ — إيقاف")
+            break
+
+        # احسب نطاق الحلقات
+        start_ep, end_ep = find_gap_or_next(state, slug, season)
+
+        # إذا كانت الحلقة الأكبر في state = 300، تخطى
+        if start_ep > MAX_EPISODES_PER_SEASON:
+            continue
+
+        # شغّل main.py للنطاق
+        success, log_text, uploaded = run_main_for_series(
+            series_arabic, slug, season, start_ep, end_ep
+        )
+
+        if uploaded:
+            mark_uploaded(state, slug, season, uploaded)
+            total_uploaded += len(uploaded)
+            print(f"\n✅ {series_arabic}: {len(uploaded)} حلقة مرفوعة")
+
+        # إذا فشل تماماً (لا حلقات)، تخطى هذا المسلسل
+        if not uploaded and start_ep > 1:
+            # ربما الموسم انتهى
+            print(f"ℹ️ {series_arabic} S{season:02d}: لا حلقات جديدة")
+
+    print(f"\n{'='*60}")
+    print(f"⏱️ {elapsed_str()}")
+    print(f"✅ إجمالي المرفوع: {total_uploaded} حلقة")
+    print(f"{'='*60}")
+
+
+if __name__ == "__main__":
+    main()
