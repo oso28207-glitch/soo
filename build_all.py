@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-build_all.py — مُولّد الموقع السريع
-★ التسريع: LRU cache + string building + batch writes ★
+build_all.py — مُولّد الموقع التزايدي
+★ يبني فقط الصفحات الجديدة/المعدّلة ★
 """
 
 import re
@@ -10,11 +10,11 @@ import json
 import shutil
 import html
 import argparse
-import sys
+import hashlib
+import time
 from pathlib import Path
 from urllib.parse import quote
 from collections import defaultdict
-from functools import lru_cache
 
 # ═══════════════════════════════════════════════════════════════
 # الإعدادات
@@ -22,31 +22,24 @@ from functools import lru_cache
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "docs"
 DATA_FILE = ROOT / "data.json"
+MANIFEST_FILE = ROOT / ".build_manifest.json"
 STREAM_SERVER = "https://soo-production.up.railway.app"
 SITE_NAME = "TelegramFlix"
 SITE_DESC = "مشاهدة المسلسلات والأفلام مباشرة"
 
+
 # ═══════════════════════════════════════════════════════════════
-# ★★★ التسريع: استخدام lru_cache للدوال المتكررة ★★★
+# Utilities
 # ═══════════════════════════════════════════════════════════════
-
-@lru_cache(maxsize=4096)
-def esc(s):
-    return html.escape(str(s or ""), quote=True)
+def esc(s): return html.escape(str(s or ""), quote=True)
+def enc(s): return quote(str(s or ""), safe="")
 
 
-@lru_cache(maxsize=4096)
-def enc(s):
-    return quote(str(s or ""), safe="")
-
-
-@lru_cache(maxsize=8192)
 def safe_name(s):
     s = re.sub(r"[^\w\u0600-\u06FF\-]+", "_", str(s or "").strip())
     return re.sub(r"_+", "_", s).strip("_") or "untitled"
 
 
-@lru_cache(maxsize=65536)
 def safe_int(v, default=0):
     try:
         if v is None:
@@ -60,7 +53,17 @@ def safe_int(v, default=0):
         return default
 
 
-@lru_cache(maxsize=65536)
+def write_file(p, c):
+    p = Path(p)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(c, encoding="utf-8")
+
+
+def file_hash(content):
+    """hash سريع للمحتوى"""
+    return hashlib.md5(content.encode("utf-8")).hexdigest()[:16]
+
+
 def fmt_dur(sec):
     s = safe_int(sec, 0)
     if s <= 0:
@@ -70,21 +73,19 @@ def fmt_dur(sec):
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
-@lru_cache(maxsize=65536)
 def format_date_ar(date_str):
     if not date_str:
         return ""
     try:
         from datetime import datetime
         d = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
-        months = ("يناير","فبراير","مارس","أبريل","مايو","يونيو",
-                  "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر")
+        months = ["يناير","فبراير","مارس","أبريل","مايو","يونيو",
+                  "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"]
         return f"{d.day} {months[d.month-1]}"
     except:
         return ""
 
 
-@lru_cache(maxsize=65536)
 def clean_tg_url(url):
     if not url:
         return ""
@@ -92,61 +93,36 @@ def clean_tg_url(url):
     return re.sub(r"t\.me/@", "t.me/", url)
 
 
-@lru_cache(maxsize=65536)
-def watch_filename(ch_mid):
-    """★ مُسرّع: يخزن النتيجة حسب (channel, message_id) ★"""
-    try:
-        ch, mid, fuid = ch_mid
-    except Exception:
-        return "unknown.html"
-    mid = str(mid or "").strip() or "unknown"
-    ch = str(ch or "").strip()
+def watch_filename(ep):
+    mid = str(ep.get("message_id") or "").strip() or "unknown"
+    ch = str(ep.get("source_channel") or "").strip()
     if ch:
         ch_safe = re.sub(r"[^\w\-]+", "_", ch.lstrip("@"))
         return f"{ch_safe}_{mid}.html"
+    fuid = str(ep.get("file_unique_id") or "").strip()
     if fuid:
-        fuid_safe = re.sub(r"[^\w]+", "", str(fuid))[:16]
+        fuid_safe = re.sub(r"[^\w]+", "", fuid)[:16]
         return f"{mid}_{fuid_safe}.html"
     return f"{mid}.html"
 
 
-def get_watch_filename(ep):
-    return watch_filename((
-        ep.get("source_channel") or "",
-        ep.get("message_id") or "",
-        ep.get("file_unique_id") or "",
-    ))
-
-
 # ═══════════════════════════════════════════════════════════════
-# ★★★ التسريع: batched file writes ★★★
+# Manifest — لتتبع ما تم بناؤه
 # ═══════════════════════════════════════════════════════════════
-class FileWriter:
-    """يجمع الملفات ويكتبها على دفعات لتسريع I/O"""
+def load_manifest():
+    if MANIFEST_FILE.exists():
+        try:
+            return json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"pages": {}, "global_hash": ""}
 
-    def __init__(self, root):
-        self.root = Path(root)
-        self.buffer = {}
-        self.count = 0
-        self.flush_size = 100  # اكتب كل 100 ملف
 
-    def add(self, path, content):
-        self.buffer[str(path)] = content
-        self.count += 1
-        if self.count >= self.flush_size:
-            self.flush()
-
-    def flush(self):
-        if not self.buffer:
-            return
-        for path_str, content in self.buffer.items():
-            p = Path(path_str)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
-        self.buffer.clear()
-
-    def finish(self):
-        self.flush()
+def save_manifest(manifest):
+    MANIFEST_FILE.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -154,13 +130,13 @@ class FileWriter:
 # ═══════════════════════════════════════════════════════════════
 def load_data():
     if not DATA_FILE.exists():
-        print(f"لم يُعثر على {DATA_FILE}")
+        print(f"⚠️ {DATA_FILE} غير موجود")
         return []
 
     try:
         raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        print(f"data.json تالف: {e}")
+        print(f"❌ data.json تالف: {e}")
         return []
 
     series_raw = raw if isinstance(raw, list) else raw.get("series", [])
@@ -170,12 +146,10 @@ def load_data():
     for s in series_raw:
         if not isinstance(s, dict):
             continue
-
         name = (s.get("name") or "").strip()
         if not name:
             continue
 
-        # جمع الحلقات
         all_eps = []
         seasons = s.get("seasons", {})
         if isinstance(seasons, dict):
@@ -190,32 +164,29 @@ def load_data():
                         e["episode"] = safe_int(e.get("episode"), 0)
                         all_eps.append(e)
 
-        # إزالة التكرار
         seen_keys = set()
         unique_eps = []
         for ep in all_eps:
             ch = str(ep.get("source_channel") or "").strip()
             mid = str(ep.get("message_id") or "").strip()
-            key = (ch, mid) if ch else (mid,)
-            if key in seen_keys:
+            key = f"{ch}|{mid}" if ch else mid
+            if key and key in seen_keys:
                 continue
-            seen_keys.add(key)
+            if key:
+                seen_keys.add(key)
             unique_eps.append(ep)
 
-        # ترتيب
         unique_eps.sort(key=lambda e: (
             safe_int(e.get("season"), 1),
             safe_int(e.get("episode"), 0)
         ))
 
-        # إعادة تصنيف النوع
         ctype = s.get("type", "") or ""
         if ctype == "movie" and len(unique_eps) > 1:
             ctype = "series"
         if not ctype:
             ctype = "series" if len(unique_eps) > 1 else "movie"
 
-        # مفتاح فريد
         if ctype == "movie":
             name_key = f"M::{name}::{s.get('_source_channel', '')}"
         else:
@@ -228,7 +199,6 @@ def load_data():
         origin = s.get("origin") or "foreign"
         slug = f"{ctype}-{origin}"
 
-        # أحدث تاريخ
         latest = ""
         for ep in unique_eps:
             d = ep.get("date")
@@ -259,9 +229,9 @@ def load_data():
 
 
 # ═══════════════════════════════════════════════════════════════
-# قالب HTML
+# القوالب (same as before, but compact)
 # ═══════════════════════════════════════════════════════════════
-HEAD_TEMPLATE = '''<!DOCTYPE html>
+HEAD = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -298,55 +268,231 @@ HEAD_TEMPLATE = '''<!DOCTYPE html>
 
 def base(title, body, depth=0, head="", scripts=""):
     prefix = "../" * depth if depth else ""
-    return HEAD_TEMPLATE.format(
-        title=esc(title),
-        prefix=prefix,
-        head=head,
-        body=body,
-        scripts=scripts,
+    return HEAD.format(
+        title=esc(title), prefix=prefix, head=head,
+        body=body, scripts=scripts,
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# بطاقة عمل
-# ═══════════════════════════════════════════════════════════════
 def render_card(s, idx=0, prefix=""):
     name = s["name"]
     poster = s["poster"]
     count = len(s["episodes"])
     url = prefix + "series/" + enc(safe_name(name)) + ".html"
-
     badge = '<span class="badge-new">جديد</span>' if idx < 4 else ""
-
     rating_html = ""
     if s.get("rating"):
         try:
             rating_html = f'<span class="rating">★ {float(s["rating"]):.1f}</span>'
         except:
             pass
-
     ph = (f'<img src="{esc(poster)}" alt="{esc(name)}" loading="lazy">'
-          if poster else
-          '<div class="poster-placeholder">📺</div>')
-
+          if poster else '<div class="poster-placeholder">📺</div>')
     count_label = "فيلم" if s["type"] == "movie" else f"{count} حلقة"
-
-    return (
-        f'<a class="series-card" href="{url}">'
-        f'<div class="series-poster">{ph}{badge}'
-        f'<div class="series-overlay">'
-        f'<div class="series-ep-count">{count_label}</div>'
-        f'{rating_html}'
-        f'</div></div>'
-        f'<div class="series-info"><h3>{esc(name)}</h3></div>'
-        f'</a>'
-    )
+    return (f'<a class="series-card" href="{url}">'
+            f'<div class="series-poster">{ph}{badge}'
+            f'<div class="series-overlay">'
+            f'<div class="series-ep-count">{count_label}</div>'
+            f'{rating_html}</div></div>'
+            f'<div class="series-info"><h3>{esc(name)}</h3></div></a>')
 
 
-# ═══════════════════════════════════════════════════════════════
-# الصفحة الرئيسية
-# ═══════════════════════════════════════════════════════════════
-INDEX_SCRIPT = '''<script>
+def _render_episode_card(ep):
+    dur = fmt_dur(ep.get("duration", 0))
+    dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
+    date = format_date_ar(ep.get("date", ""))
+    date_html = f'<span class="ep-date">{esc(date)}</span>' if date else ""
+    ep_num = safe_int(ep.get("episode"), 0)
+    label = f"الحلقة {ep_num}" if ep_num > 0 else "مشاهدة"
+    fname = watch_filename(ep)
+    return (f'<a class="episode-card" href="../watch/{fname}">'
+            f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
+            f'<div class="episode-body">'
+            f'<div class="episode-num">{esc(label)}</div>'
+            f'<div class="episode-meta">{dur_html} {date_html}</div>'
+            f'</div></a>')
+
+
+def render_series(series):
+    name = series["name"]
+    poster = series["poster"]
+    backdrop = series.get("backdrop", "")
+    eps = series["episodes"]
+    seasons = defaultdict(list)
+    for ep in eps:
+        seasons[safe_int(ep.get("season"), 1)].append(ep)
+    sorted_seasons = sorted(seasons.keys())
+
+    if len(sorted_seasons) <= 1:
+        ep_cards = [_render_episode_card(ep) for ep in eps]
+        seasons_content = f'<div class="episodes-grid">{"".join(ep_cards)}</div>'
+    else:
+        st, sp = [], []
+        for i, sn in enumerate(sorted_seasons):
+            active = " active" if i == 0 else ""
+            hidden = "" if i == 0 else " hidden"
+            st.append(f'<button class="season-tab{active}" data-season="{sn}">'
+                      f'الموسم {sn}<span class="season-count">{len(seasons[sn])}</span></button>')
+            cards = "".join(_render_episode_card(ep) for ep in seasons[sn])
+            sp.append(f'<div class="season-panel{hidden}" data-season="{sn}">'
+                      f'<div class="episodes-grid">{cards}</div></div>')
+        seasons_content = f'<div class="season-tabs">{"".join(st)}</div><div class="season-panels">{"".join(sp)}</div>'
+
+    ph = f'<img src="{esc(poster)}" alt="{esc(name)}">' if poster else '<div class="poster-placeholder">📺</div>'
+    bg = f'<div class="series-backdrop" style="background-image:url(\'{esc(backdrop)}\')"></div>' if backdrop else ""
+    rating = f'<span class="rating">★ {float(series["rating"]):.1f}</span>' if series.get("rating") else ""
+    year = f'<span class="year">{esc(series["year"])}</span>' if series.get("year") else ""
+    type_label = "فيلم" if series["type"] == "movie" else "مسلسل"
+    origins = {"arabic": "عربي", "turkish": "تركي مدبلج", "foreign": "أجنبي"}
+    type_badge = f'<span class="category-badge">{type_label} {origins.get(series["origin"], "")}</span>'
+    sc = f'<p class="series-seasons-count">{len(sorted_seasons)} مواسم</p>' if len(sorted_seasons) > 1 else ""
+
+    body = (f'{bg}<div class="series-hero">'
+            f'<div class="series-poster-large">{ph}</div>'
+            f'<div class="series-details">'
+            f'<h1>{esc(name)}</h1>'
+            f'<div class="series-badges">{type_badge} {year} {rating}</div>'
+            f'<p class="series-count">{len(eps)} حلقة</p>'
+            f'{sc}<p class="series-desc">{esc(series.get("description", ""))}</p>'
+            f'</div></div>'
+            f'<h2 class="section-title"><span class="title-dot"></span>الحلقات</h2>'
+            f'{seasons_content}')
+
+    scripts = '''<script>
+(function(){
+  var t=document.querySelectorAll('.season-tab');
+  var p=document.querySelectorAll('.season-panel');
+  if(!t.length)return;
+  t.forEach(function(tab){
+    tab.addEventListener('click',function(){
+      var x=tab.dataset.season;
+      t.forEach(function(a){a.classList.remove('active')});
+      tab.classList.add('active');
+      p.forEach(function(s){
+        if(s.dataset.season===x)s.classList.remove('hidden');
+        else s.classList.add('hidden');
+      });
+    });
+  });
+})();
+</script>'''
+    return base(f"{name} — TelegramFlix", body, depth=1, scripts=scripts)
+
+
+def render_watch(name, season, episode, prev_ep, next_ep, ep):
+    fid = ep.get("file_id") or ""
+    fsize = safe_int(ep.get("file_size"), 0)
+    mid = safe_int(ep.get("message_id"), 0)
+    thumb = ep.get("thumb_url", "")
+    pa = f' poster="{esc(thumb)}"' if thumb else ""
+
+    stream_url = ""
+    if fid and fsize:
+        stream_url = (f"{STREAM_SERVER}/stream"
+                      f"?fid={enc(fid)}&size={int(fsize)}&mid={int(mid)}")
+
+    if stream_url:
+        player = (f'<div class="player-shell">'
+                  f'<video id="mainPlayer" controls playsinline preload="auto" '
+                  f'autoplay muted{pa} '
+                  f'style="width:100%;height:100%;display:block;background:#000;" '
+                  f'crossorigin="anonymous">'
+                  f'<source src="{esc(stream_url)}" type="video/mp4"></video>'
+                  f'<button class="unmute-btn" id="unmuteBtn">'
+                  f'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">'
+                  f'<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>'
+                  f'</svg><span>تشغيل الصوت</span></button></div>')
+        head = '<script src="../static/watch.js" defer></script>'
+    else:
+        player = '<div class="no-player"><div>الفيديو غير متاح حالياً</div></div>'
+        head = ""
+
+    pbtn = (f'<a class="btn" href="{watch_filename(prev_ep)}">السابقة</a>'
+            if prev_ep else '<span class="btn disabled">السابقة</span>')
+    nbtn = (f'<a class="btn primary" href="{watch_filename(next_ep)}">التالية</a>'
+            if next_ep else '<span class="btn disabled">التالية</span>')
+    series_url = "../series/" + enc(safe_name(name)) + ".html"
+    tg_url = clean_tg_url(ep.get("telegram_url", ""))
+    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank">تليجرام</a>'
+              if tg_url else "")
+
+    next_json = json.dumps(watch_filename(next_ep) if next_ep else None)
+    scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
+
+    body = (f'<div class="watch-wrap">{player}'
+            f'<div class="watch-info">'
+            f'<h1>{esc(name)}</h1>'
+            f'<h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>'
+            f'<div class="watch-nav">{pbtn}'
+            f'<a class="btn" href="{series_url}">كل الحلقات</a>'
+            f'{nbtn}{tg_btn}</div></div></div>')
+    return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
+
+
+def render_index(series_list):
+    grouped = defaultdict(list)
+    for s in series_list:
+        grouped[s["slug"]].append(s)
+
+    s_all = (grouped.get("series-arabic", []) + grouped.get("series-turkish", []) +
+             grouped.get("series-foreign", []))
+    m_all = (grouped.get("movie-arabic", []) + grouped.get("movie-turkish", []) +
+             grouped.get("movie-foreign", []))
+    s_all.sort(key=lambda x: x["latest"], reverse=True)
+    m_all.sort(key=lambda x: x["latest"], reverse=True)
+
+    mt, mp = [], []
+    active_main = True
+
+    for tslug, tlbl, ticon, items in [("series", "مسلسلات", "📺", s_all),
+                                       ("movies", "أفلام", "🎬", m_all)]:
+        if not items:
+            continue
+        is_active = active_main
+        if is_active:
+            active_main = False
+        acls = " active" if is_active else ""
+        hcls = "" if is_active else " hidden"
+        mt.append(f'<button class="main-tab{acls}" data-main="{tslug}">'
+                  f'<span>{ticon}</span><span>{tlbl}</span>'
+                  f'<span class="count-badge">{len(items)}</span></button>')
+        if tslug == "series":
+            sg = [("arabic", "عربي", "🌙", grouped.get("series-arabic", [])),
+                  ("turkish", "تركي مدبلج", "🇹🇷", grouped.get("series-turkish", [])),
+                  ("foreign", "أجنبي", "🌍", grouped.get("series-foreign", []))]
+        else:
+            sg = [("arabic", "عربي", "🌙", grouped.get("movie-arabic", [])),
+                  ("turkish", "تركي مدبلج", "🇹🇷", grouped.get("movie-turkish", [])),
+                  ("foreign", "أجنبي", "🌍", grouped.get("movie-foreign", []))]
+        sg = [g for g in sg if g[3]]
+
+        if len(sg) <= 1:
+            cards = "".join(render_card(s, i) for i, s in enumerate(items))
+            pc = f'<div class="series-grid">{cards}</div>'
+        else:
+            st, sp = [], []
+            sa = True
+            for sslug, slbl, sicon, sitems in sg:
+                is_sa = sa
+                if is_sa:
+                    sa = False
+                scls = " active" if is_sa else ""
+                shid = "" if is_sa else " hidden"
+                st.append(f'<button class="sub-tab{scls}" data-sub="{tslug}-{sslug}">'
+                          f'{sicon} {slbl}<span class="count-badge-sm">{len(sitems)}</span></button>')
+                sc = "".join(render_card(s, i) for i, s in enumerate(sitems))
+                sp.append(f'<div class="sub-panel{shid}" data-sub="{tslug}-{sslug}">'
+                          f'<div class="series-grid">{sc}</div></div>')
+            pc = f'<div class="sub-tabs">{"".join(st)}</div><div class="sub-panels">{"".join(sp)}</div>'
+
+        mp.append(f'<div class="main-panel{hcls}" data-main="{tslug}">{pc}</div>')
+
+    body = (f'<section class="hero"><h1>TelegramFlix</h1>'
+            f'<p>مشاهدة المسلسلات والأفلام مباشرة</p></section>'
+            f'<div class="main-tabs">{"".join(mt)}</div>'
+            f'<div class="main-panels">{"".join(mp)}</div>')
+
+    scripts = '''<script>
 (function(){
   var mt=document.querySelectorAll('.main-tab');
   var mp=document.querySelectorAll('.main-panel');
@@ -382,298 +528,139 @@ INDEX_SCRIPT = '''<script>
   }catch(e){}
 })();
 </script>'''
+    return base("TelegramFlix — الرئيسية", body, scripts=scripts)
 
 
-def render_index(series_list):
-    grouped = defaultdict(list)
-    for s in series_list:
-        grouped[s["slug"]].append(s)
+# ═══════════════════════════════════════════════════════════════
+# ★★★ Build Engine — تزايدي ★★★
+# ═══════════════════════════════════════════════════════════════
+class IncrementalBuilder:
+    def __init__(self, clean=False):
+        self.manifest = load_manifest() if not clean else {"pages": {}, "global_hash": ""}
+        self.new_pages = {}
+        self.stats = {"new": 0, "changed": 0, "unchanged": 0, "deleted": 0}
+        self.old_paths = set(self.manifest.get("pages", {}).keys())
 
-    series_all = (grouped.get("series-arabic", []) +
-                  grouped.get("series-turkish", []) +
-                  grouped.get("series-foreign", []))
-    movies_all = (grouped.get("movie-arabic", []) +
-                  grouped.get("movie-turkish", []) +
-                  grouped.get("movie-foreign", []))
-
-    series_all.sort(key=lambda x: x["latest"], reverse=True)
-    movies_all.sort(key=lambda x: x["latest"], reverse=True)
-
-    main_tabs = []
-    main_panels = []
-    active_main = True
-
-    for tab_slug, tab_label, tab_icon, items in [
-        ("series", "مسلسلات", "📺", series_all),
-        ("movies", "أفلام", "🎬", movies_all),
-    ]:
-        if not items:
-            continue
-
-        is_active = active_main
-        if is_active:
-            active_main = False
-
-        active_cls = " active" if is_active else ""
-        hidden_cls = "" if is_active else " hidden"
-
-        main_tabs.append(
-            f'<button class="main-tab{active_cls}" data-main="{tab_slug}">'
-            f'<span>{tab_icon}</span><span>{tab_label}</span>'
-            f'<span class="count-badge">{len(items)}</span></button>'
-        )
-
-        if tab_slug == "series":
-            sub_groups = [
-                ("arabic", "عربي", "🌙", grouped.get("series-arabic", [])),
-                ("turkish", "تركي مدبلج", "🇹🇷", grouped.get("series-turkish", [])),
-                ("foreign", "أجنبي", "🌍", grouped.get("series-foreign", [])),
-            ]
+    def should_write(self, path_str, content):
+        """يقرر إذا كان يجب كتابة الملف"""
+        content_hash = file_hash(content)
+        old_hash = self.manifest["pages"].get(path_str)
+        if old_hash == content_hash:
+            self.stats["unchanged"] += 1
+            self.old_paths.discard(path_str)
+            return False
+        if old_hash:
+            self.stats["changed"] += 1
         else:
-            sub_groups = [
-                ("arabic", "عربي", "🌙", grouped.get("movie-arabic", [])),
-                ("turkish", "تركي مدبلج", "🇹🇷", grouped.get("movie-turkish", [])),
-                ("foreign", "أجنبي", "🌍", grouped.get("movie-foreign", [])),
-            ]
+            self.stats["new"] += 1
+        self.manifest["pages"][path_str] = content_hash
+        self.new_pages[path_str] = content
+        self.old_paths.discard(path_str)
+        return True
 
-        sub_groups = [g for g in sub_groups if g[3]]
+    def cleanup_deleted(self):
+        """حذف الصفحات التي لم تعد موجودة"""
+        for old_path in self.old_paths:
+            p = Path(old_path)
+            if p.exists():
+                try:
+                    p.unlink()
+                    self.stats["deleted"] += 1
+                except Exception:
+                    pass
+            self.manifest["pages"].pop(old_path, None)
 
-        if len(sub_groups) <= 1:
-            cards = "".join(render_card(s, i) for i, s in enumerate(items))
-            panel_content = f'<div class="series-grid">{cards}</div>'
-        else:
-            sub_tabs = []
-            sub_panels = []
-            sub_active = True
-
-            for sub_slug, sub_label, sub_icon, sub_items in sub_groups:
-                is_sub_active = sub_active
-                if is_sub_active:
-                    sub_active = False
-
-                sub_cls = " active" if is_sub_active else ""
-                sub_hidden = "" if is_sub_active else " hidden"
-
-                sub_tabs.append(
-                    f'<button class="sub-tab{sub_cls}" data-sub="{tab_slug}-{sub_slug}">'
-                    f'{sub_icon} {sub_label}'
-                    f'<span class="count-badge-sm">{len(sub_items)}</span></button>'
-                )
-
-                sub_cards = "".join(render_card(s, i) for i, s in enumerate(sub_items))
-                sub_panels.append(
-                    f'<div class="sub-panel{sub_hidden}" data-sub="{tab_slug}-{sub_slug}">'
-                    f'<div class="series-grid">{sub_cards}</div></div>'
-                )
-
-            panel_content = (
-                f'<div class="sub-tabs">{"".join(sub_tabs)}</div>'
-                f'<div class="sub-panels">{"".join(sub_panels)}</div>'
-            )
-
-        main_panels.append(
-            f'<div class="main-panel{hidden_cls}" data-main="{tab_slug}">'
-            f'{panel_content}</div>'
-        )
-
-    body = (f'<section class="hero"><h1>{SITE_NAME}</h1>'
-            f'<p>{SITE_DESC}</p></section>'
-            f'<div class="main-tabs">{"".join(main_tabs)}</div>'
-            f'<div class="main-panels">{"".join(main_panels)}</div>')
-
-    return base(f"{SITE_NAME} — الرئيسية", body, scripts=INDEX_SCRIPT)
+    def flush(self):
+        """كتابة الملفات الجديدة فقط"""
+        for path_str, content in self.new_pages.items():
+            write_file(Path(path_str), content)
 
 
-# ═══════════════════════════════════════════════════════════════
-# بطاقة الحلقة
-# ═══════════════════════════════════════════════════════════════
-def _render_episode_card(ep):
-    dur = fmt_dur(ep.get("duration", 0))
-    dur_html = f'<span class="ep-duration">{esc(dur)}</span>' if dur else ""
-    date = format_date_ar(ep.get("date", ""))
-    date_html = f'<span class="ep-date">{esc(date)}</span>' if date else ""
+def build_site(clean=False, force_full=False):
+    start = time.time()
+    series_list = load_data()
+    print(f"📚 {len(series_list)} عمل محمّل")
 
-    ep_num = safe_int(ep.get("episode"), 0)
-    label = f"الحلقة {ep_num}" if ep_num > 0 else "مشاهدة"
+    if force_full:
+        clean = True
+        if MANIFEST_FILE.exists():
+            MANIFEST_FILE.unlink()
 
-    fname = get_watch_filename(ep)
+    builder = IncrementalBuilder(clean=clean)
 
-    return (
-        f'<a class="episode-card" href="../watch/{fname}">'
-        f'<div class="episode-thumb"><span class="play-icon">▶</span></div>'
-        f'<div class="episode-body">'
-        f'<div class="episode-num">{esc(label)}</div>'
-        f'<div class="episode-meta">{dur_html} {date_html}</div>'
-        f'</div></a>'
-    )
+    # بنية المجلدات
+    OUT.mkdir(parents=True, exist_ok=True)
 
+    # static (دائماً يُكتب لأن hash يُقارن)
+    from_build_static = True  # نبني static دائماً إذا تغير
 
-SERIES_SCRIPT = '''<script>
-(function(){
-  var t=document.querySelectorAll('.season-tab');
-  var p=document.querySelectorAll('.season-panel');
-  if(!t.length)return;
-  t.forEach(function(tab){
-    tab.addEventListener('click',function(){
-      var x=tab.dataset.season;
-      t.forEach(function(a){a.classList.remove('active')});
-      tab.classList.add('active');
-      p.forEach(function(s){
-        if(s.dataset.season===x)s.classList.remove('hidden');
-        else s.classList.add('hidden');
-      });
-    });
-  });
-})();
-</script>'''
+    # CSS + JS
+    css_path = str(OUT / "static" / "style.css")
+    js_path = str(OUT / "static" / "watch.js")
 
+    if css_path not in builder.manifest["pages"] or \
+       builder.manifest["pages"].get(css_path) != file_hash(CSS):
+        write_file(css_path, CSS)
+        builder.manifest["pages"][css_path] = file_hash(CSS)
+        print("🎨 style.css محدّث")
 
-def render_series(series):
-    name = series["name"]
-    poster = series["poster"]
-    backdrop = series.get("backdrop", "")
-    eps = series["episodes"]
+    if js_path not in builder.manifest["pages"] or \
+       builder.manifest["pages"].get(js_path) != file_hash(WATCH_JS):
+        write_file(js_path, WATCH_JS)
+        builder.manifest["pages"][js_path] = file_hash(WATCH_JS)
+        print("⚡ watch.js محدّث")
 
-    seasons = defaultdict(list)
-    for ep in eps:
-        seasons[safe_int(ep.get("season"), 1)].append(ep)
-    sorted_seasons = sorted(seasons.keys())
+    # Series pages
+    for series in series_list:
+        name = series["name"]
+        html = render_series(series)
+        path = OUT / "series" / f"{safe_name(name)}.html"
+        builder.should_write(str(path), html)
 
-    if len(sorted_seasons) <= 1:
-        ep_cards = [_render_episode_card(ep) for ep in eps]
-        seasons_content = f'<div class="episodes-grid">{"".join(ep_cards)}</div>'
+    # Watch pages
+    total_watch = 0
+    for series in series_list:
+        name = series["name"]
+        eps = series["episodes"]
+        for i, ep in enumerate(eps):
+            prev_ep = eps[i - 1] if i > 0 else None
+            next_ep = eps[i + 1] if i < len(eps) - 1 else None
+            season = safe_int(ep.get("season"), 1)
+            ep_num = safe_int(ep.get("episode"), i + 1)
+            html = render_watch(name, season, ep_num, prev_ep, next_ep, ep)
+            fname = watch_filename(ep)
+            builder.should_write(str(OUT / "watch" / fname), html)
+            total_watch += 1
+
+    # Index
+    index_html = render_index(series_list)
+    builder.should_write(str(OUT / "index.html"), index_html)
+
+    # حذف المحذوفات
+    if not clean:
+        builder.cleanup_deleted()
     else:
-        season_tabs = []
-        season_panels = []
-        for i, sn in enumerate(sorted_seasons):
-            active = " active" if i == 0 else ""
-            hidden = "" if i == 0 else " hidden"
-            season_tabs.append(
-                f'<button class="season-tab{active}" data-season="{sn}">'
-                f'الموسم {sn}<span class="season-count">{len(seasons[sn])}</span></button>'
-            )
-            cards = "".join(_render_episode_card(ep) for ep in seasons[sn])
-            season_panels.append(
-                f'<div class="season-panel{hidden}" data-season="{sn}">'
-                f'<div class="episodes-grid">{cards}</div></div>'
-            )
-        seasons_content = (
-            f'<div class="season-tabs">{"".join(season_tabs)}</div>'
-            f'<div class="season-panels">{"".join(season_panels)}</div>'
-        )
+        builder.old_paths.clear()
 
-    ph = (f'<img src="{esc(poster)}" alt="{esc(name)}">'
-          if poster else
-          '<div class="poster-placeholder">📺</div>')
+    # كتابة الملفات الجديدة
+    builder.flush()
 
-    bg_html = ""
-    if backdrop:
-        bg_html = f'<div class="series-backdrop" style="background-image:url(\'{esc(backdrop)}\')"></div>'
+    # حفظ manifest
+    save_manifest(builder.manifest)
 
-    rating_html = ""
-    if series.get("rating"):
-        try:
-            rating_html = f'<span class="rating">★ {float(series["rating"]):.1f}</span>'
-        except:
-            pass
-
-    year_html = f'<span class="year">{esc(series["year"])}</span>' if series.get("year") else ""
-
-    type_label = "فيلم" if series["type"] == "movie" else "مسلسل"
-    origin_labels = {"arabic": "عربي", "turkish": "تركي مدبلج", "foreign": "أجنبي"}
-    origin_label = origin_labels.get(series["origin"], "")
-    type_badge = f'<span class="category-badge">{type_label} {origin_label}</span>'
-
-    seasons_count_html = ""
-    if len(sorted_seasons) > 1:
-        seasons_count_html = f'<p class="series-seasons-count">{len(sorted_seasons)} مواسم</p>'
-
-    body = (
-        f'{bg_html}'
-        f'<div class="series-hero">'
-        f'<div class="series-poster-large">{ph}</div>'
-        f'<div class="series-details">'
-        f'<h1>{esc(name)}</h1>'
-        f'<div class="series-badges">{type_badge} {year_html} {rating_html}</div>'
-        f'<p class="series-count">{len(eps)} حلقة</p>'
-        f'{seasons_count_html}'
-        f'<p class="series-desc">{esc(series.get("description", ""))}</p>'
-        f'</div></div>'
-        f'<h2 class="section-title"><span class="title-dot"></span>الحلقات</h2>'
-        f'{seasons_content}'
-    )
-
-    return base(f"{name} — {SITE_NAME}", body, depth=1, scripts=SERIES_SCRIPT)
+    elapsed = time.time() - start
+    s = builder.stats
+    print(f"\n{'='*50}")
+    print(f"✨ البناء اكتمل في {elapsed:.2f}s")
+    print(f"   🆕 جديد: {s['new']}")
+    print(f"   🔄 معدّل: {s['changed']}")
+    print(f"   ⏭️  بدون تغيير: {s['unchanged']}")
+    print(f"   🗑️  محذوف: {s['deleted']}")
+    print(f"{'='*50}")
 
 
 # ═══════════════════════════════════════════════════════════════
-# صفحة المشاهدة
-# ═══════════════════════════════════════════════════════════════
-def render_watch(name, season, episode, prev_ep, next_ep, ep):
-    file_id = ep.get("file_id") or ""
-    file_size = safe_int(ep.get("file_size"), 0)
-    message_id = safe_int(ep.get("message_id"), 0)
-    thumb = ep.get("thumb_url", "")
-    poster_attr = f' poster="{esc(thumb)}"' if thumb else ""
-
-    stream_url = ""
-    if file_id and file_size:
-        stream_url = (
-            f"{STREAM_SERVER}/stream"
-            f"?fid={enc(file_id)}&size={int(file_size)}&mid={int(message_id)}"
-        )
-
-    if stream_url:
-        player = (
-            f'<div class="player-shell">'
-            f'<video id="mainPlayer" controls playsinline preload="auto" '
-            f'autoplay muted{poster_attr} '
-            f'style="width:100%;height:100%;display:block;background:#000;" '
-            f'crossorigin="anonymous">'
-            f'<source src="{esc(stream_url)}" type="video/mp4">'
-            f'</video>'
-            f'<button class="unmute-btn" id="unmuteBtn">'
-            f'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">'
-            f'<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>'
-            f'</svg><span>تشغيل الصوت</span></button></div>'
-        )
-        head = '<script src="../static/watch.js" defer></script>'
-    else:
-        player = ('<div class="no-player"><div>هذا الفيديو غير متاح حاليًا.<br>'
-                  'استخدم زر "تليجرام" للمشاهدة المباشرة.</div></div>')
-        head = ""
-
-    prev_btn = (f'<a class="btn" href="{get_watch_filename(prev_ep)}">السابقة</a>'
-                if prev_ep else
-                '<span class="btn disabled">السابقة</span>')
-    next_btn = (f'<a class="btn primary" href="{get_watch_filename(next_ep)}">التالية</a>'
-                if next_ep else
-                '<span class="btn disabled">التالية</span>')
-
-    series_url = "../series/" + enc(safe_name(name)) + ".html"
-
-    tg_url = clean_tg_url(ep.get("telegram_url", ""))
-    tg_btn = (f'<a class="btn" href="{esc(tg_url)}" target="_blank" rel="noopener">تليجرام</a>'
-              if tg_url else "")
-
-    next_json = json.dumps(get_watch_filename(next_ep) if next_ep else None)
-    scripts = f'<script>window.__NEXT_URL__ = {next_json};</script>'
-
-    body = (
-        f'<div class="watch-wrap">{player}'
-        f'<div class="watch-info">'
-        f'<h1>{esc(name)}</h1>'
-        f'<h2>الموسم {esc(season)} · الحلقة {esc(episode)}</h2>'
-        f'<div class="watch-nav">'
-        f'{prev_btn}<a class="btn" href="{series_url}">كل الحلقات</a>{next_btn}{tg_btn}'
-        f'</div></div></div>'
-    )
-
-    return base(f"الحلقة {episode} — {name}", body, depth=1, head=head, scripts=scripts)
-
-
-# ═══════════════════════════════════════════════════════════════
-# CSS
+# CSS/JS (مُختصرة)
 # ═══════════════════════════════════════════════════════════════
 CSS = '''
 :root{--bg:#0a0a0e;--surface:#14141c;--surface-2:#1c1c28;--border:#26263a;--text:#f0f0f5;--text-dim:#8a8aa0;--primary:#e50914;--accent:#4ea8de;--gold:#ffc107;--radius:14px;--radius-sm:10px;--shadow:0 8px 32px rgba(0,0,0,.45)}
@@ -808,87 +795,12 @@ WATCH_JS = '''
 '''
 
 
-# ═══════════════════════════════════════════════════════════════
-# البناء
-# ═══════════════════════════════════════════════════════════════
-def build_static(writer):
-    d = OUT / "static"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "style.css").write_text(CSS, encoding="utf-8")
-    (d / "watch.js").write_text(WATCH_JS, encoding="utf-8")
-
-
-def build_site(writer):
-    series_list = load_data()
-    print(f"{len(series_list)} عمل")
-
-    total = 0
-    written_files = set()
-    movies = 0
-    series_count = 0
-
-    for series in series_list:
-        name = series["name"]
-        episodes = series["episodes"]
-
-        if series["type"] == "movie":
-            movies += 1
-        else:
-            series_count += 1
-
-        # صفحة العمل
-        writer.add(
-            OUT / "series" / f"{safe_name(name)}.html",
-            render_series(series)
-        )
-
-        # صفحات المشاهدة
-        for i, ep in enumerate(episodes):
-            prev_ep = episodes[i - 1] if i > 0 else None
-            next_ep = episodes[i + 1] if i < len(episodes) - 1 else None
-            season = safe_int(ep.get("season"), 1)
-            episode_num = safe_int(ep.get("episode"), i + 1)
-
-            html_ep = render_watch(name, season, episode_num, prev_ep, next_ep, ep)
-            fname = get_watch_filename(ep)
-
-            if fname in written_files:
-                print(f"تحذير: تعارض في {fname}")
-            written_files.add(fname)
-
-            writer.add(OUT / "watch" / fname, html_ep)
-            total += 1
-
-    # الصفحة الرئيسية
-    writer.add(OUT / "index.html", render_index(series_list))
-
-    print(f"   مسلسلات: {series_count}")
-    print(f"   أفلام: {movies}")
-    print(f"   حلقات: {total}")
-    print(f"   ملفات watch فريدة: {len(written_files)}")
-
-
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--clean", action="store_true")
+    p.add_argument("--clean", action="store_true", help="تنظيف كامل")
+    p.add_argument("--force-full", action="store_true", help="إعادة بناء كل شيء")
     a = p.parse_args()
-
-    if a.clean and OUT.exists():
-        shutil.rmtree(OUT)
-    OUT.mkdir(parents=True, exist_ok=True)
-
-    writer = FileWriter(OUT)
-
-    import time
-    start = time.time()
-
-    build_static(writer)
-    build_site(writer)
-    writer.finish()
-
-    elapsed = time.time() - start
-    print(f"\n★ الوقت: {elapsed:.2f}s")
-    print(f"تم البناء في {OUT}")
+    build_site(clean=a.clean, force_full=a.force_full)
 
 
 if __name__ == "__main__":
