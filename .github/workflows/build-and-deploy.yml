@@ -10,7 +10,7 @@ on:
       - '.gitignore'
       - '.poster_cache.json'
   schedule:
-    - cron: '0 3 * * *'
+
   workflow_dispatch:
     inputs:
       history_limit:
