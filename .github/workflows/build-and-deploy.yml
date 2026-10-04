@@ -9,7 +9,6 @@ on:
       - '*.md'
       - '.gitignore'
       - '.poster_cache.json'
-  schedule:
 
   workflow_dispatch:
     inputs:
