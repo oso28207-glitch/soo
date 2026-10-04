@@ -1,7 +1,6 @@
 name: 🤖 Auto Upload + Incremental Build
 
 on:
-  schedule:
 
   workflow_dispatch:
     inputs:
