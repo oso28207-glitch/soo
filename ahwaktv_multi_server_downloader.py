@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Ahwaktv Multi-Server Video Downloader & Compressor
+- يكتشف السيرفرات في صفحة المشاهدة، يجرب كل سيرفر حتى ينجح.
 - يستخدم FFmpeg مباشرة لتحميل HLS (يتعامل مع fMP4 + AES-128 تلقائيًا).
 - يضغط الفيديو إلى 360p.
 """
@@ -8,6 +9,8 @@ Ahwaktv Multi-Server Video Downloader & Compressor
 import os, sys, time, re, shutil, subprocess
 from urllib.parse import urlparse
 
+# ═══════════════════════════════════════════════════════════
+#  إعدادات قابلة للتعديل
 # ═══════════════════════════════════════════════════════════
 TARGET_URL = "https://yam.ahwaktv.net/see.php?vid=5b5a090aa"
 OUTPUT_DIR = "downloads"
@@ -21,6 +24,8 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
       "AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/120.0.0.0 Safari/537.36")
 
+# ═══════════════════════════════════════════════════════════
+#  تثبيت المكتبات
 # ═══════════════════════════════════════════════════════════
 def install_requirements():
     print("📦 تثبيت المكتبات المطلوبة...")
@@ -37,6 +42,8 @@ install_requirements()
 from seleniumbase import SB
 
 
+# ═══════════════════════════════════════════════════════════
+#  ضغط الفيديو
 # ═══════════════════════════════════════════════════════════
 def compress_video(input_path, output_path, scale=360):
     print(f"🗜️ ضغط الفيديو إلى {scale}p...")
@@ -57,7 +64,7 @@ def compress_video(input_path, output_path, scale=360):
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if r.returncode != 0:
-            print(f"❌ فشل الضغط: {r.stderr[:300]}")
+            print(f"❌ فشل الضغط: {r.stderr[-500:]}")
             return False
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
             mb = os.path.getsize(output_path) / (1024 * 1024)
@@ -69,6 +76,8 @@ def compress_video(input_path, output_path, scale=360):
         return False
 
 
+# ═══════════════════════════════════════════════════════════
+#  استخراج السيرفرات من الصفحة
 # ═══════════════════════════════════════════════════════════
 def extract_servers_from_page(sb):
     servers = []
@@ -133,6 +142,8 @@ def extract_servers_from_page(sb):
 
 
 # ═══════════════════════════════════════════════════════════
+#  التقاط m3u8 من الشبكة
+# ═══════════════════════════════════════════════════════════
 def capture_m3u8_from_page(sb, wait_seconds=25):
     """يجمع روابط m3u8 الحقيقية (يتجاهل ping.gif من JWPlayer)."""
     m3u8_urls = []
@@ -142,7 +153,6 @@ def capture_m3u8_from_page(sb, wait_seconds=25):
         ul = u.lower()
         if '.m3u8' not in ul and '.mpd' not in ul:
             return False
-        # استبعاد روابط وهمية
         bad = ['ping.gif', 'jwpltx', 'analytics', '.gif',
                'beacon', 'track', 'player.js']
         return not any(b in ul for b in bad)
@@ -192,7 +202,6 @@ def capture_m3u8_from_page(sb, wait_seconds=25):
         if m3u8_urls:
             break
 
-    # ترتيب: master / index أولاً، ثم الباقي
     def priority(u):
         ul = u.lower()
         if 'master.m3u8' in ul: return 0
@@ -205,10 +214,12 @@ def capture_m3u8_from_page(sb, wait_seconds=25):
 
 
 # ═══════════════════════════════════════════════════════════
+#  تحميل HLS عبر FFmpeg (بدون فلتر صوت غير مناسب)
+# ═══════════════════════════════════════════════════════════
 def download_with_ffmpeg(m3u8_url, output_dir, referer_url):
-    """يستخدم FFmpeg لتحميل HLS مباشرة (يتعامل مع fMP4/AES-128)."""
+    """يستخدم FFmpeg لتحميل HLS مباشرة والإخراج بصيغة MP4 سليمة."""
     print(f"   📥 ffmpeg HLS: {m3u8_url[:110]}")
-    output_ts = os.path.join(output_dir, "raw_video.ts")
+    output_mp4 = os.path.join(output_dir, "raw_video.mp4")
 
     origin = f"{urlparse(referer_url).scheme}://{urlparse(referer_url).netloc}"
     headers_str = (
@@ -220,37 +231,50 @@ def download_with_ffmpeg(m3u8_url, output_dir, referer_url):
         'ffmpeg', '-y', '-hide_banner', '-loglevel', 'warning',
         '-headers', headers_str,
         '-user_agent', UA,
-        # خيارات موصى بها لـ HLS
         '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
         '-allowed_extensions', 'ALL',
         '-i', m3u8_url,
         '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        '-f', 'mpegts',
+        '-movflags', '+faststart',
         '-max_muxing_queue_size', '4096',
-        output_ts
+        output_mp4
     ]
 
     try:
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-        if r.returncode != 0 or not os.path.exists(output_ts):
+        if r.returncode != 0 or not os.path.exists(output_mp4):
             print(f"   ❌ ffmpeg فشل: {r.stderr[-400:]}")
             return None
-        size = os.path.getsize(output_ts)
+        size = os.path.getsize(output_mp4)
         if size < 1024 * 1024:
             print(f"   ❌ الملف صغير جدًا: {size} bytes")
-            try: os.remove(output_ts)
+            try: os.remove(output_mp4)
             except: pass
             return None
         mb = size / (1024 * 1024)
         print(f"   ✅ ffmpeg: {mb:.2f} MB في {time.time()-t0:.1f}s")
-        return output_ts
+
+        # فحص سلامة الملف الخام
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'error',
+             '-show_entries', 'format=duration,size',
+             '-of', 'default=noprint_wrappers=1', output_mp4],
+            capture_output=True, text=True
+        )
+        if probe.returncode == 0:
+            print(f"   🔍 فحص: {probe.stdout.strip().replace(chr(10), ' | ')}")
+        else:
+            print(f"   ⚠️ تحذير ffprobe: {probe.stderr[:200]}")
+
+        return output_mp4
     except Exception as e:
         print(f"   ❌ {e}")
         return None
 
 
+# ═══════════════════════════════════════════════════════════
+#  تجربة السيرفرات
 # ═══════════════════════════════════════════════════════════
 def try_servers_and_download(url, output_dir):
     print(f"🌐 فتح الصفحة: {url}")
@@ -275,7 +299,8 @@ def try_servers_and_download(url, output_dir):
                 return None
 
             for idx, srv in enumerate(servers[:MAX_SERVERS_TO_TRY]):
-                print(f"\n🎯 السيرفر {idx+1}/{min(len(servers), MAX_SERVERS_TO_TRY)}: {srv['name'][:50]}")
+                print(f"\n🎯 السيرفر {idx+1}/"
+                      f"{min(len(servers), MAX_SERVERS_TO_TRY)}: {srv['name'][:50]}")
 
                 try:
                     if srv.get("iframe_src"):
@@ -321,6 +346,8 @@ def try_servers_and_download(url, output_dir):
             return None
 
 
+# ═══════════════════════════════════════════════════════════
+#  main
 # ═══════════════════════════════════════════════════════════
 def main():
     print("=" * 60)
